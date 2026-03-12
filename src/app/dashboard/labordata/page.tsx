@@ -5,17 +5,19 @@ import { useModelStore, type LaborGroup } from '@/stores/modelStore';
 import { useDeleteConfirmation } from '@/hooks/useDeleteConfirmation';
 import { DeleteConfirmInline } from '@/components/DeleteConfirmInline';
 import { useScenarioStore } from '@/stores/scenarioStore';
+import { saveFullModelToDB } from '@/lib/supabaseData';
 import { Button } from '../../../components/ui/button';
 import { Input } from '../../../components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '../../../components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { DataTable, DataTableBody, DataTableCell, DataTableHead, DataTableHeader, DataTableRow } from '@/components/ui/DataTable';
-import { Plus, Trash2, LayoutGrid, List, Users, ChevronDown, ChevronUp, FlaskConical, CircleHelp } from 'lucide-react';
+import { Plus, Trash2, LayoutGrid, List, Users, ChevronDown, ChevronUp, FlaskConical, CircleHelp, Loader2 } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useUserLevelStore, isVisible } from '@/hooks/useUserLevel';
 import { NoModelSelected } from '@/components/NoModelSelected';
+import { toast } from 'sonner';
 
 const FIELD_LABELS: Record<string, string> = {
   count: 'Count', overtime_pct: 'Overtime %', unavail_pct: 'Unavail %',
@@ -55,6 +57,7 @@ export default function LaborData() {
   const [newName, setNewName] = useState('');
   const [viewMode, setViewMode] = useState<'table' | 'form'>('table');
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [saving, setSaving] = useState(false);
   const { pendingDeleteId, requestDelete, cancelDelete, confirmDelete } = useDeleteConfirmation();
   const { userLevel } = useUserLevelStore();
   const activeScenarioId = useScenarioStore(s => s.activeScenarioId);
@@ -69,14 +72,34 @@ export default function LaborData() {
 
   const handleAdd = () => {
     if (!newName.trim()) return;
+    const name = newName.trim().toUpperCase();
     addLabor(model.id, {
-      id: crypto.randomUUID(), name: newName.trim().toUpperCase(), count: 1,
+      id: crypto.randomUUID(), name, count: 1,
       overtime_pct: 0, unavail_pct: 0, dept_code: '', prioritize_use: false,
       setup_factor: 1, run_factor: 1, var_factor: 1,
       lab1: 0, lab2: 0, lab3: 0, lab4: 0, comments: '',
     });
     setNewName('');
     setShowAdd(false);
+    toast.success(`Labor group "${name}" added`);
+  };
+
+  const handleSaveModel = async () => {
+    if (!model) return;
+    setSaving(true);
+    try {
+      await saveFullModelToDB(model);
+      toast.success('Model saved');
+    } catch {
+      toast.error('Failed to save model');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteLabor = (laborId: string, laborName: string) => {
+    deleteLabor(model.id, laborId);
+    toast.success(`Labor group "${laborName}" deleted`);
   };
 
   const handleCellChange = (id: string, field: keyof LaborGroup, value: string | number | boolean) => {
@@ -151,8 +174,10 @@ export default function LaborData() {
               variant="outline"
               size="sm"
               className="h-8 px-3 text-xs font-medium text-slate-700 border-slate-200 bg-white hover:bg-slate-50"
+              onClick={handleSaveModel}
+              disabled={saving}
             >
-              Save
+              {saving ? <><Loader2 className="h-4 w-4 animate-spin mr-1.5" /> Saving</> : 'Save'}
             </Button>
           </div>
         </div>
@@ -206,7 +231,7 @@ export default function LaborData() {
                       <DataTableCell colSpan={showAdvanced ? 14 : 5}>
                         <DeleteConfirmInline
                           message={`Delete ${l.name}? This will remove it from any equipment assignments.`}
-                          onConfirm={() => confirmDelete(l.id, () => deleteLabor(model.id, l.id))}
+                          onConfirm={() => confirmDelete(l.id, () => handleDeleteLabor(l.id, l.name))}
                           onCancel={cancelDelete}
                         />
                       </DataTableCell>
@@ -252,7 +277,7 @@ export default function LaborData() {
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-base font-mono">{l.name}</CardTitle>
-                  <Button variant="ghost" size="icon" className="h-8 w-8 text-red-600 hover:bg-red-50 hover:text-red-700" onClick={() => { if (confirm(`Delete ${l.name}? This will remove it from any equipment assignments.`)) deleteLabor(model.id, l.id); }}>
+                  <Button variant="ghost" size="icon" className="h-8 w-8 text-red-600 hover:bg-red-50 hover:text-red-700" onClick={() => { if (confirm(`Delete ${l.name}? This will remove it from any equipment assignments.`)) handleDeleteLabor(l.id, l.name); }}>
                     <Trash2 className="h-4 w-4 text-red-600 hover:bg-red-50 hover:text-red-700" />
                   </Button>
                 </div>

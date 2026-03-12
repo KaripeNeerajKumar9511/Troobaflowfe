@@ -1,8 +1,9 @@
 "use client";
 
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import { useModelStore } from '@/stores/modelStore';
 import { useScenarioStore } from '@/stores/scenarioStore';
+import { saveFullModelToDB } from '@/lib/supabaseData';
 import { Input } from '../../../components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/Select';
@@ -10,10 +11,11 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../../../components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Info, FlaskConical } from 'lucide-react';
+import { Info, FlaskConical, Loader2 } from 'lucide-react';
 import { useUserLevelStore, isVisible } from '@/hooks/useUserLevel';
 import { NoModelSelected } from '@/components/NoModelSelected';
 import { Button } from '../../../components/ui/button';
+import { toast } from 'sonner';
 
 const FIELD_LABELS: Record<string, string> = {
   model_title: 'Model Title', ops_time_unit: 'Ops Time Unit', mct_time_unit: 'MCT Time Unit',
@@ -32,6 +34,7 @@ function InfoTip({ text }: { text: string }) {
 export default function GeneralData() {
   const model = useModelStore((s) => s.getActiveModel());
   const updateGeneral = useModelStore((s) => s.updateGeneral);
+  const [saving, setSaving] = useState(false);
   const { userLevel } = useUserLevelStore();
   const showAdvancedParams = isVisible('advanced_parameters', userLevel);
   const activeScenarioId = useScenarioStore(s => s.activeScenarioId);
@@ -60,6 +63,20 @@ export default function GeneralData() {
       });
     }
     updateGeneral(model.id, data);
+  };
+
+  const handleSave = async () => {
+    if (!model) return;
+    setSaving(true);
+    try {
+      await saveFullModelToDB(model);
+      toast.success('Model general data saved');
+    } catch (e) {
+      console.error('Save general data error:', e);
+      toast.error('Failed to save model general data');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const UNIT_LABELS: Record<string, string> = {
@@ -96,10 +113,11 @@ export default function GeneralData() {
           <Button
             variant="outline"
             size="sm"
-            disabled
-            className="h-8 rounded-md border-slate-200 bg-slate-50 px-4 text-xs font-medium text-slate-400 cursor-default"
+            onClick={handleSave}
+            disabled={saving}
+            className="h-8 rounded-md border-slate-200 bg-slate-50 px-4 text-xs font-medium text-slate-700 hover:bg-slate-100"
           >
-            Save
+            {saving ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" /> Saving</> : 'Save'}
           </Button>
         </div>
       </div>

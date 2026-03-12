@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useModelStore, type Operation, type RoutingEntry } from '@/stores/modelStore';
-import { db } from '@/lib/supabaseData';
+import { db, saveFullModelToDB } from '@/lib/supabaseData';
 import { useDeleteConfirmation } from '@/hooks/useDeleteConfirmation';
 import { DeleteConfirmInline } from '@/components/DeleteConfirmInline';
 import { useScenarioStore } from '@/stores/scenarioStore';
@@ -17,7 +17,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/Select';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Trash2, Wand2, AlertTriangle, SortAsc, FlaskConical, Calculator, FunctionSquare, Eye, Edit, Lock, Zap, CheckCircle } from 'lucide-react';
+import { Plus, Trash2, Wand2, AlertTriangle, SortAsc, FlaskConical, Calculator, FunctionSquare, Eye, Edit, Lock, Zap, CheckCircle, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { FormulaBuilder } from '@/components/FormulaBuilder';
 import { InterpolateCalculator } from '@/components/InterpolateCalculator';
@@ -62,6 +62,7 @@ export default function OperationsRouting() {
   // Formula Builder state
   const [formulaTarget, setFormulaTarget] = useState<{ op: Operation; field: string; label: string; value: number } | null>(null);
   const [showInterpolator, setShowInterpolator] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   // Auto-select first product if none selected
   const effectiveProductId = selectedProductId && model?.products.find(p => p.id === selectedProductId)
@@ -611,10 +612,30 @@ export default function OperationsRouting() {
                   <Button
                     variant="outline"
                     size="sm"
-                    disabled
-                    className="h-8 rounded-md border-slate-200 bg-slate-50 px-3 text-xs font-medium text-slate-400 cursor-default"
+                    className="h-8 rounded-md border-slate-200 bg-white px-3 text-xs font-medium text-slate-800 hover:bg-slate-50"
+                    onClick={async () => {
+                      if (!model) return;
+                      setSaving(true);
+                      try {
+                        await saveFullModelToDB(model);
+                        toast.success('Model saved');
+                      } catch (err) {
+                        console.error('Save failed:', err);
+                        toast.error('Failed to save model');
+                      } finally {
+                        setSaving(false);
+                      }
+                    }}
+                    disabled={saving}
                   >
-                    Save
+                    {saving ? (
+                      <>
+                        <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                        Saving
+                      </>
+                    ) : (
+                      'Save'
+                    )}
                   </Button>
                 </div>
               </div>
@@ -674,8 +695,8 @@ export default function OperationsRouting() {
                     const isConfirming = !isDock && pendingDeleteId === op.id;
 
                     return (
-                      <>
-                        <TableRow key={op.id} className={isConfirming ? 'bg-destructive/10' : ''}>
+                      <React.Fragment key={op.id}>
+                        <TableRow className={isConfirming ? 'bg-destructive/10' : ''}>
                           {isConfirming ? (
                             <TableCell colSpan={totalCols}>
                               <DeleteConfirmInline
@@ -871,7 +892,6 @@ export default function OperationsRouting() {
                         {/* Inline routing editor */}
                         {isExpanded && (
                           <InlineRoutingEditor
-                            key={`route-${op.op_name}`}
                             opName={op.op_name}
                             routes={opRoutes}
                             allOpNames={userOpNames}
@@ -882,7 +902,7 @@ export default function OperationsRouting() {
                             hideDelete={false}
                           />
                         )}
-                      </>
+                      </React.Fragment>
                     );
                   })}
                 </TableBody>

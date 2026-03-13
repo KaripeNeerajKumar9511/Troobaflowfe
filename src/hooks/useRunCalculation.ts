@@ -55,9 +55,9 @@ export function useRunCalculation(): UseRunCalculationReturn {
 
   const [verifyMessages, setVerifyMessages] = useState<{ errors: string[]; warnings: string[] } | null>(null);
 
-  // Subscribe to shared state
-  const runLog = useSyncExternalStore(subscribeRunLog, getRunLogSnapshot);
-  const isRunning = useSyncExternalStore(subscribeIsRunning, getIsRunningSnapshot);
+  // Subscribe to shared state (getServerSnapshot required for SSR/prerender)
+  const runLog = useSyncExternalStore(subscribeRunLog, getRunLogSnapshot, () => []);
+  const isRunning = useSyncExternalStore(subscribeIsRunning, getIsRunningSnapshot, () => false);
 
   const handleRun = useCallback(async (mode: RunMode) => {
     if (!model || _isRunning) return;

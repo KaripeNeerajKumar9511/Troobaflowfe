@@ -267,7 +267,7 @@ export default function ModelLibrary() {
               </Button>
               <Button variant="ghost" size="sm" onClick={handleSignOut} className="gap-1 text-muted-foreground">
                 <LogOut className="h-4 w-4" />
-                <span className="hidden sm:inline">{user?.email}</span>
+                <span className="hidden sm:inline">{user}</span>
               </Button>
             </div>
           </div>

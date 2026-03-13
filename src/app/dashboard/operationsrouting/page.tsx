@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useRef, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useModelStore, type Operation, type RoutingEntry } from '@/stores/modelStore';
 import { db, saveFullModelToDB } from '@/lib/supabaseData';
@@ -28,7 +28,7 @@ import { InlineRoutingEditor } from '@/components/InlineRoutingEditor';
 
 const SYSTEM_OPS = ['DOCK', 'STOCK', 'SCRAP'];
 
-export default function OperationsRouting() {
+function OperationsRoutingContent() {
   usePageTitle('Operations & Routing');
   const model = useModelStore((s) => s.getActiveModel());
   const addOperation = useModelStore((s) => s.addOperation);
@@ -975,5 +975,13 @@ export default function OperationsRouting() {
         onApply={(value) => toast.success(`Interpolated value: ${value} — use it in a time field`)}
       />
     </div>
+  );
+}
+
+export default function OperationsRouting() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center min-h-[200px]"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>}>
+      <OperationsRoutingContent />
+    </Suspense>
   );
 }

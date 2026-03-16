@@ -61,7 +61,55 @@ export interface CalcResults {
   calculatedAt: string;
 }
 
-// ── Helpers ──
+// ── Formula Helpers ──
+
+/** Started = Demand × BOM_Quantity (for components) or Demand (for final products). */
+export function calculateStarted(demand: number, totalScrapRate: number): number {
+  // In this engine, `demand` is the effective demand into the routing
+  // (after IBOM propagation). We invert the scrap relation so that:
+  //   GoodMade = demand
+  //   GoodMade = Started × (1 − totalScrapRate)
+  // ⇒ Started = demand / (1 − totalScrapRate)
+  if (totalScrapRate <= 0) return Math.round(demand);
+  const safeRate = Math.min(totalScrapRate, 0.99);
+  return Math.round(demand / (1 - safeRate));
+}
+
+/** GoodMade = Started × Π (1 − ScrapRate_i). Here we use a single equivalent scrap rate. */
+export function calculateGoodMade(started: number, totalScrapRate: number): number {
+  const safeRate = Math.min(Math.max(totalScrapRate, 0), 0.99);
+  return Math.round(started * (1 - safeRate));
+}
+
+/** Scrap = Started − GoodMade. */
+export function calculateScrap(started: number, goodMade: number): number {
+  return Math.max(0, Math.round(started - goodMade));
+}
+
+/** GoodShipped = min(GoodMade, Demand). */
+export function calculateGoodShipped(goodMade: number, demand: number): number {
+  return Math.round(Math.min(goodMade, demand));
+}
+
+/** WIP = Started − GoodShipped − Scrap. */
+export function calculateWip(started: number, shipped: number, scrap: number): number {
+  return Math.max(0, Math.round(started - shipped - scrap));
+}
+
+/** Utilization = Load / Capacity. */
+export function calculateUtilization(
+  demand: number,
+  cycleTime: number,
+  machines: number,
+  availableTime: number,
+): number {
+  const load = demand * cycleTime;
+  const capacity = machines * availableTime;
+  if (capacity <= 0) return 0;
+  return load / capacity;
+}
+
+// ── Scenario + Engine Helpers ──
 
 /** Apply What-If scenario changes on top of basecase model, returning a virtual model snapshot */
 function applyScenario(model: Model, scenario: Scenario | null): Model {
@@ -421,17 +469,22 @@ export function calculate(model: Model, scenario: Scenario | null = null): CalcR
     const scrapRate = Math.min(totalScrapFraction, 0.5);
 
     const totalMCT = totalSetupMCT + totalRunMCT + totalQueueMCT + totalLotWaitMCT + totalWaitLaborMCT;
-    const goodMade = Math.round(demand);
-    const started = scrapRate > 0 ? Math.round(demand / (1 - scrapRate)) : goodMade;
-    const scrap = started - goodMade;
-    // WIP via Little's Law: WIP = demand_rate × MCT
-    // demand_rate = demand per MCT-time-unit = demand / conv2
-    const demandRate = demand / conv2;
-    const wip = Math.max(0, Math.round(demandRate * totalMCT * 10) / 10);
+
+    // Apply explicit product formulas:
+    //   GoodMade = Started × (1 − ScrapRate)
+    //   Scrap    = Started − GoodMade
+    //   GoodShipped = min(GoodMade, EndDemand)
+    //   WIP      = Started − GoodShipped − Scrap
+    const started = calculateStarted(demand, scrapRate);
+    const goodMade = calculateGoodMade(started, scrapRate);
+    const scrap = calculateScrap(started, goodMade);
+    const demandEnd = product.demand * product.demand_factor;
+    const goodShipped = calculateGoodShipped(goodMade, demandEnd);
+    const wip = calculateWip(started, goodShipped, scrap);
 
     productResults.push({
       id: product.id, name: product.name, demand, lotSize,
-      goodMade, goodShipped: Math.round(product.demand * product.demand_factor),
+      goodMade, goodShipped,
       started, scrap, wip,
       mct: Math.round(totalMCT * 10000) / 10000,
       mctLotWait: Math.round(totalLotWaitMCT * 10000) / 10000,

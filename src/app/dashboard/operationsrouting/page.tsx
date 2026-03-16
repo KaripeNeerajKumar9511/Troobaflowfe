@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useMemo, useRef, useEffect, Suspense } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useModelStore, type Operation, type RoutingEntry } from '@/stores/modelStore';
 import { db, saveFullModelToDB } from '@/lib/supabaseData';
 import { useDeleteConfirmation } from '@/hooks/useDeleteConfirmation';
@@ -46,6 +46,8 @@ function OperationsRoutingContent() {
   const { userLevel } = useUserLevelStore();
   const showFormulaBuilder = isVisible('formula_builder', userLevel);
 
+  const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const selectedProductId = searchParams.get('product') || '';
   const [showAddOp, setShowAddOp] = useState(false);
@@ -480,7 +482,16 @@ function OperationsRoutingContent() {
         products={model.products}
         operations={model.operations}
         selectedProductId={effectiveProductId}
-        onSelect={(id) => { /* URL param wiring can be added later if needed */ setExpandedRoutingOp(null); }}
+        onSelect={(id) => {
+          const params = new URLSearchParams(searchParams.toString());
+          if (id) {
+            params.set('product', id);
+          } else {
+            params.delete('product');
+          }
+          router.push(`${pathname}?${params.toString()}`, { scroll: false });
+          setExpandedRoutingOp(null);
+        }}
         statusPill={routingPill}
       />
 

@@ -192,6 +192,8 @@ interface ModelStore {
 
 const uid = () => crypto.randomUUID();
 
+const ACTIVE_MODEL_STORAGE_KEY = 'rmct_active_model_id';
+
 const defaultOpTimes = { equip_setup_piece: 0, equip_setup_tbatch: 0, equip_run_lot: 0, equip_run_tbatch: 0, labor_setup_piece: 0, labor_setup_tbatch: 0, labor_run_lot: 0, labor_run_tbatch: 0, oper1: 0, oper2: 0, oper3: 0, oper4: 0 };
 
 export const defaultParamNames: ParamNames = {
@@ -384,12 +386,25 @@ export const useModelStore = create<ModelStore>((set, get) => ({
     try {
       const models = await fetchAllModels();
       if (models.length > 0) {
-        set((state) => ({
-          models,
-          modelsLoaded: true,
-          modelsLoading: false,
-          activeModelId: state.activeModelId ?? models[0].id,
-        }));
+        // Try to restore the last active model from localStorage if set.
+        let restoredActiveId: string | null = null;
+        if (typeof window !== 'undefined') {
+          restoredActiveId = window.localStorage.getItem(ACTIVE_MODEL_STORAGE_KEY);
+        }
+        set((state) => {
+          const effectiveActiveId =
+            state.activeModelId && models.some(m => m.id === state.activeModelId)
+              ? state.activeModelId
+              : restoredActiveId && models.some(m => m.id === restoredActiveId)
+              ? restoredActiveId
+              : models[0].id;
+          return {
+            models,
+            modelsLoaded: true,
+            modelsLoading: false,
+            activeModelId: effectiveActiveId,
+          };
+        });
       } else {
         const demo = createDemoModel();
         set({
@@ -411,7 +426,16 @@ export const useModelStore = create<ModelStore>((set, get) => ({
     }
   },
 
-  setActiveModel: (id) => set({ activeModelId: id }),
+  setActiveModel: (id) => {
+    set({ activeModelId: id });
+    if (typeof window !== 'undefined') {
+      if (id) {
+        window.localStorage.setItem(ACTIVE_MODEL_STORAGE_KEY, id);
+      } else {
+        window.localStorage.removeItem(ACTIVE_MODEL_STORAGE_KEY);
+      }
+    }
+  },
 
   getActiveModel: () => {
     const { models, activeModelId } = get();
@@ -473,7 +497,21 @@ export const useModelStore = create<ModelStore>((set, get) => ({
   },
 
   deleteModel: (id) => {
-    set((s) => ({ models: s.models.filter((m) => m.id !== id) }));
+    set((s) => {
+      const remaining = s.models.filter((m) => m.id !== id);
+      let nextActive = s.activeModelId;
+      if (s.activeModelId === id) {
+        nextActive = remaining[0]?.id ?? null;
+        if (typeof window !== 'undefined') {
+          if (nextActive) {
+            window.localStorage.setItem(ACTIVE_MODEL_STORAGE_KEY, nextActive);
+          } else {
+            window.localStorage.removeItem(ACTIVE_MODEL_STORAGE_KEY);
+          }
+        }
+      }
+      return { models: remaining, activeModelId: nextActive };
+    });
     db.deleteModel(id);
   },
 

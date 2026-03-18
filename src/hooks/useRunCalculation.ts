@@ -4,6 +4,7 @@ import { useScenarioStore } from '@/stores/scenarioStore';
 import { useResultsStore } from '@/stores/resultsStore';
 import { calculate, verifyData, type CalcResults } from '@/lib/calculationEngine';
 import { toast } from 'sonner';
+import api from '@/lib/api';
 
 export type RunMode = 'full' | 'verify' | 'util_only';
 
@@ -111,49 +112,70 @@ export function useRunCalculation(): UseRunCalculationReturn {
     const startTime = Date.now();
     const resultKey = runScenario ? runScenario.id : 'basecase';
 
-    return new Promise<void>(resolve => {
-      setTimeout(async () => {
-        const calcResults = calculate(model, runScenario || undefined);
-        setResults(resultKey, calcResults);
-        setRunStatus(model.id, 'current');
-        if (runScenario) markCalculated(runScenario.id);
-        setGlobalIsRunning(false);
-        setVerifyMessages(null);
+    return new Promise<void>((resolve, reject) => {
+      const runCalculation = async () => {
+        try {
+          let calcResults: CalcResults;
 
-        const durationMs = Date.now() - startTime;
-        const hasErrors = calcResults.errors.length > 0;
-        const hasWarnings = calcResults.overLimitResources.length > 0;
+          if (mode === 'full') {
+            const { data } = await api.post<{ results: CalcResults }>('/api/simulations/full-calculate', {
+              model,
+              scenario: runScenario ?? null,
+            });
+            calcResults = data.results;
+          } else {
+            calcResults = calculate(model, runScenario || undefined);
+          }
 
-        const entry: RunLogEntry = {
-          id: crypto.randomUUID(),
-          timestamp: new Date().toISOString(),
-          mode,
-          scenarioName: runScenario?.name || 'Basecase',
-          durationMs,
-          status: hasErrors ? 'error' : hasWarnings ? 'warning' : 'success',
-        };
-        _runLog = [entry, ..._runLog].slice(0, 5);
-        notifyRunLog();
+          setResults(resultKey, calcResults);
+          setRunStatus(model.id, 'current');
+          if (runScenario) markCalculated(runScenario.id);
+          setGlobalIsRunning(false);
+          setVerifyMessages(null);
 
-        // Persist to Supabase
-        const { scenarioDb } = await import('@/lib/scenarioDb');
-        if (runScenario) {
-          scenarioDb.saveResults(runScenario.id, calcResults);
-        } else {
-          scenarioDb.saveBasecaseResults(model.id, calcResults);
+          const durationMs = Date.now() - startTime;
+          const hasErrors = calcResults.errors.length > 0;
+          const hasWarnings = calcResults.overLimitResources.length > 0;
+
+          const entry: RunLogEntry = {
+            id: crypto.randomUUID(),
+            timestamp: new Date().toISOString(),
+            mode,
+            scenarioName: runScenario?.name || 'Basecase',
+            durationMs,
+            status: hasErrors ? 'error' : hasWarnings ? 'warning' : 'success',
+          };
+          _runLog = [entry, ..._runLog].slice(0, 5);
+          notifyRunLog();
+
+          // Persist to Supabase
+          const { scenarioDb } = await import('@/lib/scenarioDb');
+          if (runScenario) {
+            scenarioDb.saveResults(runScenario.id, calcResults);
+          } else {
+            scenarioDb.saveBasecaseResults(model.id, calcResults);
+          }
+          const { db } = await import('@/lib/supabaseData');
+          db.updateModel(model.id, { run_status: 'current', last_run_at: new Date().toISOString() });
+
+          if (hasErrors) {
+            toast.error(calcResults.errors[0]);
+          } else if (hasWarnings) {
+            toast.warning(`${calcResults.overLimitResources.length} resource(s) exceed utilization limit`);
+          } else {
+            toast.success(mode === 'full' ? 'Full calculation complete — all production targets achievable' : 'Utilization calculation complete');
+          }
+          resolve();
+        } catch (err: unknown) {
+          setGlobalIsRunning(false);
+          const message = err && typeof err === 'object' && 'response' in err
+            ? (err as { response?: { data?: { error?: string } } }).response?.data?.error
+            : err instanceof Error ? err.message : 'Full calculate failed';
+          toast.error(String(message));
+          reject(err);
         }
-        const { db } = await import('@/lib/supabaseData');
-        db.updateModel(model.id, { run_status: 'current', last_run_at: new Date().toISOString() });
-
-        if (hasErrors) {
-          toast.error(calcResults.errors[0]);
-        } else if (hasWarnings) {
-          toast.warning(`${calcResults.overLimitResources.length} resource(s) exceed utilization limit`);
-        } else {
-          toast.success(mode === 'full' ? 'Full calculation complete — all production targets achievable' : 'Utilization calculation complete');
-        }
-        resolve();
-      }, 100);
+      };
+      setTimeout(() => runCalculation(), 100);
     });
   }, [model, runScenario, setResults, setRunStatus, markCalculated]);
 

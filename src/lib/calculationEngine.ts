@@ -51,10 +51,25 @@ export interface ProductResult {
   mctRun: number;
 }
 
+// Optional per-operation details used by the UI when available.
+// The current `calculate()` implementation may not populate this yet.
+export interface OperationResult {
+  operation: string;
+  product: string;
+  ueset: number;
+  uerun: number;
+  ulset: number;
+  ulrun: number;
+  flowtime: number;
+  flowtime_shifts?: number;
+  visit_prob: number;
+}
+
 export interface CalcResults {
   equipment: EquipmentResult[];
   labor: LaborResult[];
   products: ProductResult[];
+  operations?: OperationResult[];
   warnings: string[];
   errors: string[];
   overLimitResources: string[];

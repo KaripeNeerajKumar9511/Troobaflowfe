@@ -2866,7 +2866,7 @@ function ProductionChart({ results, model, isMultiScenario, chartScenarios }: {
   const [showTable, setShowTable] = useState(false);
   const data = useMemo(() => buildProductionData(results, model), [results, model]);
   const { sorted, sort, handleSort } = useSortableTable(data, 'total', 'desc');
-
+  console.log('data', data); 
   if (data.length === 0) return (
     <Card><CardContent className="py-12 text-center"><BarChart3 className="h-8 w-8 mx-auto text-muted-foreground/40 mb-2" /><p className="text-sm text-muted-foreground">Run the model to see production breakdown.</p></CardContent></Card>
   );

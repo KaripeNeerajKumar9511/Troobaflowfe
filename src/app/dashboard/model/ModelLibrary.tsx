@@ -18,7 +18,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from '@/components/ui/Select';
+} from '@/components/ui/select';
 import {
   Plus, Search, Star, MoreVertical, Copy, Trash2, Archive,
   LayoutGrid, List, Package, Cpu, Users, Pencil, RotateCcw, LogOut,
@@ -58,6 +58,7 @@ export default function ModelLibrary() {
   const [renameTarget, setRenameTarget] = useState<Model | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [importing, setImporting] = useState(false);
+  const [showAccountInfo, setShowAccountInfo] = useState(false);
 
   useEffect(() => {
     if (!modelsLoaded && !modelsLoading) loadModels();
@@ -81,6 +82,17 @@ export default function ModelLibrary() {
     });
     router.push('/dashboard/generaldata');
   };
+
+  const displayName = user
+    ? (() => {
+        const n = user.name?.trim();
+        if (n && n !== user.email) return n;
+        const local = user.email.split('@')[0] ?? '';
+        return local
+          .replace(/[._]/g, ' ')
+          .replace(/\b\w/g, (c) => c.toUpperCase());
+      })()
+    : '';
 
   const handleDelete = () => {
     if (!deleteTarget || deleteConfirmName !== deleteTarget.name) return;
@@ -265,9 +277,20 @@ export default function ModelLibrary() {
               <Button variant="ghost" size="icon" onClick={() => router.push('/settings')} title="Settings">
                 <Settings className="h-4 w-4" />
               </Button>
-              <Button variant="ghost" size="sm" onClick={handleSignOut} className="gap-1 text-muted-foreground">
+              {user && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="gap-1 text-muted-foreground max-w-[200px]"
+                  onClick={() => setShowAccountInfo(true)}
+                  title="Account"
+                >
+                  <span className="hidden sm:inline truncate">{displayName}</span>
+                </Button>
+              )}
+              <Button variant="ghost" size="icon" onClick={handleSignOut} title="Sign out" className="text-muted-foreground">
                 <LogOut className="h-4 w-4" />
-                <span className="hidden sm:inline">{user}</span>
               </Button>
             </div>
           </div>
@@ -428,6 +451,20 @@ export default function ModelLibrary() {
           <DialogFooter>
             <Button variant="ghost" onClick={() => setRenameTarget(null)}>Cancel</Button>
             <Button onClick={handleRename} disabled={!renameValue.trim()}>Rename</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Account — email shown on demand */}
+      <Dialog open={showAccountInfo} onOpenChange={setShowAccountInfo}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Account</DialogTitle>
+            <DialogDescription>Signed in as</DialogDescription>
+          </DialogHeader>
+          <p className="font-mono text-sm break-all rounded-md border bg-muted/50 px-3 py-2">{user?.email ?? '—'}</p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowAccountInfo(false)}>Close</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

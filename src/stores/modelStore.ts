@@ -1,6 +1,5 @@
 import { create } from 'zustand';
 import { fetchAllModels, saveFullModelToDB, db } from '@/lib/supabaseData';
-import { USE_FRONTEND_ONLY } from '@/lib/frontendOnly';
 
 export interface LaborGroup {
   id: string;
@@ -192,8 +191,6 @@ interface ModelStore {
 
 const uid = () => crypto.randomUUID();
 
-const ACTIVE_MODEL_STORAGE_KEY = 'rmct_active_model_id';
-
 const defaultOpTimes = { equip_setup_piece: 0, equip_setup_tbatch: 0, equip_run_lot: 0, equip_run_tbatch: 0, labor_setup_piece: 0, labor_setup_tbatch: 0, labor_run_lot: 0, labor_run_tbatch: 0, oper1: 0, oper2: 0, oper3: 0, oper4: 0 };
 
 export const defaultParamNames: ParamNames = {
@@ -373,69 +370,16 @@ export const useModelStore = create<ModelStore>((set, get) => ({
     if (get().modelsLoading) return;
     if (get().modelsLoaded && !force) return;
     set({ modelsLoading: true });
-    if (USE_FRONTEND_ONLY) {
-      const demo = createDemoModel();
-      set({
-        models: [demo],
-        modelsLoaded: true,
-        modelsLoading: false,
-        activeModelId: demo.id,
-      });
-      return;
-    }
     try {
       const models = await fetchAllModels();
-      if (models.length > 0) {
-        // Try to restore the last active model from localStorage if set.
-        let restoredActiveId: string | null = null;
-        if (typeof window !== 'undefined') {
-          restoredActiveId = window.localStorage.getItem(ACTIVE_MODEL_STORAGE_KEY);
-        }
-        set((state) => {
-          const effectiveActiveId =
-            state.activeModelId && models.some(m => m.id === state.activeModelId)
-              ? state.activeModelId
-              : restoredActiveId && models.some(m => m.id === restoredActiveId)
-              ? restoredActiveId
-              : models[0].id;
-          return {
-            models,
-            modelsLoaded: true,
-            modelsLoading: false,
-            activeModelId: effectiveActiveId,
-          };
-        });
-      } else {
-        const demo = createDemoModel();
-        set({
-          models: [demo],
-          modelsLoaded: true,
-          modelsLoading: false,
-          activeModelId: demo.id,
-        });
-      }
+      set({ models, modelsLoaded: true, modelsLoading: false });
     } catch (err) {
       console.error('loadModels error:', err);
-      const demo = createDemoModel();
-      set({
-        models: [demo],
-        modelsLoaded: true,
-        modelsLoading: false,
-        activeModelId: demo.id,
-      });
+      set({ modelsLoading: false });
     }
   },
 
-  setActiveModel: (id) => {
-    set({ activeModelId: id });
-    if (typeof window !== 'undefined') {
-      if (id) {
-        window.localStorage.setItem(ACTIVE_MODEL_STORAGE_KEY, id);
-      } else {
-        window.localStorage.removeItem(ACTIVE_MODEL_STORAGE_KEY);
-      }
-    }
-  },
+  setActiveModel: (id) => set({ activeModelId: id }),
 
   getActiveModel: () => {
     const { models, activeModelId } = get();
@@ -497,21 +441,7 @@ export const useModelStore = create<ModelStore>((set, get) => ({
   },
 
   deleteModel: (id) => {
-    set((s) => {
-      const remaining = s.models.filter((m) => m.id !== id);
-      let nextActive = s.activeModelId;
-      if (s.activeModelId === id) {
-        nextActive = remaining[0]?.id ?? null;
-        if (typeof window !== 'undefined') {
-          if (nextActive) {
-            window.localStorage.setItem(ACTIVE_MODEL_STORAGE_KEY, nextActive);
-          } else {
-            window.localStorage.removeItem(ACTIVE_MODEL_STORAGE_KEY);
-          }
-        }
-      }
-      return { models: remaining, activeModelId: nextActive };
-    });
+    set((s) => ({ models: s.models.filter((m) => m.id !== id) }));
     db.deleteModel(id);
   },
 
@@ -553,7 +483,7 @@ export const useModelStore = create<ModelStore>((set, get) => ({
     set((s) => ({
       models: s.models.map((m) => m.id === modelId ? { ...m, param_names: { ...m.param_names, ...data }, updated_at: new Date().toISOString() } : m),
     }));
-    db.upsertParamNames(modelId, data);
+    db.upsertParamNames(modelId, data).catch((err) => console.error('updateParamNames:', err));
   },
 
   addLabor: (modelId, labor) => {
@@ -567,7 +497,7 @@ export const useModelStore = create<ModelStore>((set, get) => ({
     set((s) => ({
       models: s.models.map((m) => m.id === modelId ? { ...m, labor: m.labor.map((l) => l.id === laborId ? { ...l, ...data } : l), updated_at: new Date().toISOString(), run_status: 'needs_recalc' as const } : m),
     }));
-    db.updateLabor(laborId, data);
+    db.updateLabor(modelId, laborId, data);
     db.updateModel(modelId, { run_status: 'needs_recalc' });
   },
   deleteLabor: (modelId, laborId) => {
@@ -579,7 +509,7 @@ export const useModelStore = create<ModelStore>((set, get) => ({
         updated_at: new Date().toISOString(), run_status: 'needs_recalc' as const,
       } : m),
     }));
-    db.deleteLabor(laborId);
+    db.deleteLabor(modelId, laborId);
     db.updateModel(modelId, { run_status: 'needs_recalc' });
   },
 
@@ -594,7 +524,7 @@ export const useModelStore = create<ModelStore>((set, get) => ({
     set((s) => ({
       models: s.models.map((m) => m.id === modelId ? { ...m, equipment: m.equipment.map((e) => e.id === eqId ? { ...e, ...data } : e), updated_at: new Date().toISOString(), run_status: 'needs_recalc' as const } : m),
     }));
-    db.updateEquipment(eqId, data);
+    db.updateEquipment(modelId, eqId, data);
     db.updateModel(modelId, { run_status: 'needs_recalc' });
   },
   deleteEquipment: (modelId, eqId) => {
@@ -606,7 +536,7 @@ export const useModelStore = create<ModelStore>((set, get) => ({
         updated_at: new Date().toISOString(), run_status: 'needs_recalc' as const,
       } : m),
     }));
-    db.deleteEquipment(eqId);
+    db.deleteEquipment(modelId, eqId);
     db.updateModel(modelId, { run_status: 'needs_recalc' });
   },
 
@@ -621,7 +551,7 @@ export const useModelStore = create<ModelStore>((set, get) => ({
     set((s) => ({
       models: s.models.map((m) => m.id === modelId ? { ...m, products: m.products.map((p) => p.id === productId ? { ...p, ...data } : p), updated_at: new Date().toISOString(), run_status: 'needs_recalc' as const } : m),
     }));
-    db.updateProduct(productId, data);
+    db.updateProduct(modelId, productId, data);
     db.updateModel(modelId, { run_status: 'needs_recalc' });
   },
   deleteProduct: (modelId, productId) => {
@@ -650,7 +580,7 @@ export const useModelStore = create<ModelStore>((set, get) => ({
     set((s) => ({
       models: s.models.map((m) => m.id === modelId ? { ...m, operations: m.operations.map((o) => o.id === opId ? { ...o, ...data } : o), updated_at: new Date().toISOString(), run_status: 'needs_recalc' as const } : m),
     }));
-    db.updateOperation(opId, data);
+    db.updateOperation(modelId, opId, data);
     db.updateModel(modelId, { run_status: 'needs_recalc' });
   },
   deleteOperation: (modelId, opId) => {
@@ -670,7 +600,7 @@ export const useModelStore = create<ModelStore>((set, get) => ({
         };
       }),
     }));
-    if (op) db.deleteOperation(modelId, opId, op.op_name, op.product_id);
+    if (op) db.deleteOperation(modelId, opId);
     db.updateModel(modelId, { run_status: 'needs_recalc' });
   },
 
@@ -679,21 +609,21 @@ export const useModelStore = create<ModelStore>((set, get) => ({
       models: s.models.map((m) => m.id === modelId ? { ...m, routing: [...m.routing, entry], updated_at: new Date().toISOString(), run_status: 'needs_recalc' as const } : m),
     }));
     const model = get().models.find(m => m.id === modelId);
-    if (model) db.insertRouting(modelId, entry, model.operations);
+    db.insertRouting(modelId, entry);
     db.updateModel(modelId, { run_status: 'needs_recalc' });
   },
   updateRouting: (modelId, entryId, data) => {
     set((s) => ({
       models: s.models.map((m) => m.id === modelId ? { ...m, routing: m.routing.map((r) => r.id === entryId ? { ...r, ...data } : r), updated_at: new Date().toISOString(), run_status: 'needs_recalc' as const } : m),
     }));
-    db.updateRouting(entryId, data);
+    db.updateRouting(modelId, entryId, data);
     db.updateModel(modelId, { run_status: 'needs_recalc' });
   },
   deleteRouting: (modelId, entryId) => {
     set((s) => ({
       models: s.models.map((m) => m.id === modelId ? { ...m, routing: m.routing.filter((r) => r.id !== entryId), updated_at: new Date().toISOString(), run_status: 'needs_recalc' as const } : m),
     }));
-    db.deleteRouting(entryId);
+    db.deleteRouting(modelId, entryId);
     db.updateModel(modelId, { run_status: 'needs_recalc' });
   },
   setRouting: (modelId, productId, entries) => {
@@ -705,7 +635,7 @@ export const useModelStore = create<ModelStore>((set, get) => ({
       } : m),
     }));
     const model = get().models.find(m => m.id === modelId);
-    if (model) db.setRouting(modelId, productId, entries, model.operations);
+    db.setRouting(modelId, productId, entries);
     db.updateModel(modelId, { run_status: 'needs_recalc' });
   },
 
@@ -720,14 +650,14 @@ export const useModelStore = create<ModelStore>((set, get) => ({
     set((s) => ({
       models: s.models.map((m) => m.id === modelId ? { ...m, ibom: m.ibom.map((e) => e.id === entryId ? { ...e, ...data } : e), updated_at: new Date().toISOString(), run_status: 'needs_recalc' as const } : m),
     }));
-    db.updateIBOM(entryId, data);
+    db.updateIBOM(modelId, entryId, data);
     db.updateModel(modelId, { run_status: 'needs_recalc' });
   },
   deleteIBOM: (modelId, entryId) => {
     set((s) => ({
       models: s.models.map((m) => m.id === modelId ? { ...m, ibom: m.ibom.filter((e) => e.id !== entryId), updated_at: new Date().toISOString(), run_status: 'needs_recalc' as const } : m),
     }));
-    db.deleteIBOM(entryId);
+    db.deleteIBOM(modelId, entryId);
     db.updateModel(modelId, { run_status: 'needs_recalc' });
   },
   setIBOMForParent: (modelId, parentId, entries) => {

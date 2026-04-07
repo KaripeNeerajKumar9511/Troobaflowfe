@@ -220,7 +220,7 @@ export const useScenarioStore = create<ScenarioStore>((set, get) => ({
         updatedAt: new Date().toISOString(),
       } : sc),
     }));
-    scenarioDb.removeChange(scenarioId, changeId);
+    scenarioDb.removeChange(changeId);
   },
 
   applyScenarioChange: (scenarioId, dataType, entityId, entityName, field, fieldLabel, whatIfValue) => {

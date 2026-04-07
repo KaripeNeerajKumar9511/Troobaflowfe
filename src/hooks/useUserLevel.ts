@@ -1,6 +1,19 @@
 import { create } from 'zustand';
+import { apiFetch, resolveApiUrl, AUTH_PROFILE } from '@/lib/api';
 
 export type UserLevel = 'novice' | 'standard' | 'advanced';
+
+function levelFromNumber(n: number): UserLevel {
+  if (n <= 1) return 'novice';
+  if (n >= 4) return 'advanced';
+  return 'standard';
+}
+
+function numberFromLevel(level: UserLevel): number {
+  if (level === 'novice') return 1;
+  if (level === 'advanced') return 5;
+  return 3;
+}
 
 /** All gated feature keys — the single source of truth */
 export type FeatureKey =
@@ -79,10 +92,29 @@ export const useUserLevelStore = create<UserLevelStore>((set) => ({
   loading: true,
 
   fetchUserLevel: async () => {
-    set({ userLevel: 'standard', loading: false });
+    try {
+      const res = await fetch(resolveApiUrl(AUTH_PROFILE), { credentials: 'include' });
+      if (!res.ok) {
+        set({ loading: false });
+        return;
+      }
+      const d = await res.json();
+      if (!d.authenticated || d.error || !d.email) {
+        set({ loading: false });
+        return;
+      }
+      const n = typeof d.user_level === 'number' ? d.user_level : 3;
+      set({ userLevel: levelFromNumber(n), loading: false });
+    } catch {
+      set({ loading: false });
+    }
   },
 
   setUserLevel: async (level) => {
-    set({ userLevel: level });
+    const res = await apiFetch('/api/profile/patch/', {
+      method: 'PATCH',
+      body: JSON.stringify({ user_level: numberFromLevel(level) }),
+    });
+    if (res.ok) set({ userLevel: level });
   },
 }));

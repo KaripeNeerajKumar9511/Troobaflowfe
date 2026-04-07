@@ -1,12 +1,9 @@
 import type { Config } from "tailwindcss";
 
-const config: Config = {
-  darkMode: "class",
-  content: [
-    "./app/**/*.{ts,tsx}",
-    "./components/**/*.{ts,tsx}",
-    "./src/**/*.{ts,tsx}",
-  ],
+export default {
+  darkMode: ["class"],
+  content: ["./pages/**/*.{ts,tsx}", "./components/**/*.{ts,tsx}", "./app/**/*.{ts,tsx}", "./src/**/*.{ts,tsx}"],
+  prefix: "",
   theme: {
     container: {
       center: true,
@@ -17,8 +14,8 @@ const config: Config = {
     },
     extend: {
       fontFamily: {
-        sans: ['Inter', 'system-ui', 'sans-serif'],
-        mono: ['JetBrains Mono', 'monospace'],
+        sans: ['DM Sans', 'Aktiv Grotesk', 'Neue Haas Grotesk', 'sans-serif'],
+        mono: ['DM Mono', 'Roboto Mono', 'monospace'],
       },
       colors: {
         border: "hsl(var(--border))",
@@ -79,6 +76,7 @@ const config: Config = {
           "accent-foreground": "hsl(var(--sidebar-accent-foreground))",
           border: "hsl(var(--sidebar-border))",
           ring: "hsl(var(--sidebar-ring))",
+          muted: "hsl(var(--sidebar-muted))",
         },
       },
       borderRadius: {
@@ -99,16 +97,18 @@ const config: Config = {
           from: { opacity: "0", transform: "translateY(4px)" },
           to: { opacity: "1", transform: "translateY(0)" },
         },
+        "pulse-brand": {
+          "0%, 100%": { opacity: "0.7" },
+          "50%": { opacity: "0.25" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
         "fade-in": "fade-in 0.3s ease-out",
+        "pulse-brand": "pulse-brand 1.4s ease-in-out infinite",
       },
     },
   },
   plugins: [require("tailwindcss-animate")],
-};
-
-export default config;
-
+} satisfies Config;

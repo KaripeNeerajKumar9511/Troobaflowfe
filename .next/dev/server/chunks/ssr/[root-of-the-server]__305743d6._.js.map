@@ -1,0 +1,6 @@
+{
+  "version": 3,
+  "sources": [],
+  "sections": [
+    {"offset": {"line": 18, "column": 0}, "map": {"version":3,"sources":["file:///C:/Techsprout.ai%20projects/Trooba%20RMCT%20v.1/frontend/src/app/page.tsx"],"sourcesContent":["export default function Home() {\r\n  return (\r\n    <div className=\"flex flex-col items-center justify-center h-screen gap-6\">\r\n\r\n      <h1 className=\"text-3xl font-bold\">\r\n        RMCT Platform\r\n      </h1>\r\n\r\n      <p>\r\n        Rapid Manufacturing Critical Path Tool\r\n      </p>\r\n\r\n      <div className=\"flex gap-4\">\r\n\r\n        <a\r\n          href=\"/login\"\r\n          className=\"bg-black text-white px-4 py-2 rounded\"\r\n        >\r\n          Login\r\n        </a>\r\n\r\n        <a\r\n          href=\"/signup\"\r\n          className=\"border px-4 py-2 rounded\"\r\n        >\r\n          Signup\r\n        </a>\r\n\r\n      </div>\r\n\r\n    </div>\r\n  )\r\n}\r\n\r\n"],"names":[],"mappings":";;;;;;AAAe,SAAS;IACtB,qBACE,8OAAC;QAAI,WAAU;;0BAEb,8OAAC;gBAAG,WAAU;0BAAqB;;;;;;0BAInC,8OAAC;0BAAE;;;;;;0BAIH,8OAAC;gBAAI,WAAU;;kCAEb,8OAAC;wBACC,MAAK;wBACL,WAAU;kCACX;;;;;;kCAID,8OAAC;wBACC,MAAK;wBACL,WAAU;kCACX;;;;;;;;;;;;;;;;;;AAQT"}}]
+}

@@ -7,8 +7,9 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
 import { ArrowLeft, Eye } from 'lucide-react';
-import { calculate } from '@/lib/calculationEngine';
+import { fullCalculate } from '@/lib/simulationApi';
 import { useModelStore } from '@/stores/modelStore';
+import { toast } from 'sonner';
 
 export function WhatIfBanner() {
   const activeScenario = useScenarioStore((s) => s.getActiveScenario());
@@ -35,12 +36,18 @@ export function WhatIfBanner() {
     }
   };
 
-  const handleSaveAndReturn = () => {
+  const handleSaveAndReturn = async () => {
     const model = useModelStore.getState().models.find(m => m.id === activeScenario.modelId);
     if (model) {
-      const results = calculate(model, activeScenario);
-      useResultsStore.getState().setResults(activeScenario.id, results);
-      markCalculated(activeScenario.id);
+      try {
+        const results = await fullCalculate(model, activeScenario);
+        useResultsStore.getState().setResults(activeScenario.id, results);
+        markCalculated(activeScenario.id);
+      } catch (e) {
+        console.error(e);
+        toast.error(e instanceof Error ? e.message : 'Calculation failed');
+        return;
+      }
     }
     setActiveScenario(null);
     setShowReturnModal(false);

@@ -4,10 +4,12 @@ import { useUserLevelStore, isVisible, type FeatureKey } from '@/hooks/useUserLe
 import { NavLink } from '@/components/NavLink';
 import {
   LayoutDashboard, Settings2, Users, Cpu, Package, GitBranch,
-  Network, Play, FlaskConical, FileText, Wrench, Grid3X3, Menu, X
+  Network, Play, FlaskConical, FileText, Wrench, Sparkles, Menu, X
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
+import troobaLogoDark from '@/assets/trooba-logo-dark.svg';
+import troobaMarkDark from '@/assets/trooba-mark-dark.svg';
 
 const navItems: { label: string; icon: typeof LayoutDashboard; path: string; feature: FeatureKey | null }[] = [
   { label: 'Overview', icon: LayoutDashboard, path: 'overview', feature: null },
@@ -16,9 +18,8 @@ const navItems: { label: string; icon: typeof LayoutDashboard; path: string; fea
   { label: 'Equipment', icon: Cpu, path: 'equipment', feature: null },
   { label: 'Products', icon: Package, path: 'products', feature: null },
   { label: 'Operations', icon: GitBranch, path: 'operations', feature: null },
-  { label: 'All Operations', icon: Grid3X3, path: 'all-operations', feature: 'all_operations' },
-  
   { label: 'IBOM', icon: Network, path: 'ibom', feature: null },
+  // { label: 'Trooba Intelligence', icon: Sparkles, path: 'intelligence', feature: 'all_operations' },
   { label: 'Run & Results', icon: Play, path: 'run', feature: null },
   { label: 'What-If Studio', icon: FlaskConical, path: 'whatif', feature: null },
   { label: 'Reports', icon: FileText, path: 'reports', feature: null },
@@ -43,10 +44,10 @@ export function ModelSidebar() {
 
   const sidebarContent = (
     <>
-      <div className="px-4 py-3 border-b border-sidebar-border flex items-center justify-between">
-        <div className="text-xs font-mono text-sidebar-foreground/50 uppercase tracking-wider">Model Workspace</div>
+      <div className="px-4 py-3 border-b border-[rgba(255,255,255,0.08)] flex items-center justify-between">
+        <div className="font-mono text-[11px] uppercase tracking-[0.14em] text-[#C0C8D4]">Model Workspace</div>
         {/* Close button on mobile */}
-        <Button variant="ghost" size="icon" className="h-6 w-6 md:hidden" onClick={() => setMobileOpen(false)}>
+        <Button variant="ghost" size="icon" className="h-6 w-6 md:hidden text-sidebar-foreground hover:bg-sidebar-accent" onClick={() => setMobileOpen(false)}>
           <X className="h-4 w-4" />
         </Button>
       </div>
@@ -58,10 +59,10 @@ export function ModelSidebar() {
             <NavLink
               key={item.path}
               to={to}
-              className={`flex items-center gap-2.5 px-3 py-2 rounded-md text-sm transition-colors ${
+              className={`flex items-center gap-2.5 mx-1.5 px-3 py-[7px] rounded-[5px] text-[13px] font-medium transition-colors ${
                 isActive
-                  ? 'bg-sidebar-accent text-sidebar-primary font-medium'
-                  : 'text-sidebar-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground'
+                  ? 'bg-sidebar-accent text-sidebar-foreground border-l-[3px] border-l-primary'
+                  : 'text-[#9CA3AF] hover:bg-sidebar-accent hover:text-sidebar-foreground'
               }`}
               activeClassName=""
             >
@@ -71,8 +72,8 @@ export function ModelSidebar() {
           );
         })}
       </nav>
-      <div className="px-4 py-3 border-t border-sidebar-border">
-        <div className="text-xs text-sidebar-foreground/40">
+      <div className="px-4 py-3 border-t border-[rgba(255,255,255,0.08)]">
+        <div className="text-xs font-mono text-sidebar-muted">
           {model.products.length} products · {model.equipment.length} equip · {model.labor.length} labor
         </div>
       </div>
@@ -85,7 +86,7 @@ export function ModelSidebar() {
       <Button
         variant="ghost"
         size="icon"
-        className="fixed top-12 left-2 z-40 h-8 w-8 md:hidden bg-background border shadow-sm"
+        className="fixed top-12 left-2 z-40 h-8 w-8 md:hidden bg-sidebar text-sidebar-foreground border border-[rgba(255,255,255,0.12)] shadow-sm"
         onClick={() => setMobileOpen(true)}
       >
         <Menu className="h-4 w-4" />
@@ -94,9 +95,9 @@ export function ModelSidebar() {
       {/* Mobile overlay */}
       {mobileOpen && (
         <div className="fixed inset-0 z-40 md:hidden" onClick={() => setMobileOpen(false)}>
-          <div className="absolute inset-0 bg-black/40" />
+          <div className="absolute inset-0 bg-[rgba(0,0,0,0.6)]" />
           <aside
-            className="absolute left-0 top-0 bottom-0 w-64 bg-sidebar border-r border-sidebar-border flex flex-col z-50 animate-in slide-in-from-left duration-200"
+            className="absolute left-0 top-0 bottom-0 w-64 bg-sidebar flex flex-col z-50 animate-in slide-in-from-left duration-200"
             onClick={e => e.stopPropagation()}
           >
             {sidebarContent}
@@ -105,7 +106,7 @@ export function ModelSidebar() {
       )}
 
       {/* Desktop sidebar */}
-      <aside className="w-56 bg-sidebar border-r border-sidebar-border flex-col shrink-0 hidden md:flex">
+      <aside className="w-56 bg-sidebar border-r border-[rgba(255,255,255,0.08)] flex-col shrink-0 hidden md:flex">
         {sidebarContent}
       </aside>
     </>

@@ -258,6 +258,14 @@ type OperMetric = {
   wip: number;
   mctAtOp: number;
   visits: number;
+  timeWaitingEquipment: number;
+  timeWaitingLabor: number;
+  timeInSetup: number;
+  timeInRun: number;
+  timeWaitingRestOfLot: number;
+  visitsPerGoodPiece: number;
+  noOfSetups: number;
+  avgLotSize: number;
 };
 
 function buildOperMetrics(model: Model, results: CalcResults): OperMetric[] {
@@ -461,6 +469,15 @@ function buildOperMetrics(model: Model, results: CalcResults): OperMetric[] {
       ? (oprResult.visit_prob * 100)
       : (demand > 0 ? (numLots * lotSize / demand) * 100 : 100);
 
+    const timeWaitingEquipment = oprResult ? Number(oprResult.w_equip || 0) : 0;
+    const timeWaitingLabor = oprResult ? Number(oprResult.w_labor || 0) : 0;
+    const timeInSetup = oprResult ? Number(oprResult.w_setup || 0) : 0;
+    const timeInRun = oprResult ? Number(oprResult.w_run || 0) : 0;
+    const timeWaitingRestOfLot = oprResult ? Number(oprResult.w_lot || 0) : 0;
+    const visitsPerGoodPiece = oprResult ? Number(oprResult.visits_per_good || 0) : 0;
+    const noOfSetups = oprResult ? Number(oprResult.n_setups || 0) : 0;
+    const avgLotSize = oprResult ? Number(oprResult.avg_lot_size || 0) : lsize;
+
     return {
       opId: op.id,
       opName: op.op_name,
@@ -486,6 +503,14 @@ function buildOperMetrics(model: Model, results: CalcResults): OperMetric[] {
       wip:     Math.round(wipShare * 10) / 10,
       mctAtOp: Math.round(mctAtOp * 10000) / 10000,
       visits:  Math.round(visits  * 10) / 10,
+      timeWaitingEquipment: Math.round(timeWaitingEquipment * 10000) / 10000,
+      timeWaitingLabor: Math.round(timeWaitingLabor * 10000) / 10000,
+      timeInSetup: Math.round(timeInSetup * 10000) / 10000,
+      timeInRun: Math.round(timeInRun * 10000) / 10000,
+      timeWaitingRestOfLot: Math.round(timeWaitingRestOfLot * 10000) / 10000,
+      visitsPerGoodPiece: Math.round(visitsPerGoodPiece * 10000) / 10000,
+      noOfSetups: Math.round(noOfSetups * 10000) / 10000,
+      avgLotSize: Math.round(avgLotSize * 10000) / 10000,
     };
   }).filter((row): row is OperMetric => row !== null);
 }
@@ -1520,6 +1545,14 @@ function ProductOperDetails({ model, results }: { model: Model; results: CalcRes
                 <SortHead label={`Wait Labor${unitSuffix}`} sortKey="waitLaborUtil" current={prodSort.sort} onSort={prodSort.handleSort} />
                 <SortHead label={`Lab Setup${unitSuffix}`}  sortKey="labSetupUtil" current={prodSort.sort} onSort={prodSort.handleSort} />
                 <SortHead label={`Lab Run${unitSuffix}`}    sortKey="labRunUtil"   current={prodSort.sort} onSort={prodSort.handleSort} />
+                <SortHead label="Time waiting for equipment" sortKey="timeWaitingEquipment" current={prodSort.sort} onSort={prodSort.handleSort} />
+                <SortHead label="Time waiting for labor" sortKey="timeWaitingLabor" current={prodSort.sort} onSort={prodSort.handleSort} />
+                <SortHead label="Time in setup" sortKey="timeInSetup" current={prodSort.sort} onSort={prodSort.handleSort} />
+                <SortHead label="Time in run" sortKey="timeInRun" current={prodSort.sort} onSort={prodSort.handleSort} />
+                <SortHead label="Time waiting for rest of lot" sortKey="timeWaitingRestOfLot" current={prodSort.sort} onSort={prodSort.handleSort} />
+                <SortHead label="Visits for 1 good piece" sortKey="visitsPerGoodPiece" current={prodSort.sort} onSort={prodSort.handleSort} />
+                <SortHead label="no. of setups" sortKey="noOfSetups" current={prodSort.sort} onSort={prodSort.handleSort} />
+                <SortHead label="Avg lot size" sortKey="avgLotSize" current={prodSort.sort} onSort={prodSort.handleSort} />
                 <SortHead label="WIP"             sortKey="wip"         current={prodSort.sort} onSort={prodSort.handleSort} />
                 <SortHead label="MCT at Op"       sortKey="mctAtOp"     current={prodSort.sort} onSort={prodSort.handleSort} />
               </TableRow></TableHeader>
@@ -1536,6 +1569,14 @@ function ProductOperDetails({ model, results }: { model: Model; results: CalcRes
                     <TableCell className="font-mono text-xs text-right">{m.waitLaborUtil}</TableCell>
                     <TableCell className="font-mono text-xs text-right">{fmtVal(m.labSetupUtil, m.labSetupTime)}</TableCell>
                     <TableCell className="font-mono text-xs text-right">{fmtVal(m.labRunUtil,   m.labRunTime)}</TableCell>
+                    <TableCell className="font-mono text-xs text-right">{m.timeWaitingEquipment.toFixed(4)}</TableCell>
+                    <TableCell className="font-mono text-xs text-right">{m.timeWaitingLabor.toFixed(4)}</TableCell>
+                    <TableCell className="font-mono text-xs text-right">{m.timeInSetup.toFixed(4)}</TableCell>
+                    <TableCell className="font-mono text-xs text-right">{m.timeInRun.toFixed(4)}</TableCell>
+                    <TableCell className="font-mono text-xs text-right">{m.timeWaitingRestOfLot.toFixed(4)}</TableCell>
+                    <TableCell className="font-mono text-xs text-right">{m.visitsPerGoodPiece.toFixed(4)}</TableCell>
+                    <TableCell className="font-mono text-xs text-right">{m.noOfSetups.toFixed(4)}</TableCell>
+                    <TableCell className="font-mono text-xs text-right">{m.avgLotSize.toFixed(4)}</TableCell>
                     <TableCell className="font-mono text-xs text-right">{m.wip}</TableCell>
                     <TableCell className="font-mono text-xs text-right">{m.mctAtOp.toFixed(4)}</TableCell>
                   </TableRow>
@@ -1594,6 +1635,14 @@ function EquipOperDetails({ model, results }: { model: Model; results: CalcResul
                 <SortHead label={`Wait Labor${unitSuffix}`} sortKey="waitLaborUtil" current={eqSort.sort} onSort={eqSort.handleSort} />
                 <SortHead label={`Lab Setup${unitSuffix}`}  sortKey="labSetupUtil"  current={eqSort.sort} onSort={eqSort.handleSort} />
                 <SortHead label={`Lab Run${unitSuffix}`}    sortKey="labRunUtil"    current={eqSort.sort} onSort={eqSort.handleSort} />
+                <SortHead label="Time waiting for equipment" sortKey="timeWaitingEquipment" current={eqSort.sort} onSort={eqSort.handleSort} />
+                <SortHead label="Time waiting for labor" sortKey="timeWaitingLabor" current={eqSort.sort} onSort={eqSort.handleSort} />
+                <SortHead label="Time in setup" sortKey="timeInSetup" current={eqSort.sort} onSort={eqSort.handleSort} />
+                <SortHead label="Time in run" sortKey="timeInRun" current={eqSort.sort} onSort={eqSort.handleSort} />
+                <SortHead label="Time waiting for rest of lot" sortKey="timeWaitingRestOfLot" current={eqSort.sort} onSort={eqSort.handleSort} />
+                <SortHead label="Visits for 1 good piece" sortKey="visitsPerGoodPiece" current={eqSort.sort} onSort={eqSort.handleSort} />
+                <SortHead label="no. of setups" sortKey="noOfSetups" current={eqSort.sort} onSort={eqSort.handleSort} />
+                <SortHead label="Avg lot size" sortKey="avgLotSize" current={eqSort.sort} onSort={eqSort.handleSort} />
                 <SortHead label="WIP"             sortKey="wip"         current={eqSort.sort} onSort={eqSort.handleSort} />
                 <SortHead label="MCT at Op"       sortKey="mctAtOp"     current={eqSort.sort} onSort={eqSort.handleSort} />
                 <SortHead label="Visits/100"      sortKey="visits"      current={eqSort.sort} onSort={eqSort.handleSort} />
@@ -1611,6 +1660,14 @@ function EquipOperDetails({ model, results }: { model: Model; results: CalcResul
                     <TableCell className="font-mono text-xs text-right">{m.waitLaborUtil}</TableCell>
                     <TableCell className="font-mono text-xs text-right">{fmtVal(m.labSetupUtil, m.labSetupTime)}</TableCell>
                     <TableCell className="font-mono text-xs text-right">{fmtVal(m.labRunUtil,   m.labRunTime)}</TableCell>
+                    <TableCell className="font-mono text-xs text-right">{m.timeWaitingEquipment.toFixed(4)}</TableCell>
+                    <TableCell className="font-mono text-xs text-right">{m.timeWaitingLabor.toFixed(4)}</TableCell>
+                    <TableCell className="font-mono text-xs text-right">{m.timeInSetup.toFixed(4)}</TableCell>
+                    <TableCell className="font-mono text-xs text-right">{m.timeInRun.toFixed(4)}</TableCell>
+                    <TableCell className="font-mono text-xs text-right">{m.timeWaitingRestOfLot.toFixed(4)}</TableCell>
+                    <TableCell className="font-mono text-xs text-right">{m.visitsPerGoodPiece.toFixed(4)}</TableCell>
+                    <TableCell className="font-mono text-xs text-right">{m.noOfSetups.toFixed(4)}</TableCell>
+                    <TableCell className="font-mono text-xs text-right">{m.avgLotSize.toFixed(4)}</TableCell>
                     <TableCell className="font-mono text-xs text-right">{m.wip}</TableCell>
                     <TableCell className="font-mono text-xs text-right">{m.mctAtOp.toFixed(4)}</TableCell>
                     <TableCell className="font-mono text-xs text-right">{m.visits}</TableCell>
@@ -1669,6 +1726,14 @@ function LaborOperDetails({ model, results }: { model: Model; results: CalcResul
                 <SortHead label={`Eq Setup${unitSuffix}`}  sortKey="eqSetupUtil"  current={labSort.sort} onSort={labSort.handleSort} />
                 <SortHead label={`Eq Run${unitSuffix}`}    sortKey="eqRunUtil"    current={labSort.sort} onSort={labSort.handleSort} />
                 <SortHead label={`Wait Labor${unitSuffix}`} sortKey="waitLaborUtil" current={labSort.sort} onSort={labSort.handleSort} />
+                <SortHead label="Time waiting for equipment" sortKey="timeWaitingEquipment" current={labSort.sort} onSort={labSort.handleSort} />
+                <SortHead label="Time waiting for labor" sortKey="timeWaitingLabor" current={labSort.sort} onSort={labSort.handleSort} />
+                <SortHead label="Time in setup" sortKey="timeInSetup" current={labSort.sort} onSort={labSort.handleSort} />
+                <SortHead label="Time in run" sortKey="timeInRun" current={labSort.sort} onSort={labSort.handleSort} />
+                <SortHead label="Time waiting for rest of lot" sortKey="timeWaitingRestOfLot" current={labSort.sort} onSort={labSort.handleSort} />
+                <SortHead label="Visits for 1 good piece" sortKey="visitsPerGoodPiece" current={labSort.sort} onSort={labSort.handleSort} />
+                <SortHead label="no. of setups" sortKey="noOfSetups" current={labSort.sort} onSort={labSort.handleSort} />
+                <SortHead label="Avg lot size" sortKey="avgLotSize" current={labSort.sort} onSort={labSort.handleSort} />
                 <SortHead label="WIP"             sortKey="wip"         current={labSort.sort} onSort={labSort.handleSort} />
                 <SortHead label="MCT at Op"       sortKey="mctAtOp"     current={labSort.sort} onSort={labSort.handleSort} />
               </TableRow></TableHeader>
@@ -1684,6 +1749,14 @@ function LaborOperDetails({ model, results }: { model: Model; results: CalcResul
                     <TableCell className="font-mono text-xs text-right">{fmtVal(m.eqSetupUtil,  m.eqSetupTime)}</TableCell>
                     <TableCell className="font-mono text-xs text-right">{fmtVal(m.eqRunUtil,    m.eqRunTime)}</TableCell>
                     <TableCell className="font-mono text-xs text-right">{m.waitLaborUtil}</TableCell>
+                    <TableCell className="font-mono text-xs text-right">{m.timeWaitingEquipment.toFixed(4)}</TableCell>
+                    <TableCell className="font-mono text-xs text-right">{m.timeWaitingLabor.toFixed(4)}</TableCell>
+                    <TableCell className="font-mono text-xs text-right">{m.timeInSetup.toFixed(4)}</TableCell>
+                    <TableCell className="font-mono text-xs text-right">{m.timeInRun.toFixed(4)}</TableCell>
+                    <TableCell className="font-mono text-xs text-right">{m.timeWaitingRestOfLot.toFixed(4)}</TableCell>
+                    <TableCell className="font-mono text-xs text-right">{m.visitsPerGoodPiece.toFixed(4)}</TableCell>
+                    <TableCell className="font-mono text-xs text-right">{m.noOfSetups.toFixed(4)}</TableCell>
+                    <TableCell className="font-mono text-xs text-right">{m.avgLotSize.toFixed(4)}</TableCell>
                     <TableCell className="font-mono text-xs text-right">{m.wip}</TableCell>
                     <TableCell className="font-mono text-xs text-right">{m.mctAtOp.toFixed(4)}</TableCell>
                   </TableRow>

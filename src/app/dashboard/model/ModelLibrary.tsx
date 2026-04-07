@@ -18,7 +18,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from '@/components/ui/select';
+} from '@/components/ui/Select';
 import {
   Plus, Search, Star, MoreVertical, Copy, Trash2, Archive,
   LayoutGrid, List, Package, Cpu, Users, Pencil, RotateCcw, LogOut,

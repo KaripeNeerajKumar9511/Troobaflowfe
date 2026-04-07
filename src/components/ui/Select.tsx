@@ -1,4 +1,6 @@
-export * from "./select";
+export * from "./Select";
+
+// export * from "./select";
 
 import * as React from "react";
 import * as SelectPrimitive from "@radix-ui/react-select";

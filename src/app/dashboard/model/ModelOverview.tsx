@@ -2,7 +2,7 @@
 
 import { useModelStore } from '@/stores/modelStore';
 import { useScenarioStore } from '@/stores/scenarioStore';
-import { useRouter } from 'next/navigation';
+import { useNavigate } from 'react-router-dom';
 import { Button } from '../../../components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { StatCard } from '@/components/ui/StatCard';
@@ -22,7 +22,7 @@ const PATH_TO_ROUTE: Record<string, string> = {
 export default function ModelOverview() {
   const model = useModelStore((s) => s.getActiveModel());
   const scenarios = useScenarioStore((s) => s.scenarios);
-  const router = useRouter();
+  const navigate = useNavigate();
 
   if (!model) return <NoModelSelected />;
 
@@ -80,7 +80,7 @@ export default function ModelOverview() {
               key={l.path}
               variant="ghost"
               className="w-full justify-between h-10 text-slate-700 hover:bg-slate-100 hover:text-slate-900"
-              onClick={() => router.push(PATH_TO_ROUTE[l.path] ?? '/dashboard/overview')}
+              onClick={() => navigate(PATH_TO_ROUTE[l.path] ?? '/dashboard/overview')}
             >
               <span className="flex items-center gap-2 text-sm">
                 <l.icon className="h-4 w-4 text-slate-500" /> {l.label}

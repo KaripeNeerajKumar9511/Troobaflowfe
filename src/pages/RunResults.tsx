@@ -2277,30 +2277,15 @@ function LaborWaitChart({ results, model }: { results: CalcResults; model: Model
   const [showTable, setShowTable] = useState(false);
 
   const waitData = useMemo(() => {
-    return model.labor.map(lab => {
-      const equipGroups = model.equipment.filter(eq => eq.labor_group_id === lab.id);
-      const laborResult = results.labor.find(l => l.id === lab.id);
-      const totalUtil = laborResult?.totalUtil || 0;
-      const machinesTended = equipGroups.reduce((sum, eq) => {
-        const er = results.equipment.find(e => e.id === eq.id);
-        return sum + (er ? Math.min(1, (er.setupUtil + er.runUtil) / 100) * eq.count : 0);
-      }, 0);
-      const machinesWaiting = equipGroups.reduce((sum, eq) => {
-        const er = results.equipment.find(e => e.id === eq.id);
-        return sum + (er ? (er.waitLaborUtil / 100) * eq.count : 0);
-      }, 0);
-      return {
-        name: lab.name,
-        tended: Math.round(machinesTended * 10) / 10,
-        waiting: Math.round(machinesWaiting * 10) / 10,
-        waitLaborUtil: equipGroups.reduce((sum, eq) => {
-          const er = results.equipment.find(e => e.id === eq.id);
-          return sum + (er?.waitLaborUtil || 0);
-        }, 0) / Math.max(1, equipGroups.length),
-        idle: laborResult?.idle || 0,
-      };
-    }).filter(d => d.tended > 0 || d.waiting > 0);
-  }, [results, model]);
+    // Backend now provides the final values; frontend only renders.
+    return (results?.labor ?? []).map(lr => ({
+      name: lr.name,
+      tended: lr.machinesTended ?? 0,
+      waiting: lr.machinesWaiting ?? 0,
+      waitLaborUtil: lr.avgWaitLaborUtil ?? 0,
+      idle: lr.idle ?? 0,
+    })).filter(d => d.tended > 0 || d.waiting > 0);
+  }, [results]);
 
   if (waitData.length === 0) return (
     <Card><CardContent className="py-12 text-center"><BarChart3 className="h-8 w-8 mx-auto text-muted-foreground/40 mb-2" /><p className="text-sm text-muted-foreground">Run the model to see Equipment Wait results.</p></CardContent></Card>
@@ -2541,9 +2526,8 @@ function OperDetailsTab({ model, results }: { model: Model; results: CalcResults
         <TableBody>
           {labSort.sorted.map((m: any) => {
             const eqResult = results.equipment.find(e => e.name === m.equipName);
-            const eqModel = model.equipment.find(e => e.id === m.equipId);
-            const tended = eqResult ? Math.min(1, (eqResult.setupUtil + eqResult.runUtil) / 100) * (eqModel?.count || 1) : 0;
-            const waiting = eqResult ? (eqResult.waitLaborUtil / 100) * (eqModel?.count || 1) : 0;
+            const tended = eqResult?.machinesTended ?? 0;
+            const waiting = eqResult?.machinesWaiting ?? 0;
             return (
               <TableRow key={m.opId}>
                 <TableCell className="font-mono text-xs">{m.productName}</TableCell>
@@ -2552,8 +2536,8 @@ function OperDetailsTab({ model, results }: { model: Model; results: CalcResults
                 <TableCell className="font-mono text-xs text-right">{m.pctAssigned}</TableCell>
                 <TableCell className="font-mono text-xs text-right">{fmtVal(m.labSetupUtil, m.labSetupTime)}</TableCell>
                 <TableCell className="font-mono text-xs text-right">{fmtVal(m.labRunUtil, m.labRunTime)}</TableCell>
-                <TableCell className="font-mono text-xs text-right">{Math.round(tended * 10) / 10}</TableCell>
-                <TableCell className="font-mono text-xs text-right">{Math.round(waiting * 10) / 10}</TableCell>
+                <TableCell className="font-mono text-xs text-right">{tended}</TableCell>
+                <TableCell className="font-mono text-xs text-right">{waiting}</TableCell>
                 <TableCell className="font-mono text-xs text-right">{String(m.timeWaitingEquipment)}</TableCell>
                 <TableCell className="font-mono text-xs text-right">{String(m.timeWaitingLabor)}</TableCell>
                 <TableCell className="font-mono text-xs text-right">{String(m.timeInSetup)}</TableCell>

@@ -15,6 +15,8 @@ export interface EquipmentResult {
   totalUtil: number;
   idle: number;
   laborGroup: string;
+  machinesTended?: number;
+  machinesWaiting?: number;
 }
 
 export interface LaborResult {
@@ -26,6 +28,9 @@ export interface LaborResult {
   unavailPct: number;
   totalUtil: number;
   idle: number;
+  machinesTended?: number;
+  machinesWaiting?: number;
+  avgWaitLaborUtil?: number;
 }
 
 export interface ProductResult {

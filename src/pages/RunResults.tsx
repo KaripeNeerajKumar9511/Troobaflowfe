@@ -2205,28 +2205,23 @@ function EquipmentWIPChart({ results, model, isMultiScenario, chartScenarios }: 
 }) {
   const [showTable, setShowTable] = useState(false);
 
-  // Compute WIP per equipment group from product results and operations
+  // Use backend-calculated equipment WIP (process / queue / total)
   const wipData = useMemo(() => {
-    const equipWip: Record<string, { name: string; inProcess: number; waiting: number }> = {};
-    model.equipment.forEach(eq => { equipWip[eq.id] = { name: eq.name, inProcess: 0, waiting: 0 }; });
-
-    results.products.forEach(pr => {
-      const ops = model.operations.filter(o => o.product_id === pr.id);
-      if (ops.length === 0 || pr.wip <= 0) return;
-      const wipPerOp = pr.wip / ops.length;
-      ops.forEach(op => {
-        if (op.equip_id && equipWip[op.equip_id]) {
-          const eqResult = results.equipment.find(e => e.id === op.equip_id);
-          const totalUtil = eqResult?.totalUtil || 0;
-          const runFrac = totalUtil > 0 ? ((eqResult?.runUtil || 0) / totalUtil) : 0.5;
-          equipWip[op.equip_id].inProcess += wipPerOp * runFrac;
-          equipWip[op.equip_id].waiting += wipPerOp * (1 - runFrac);
-        }
-      });
-    });
-    return Object.values(equipWip).filter(e => e.inProcess > 0 || e.waiting > 0)
-      .map(e => ({ name: e.name, inProcess: Math.round(e.inProcess * 10) / 10, waiting: Math.round(e.waiting * 10) / 10, total: Math.round((e.inProcess + e.waiting) * 10) / 10 }));
-  }, [results, model]);
+    return results.equipment
+      .map(er => {
+        const anyEr: any = er as any;
+        const inProcess = asNum(anyEr.wip_process ?? anyEr.wipProcess ?? 0);
+        const waiting = asNum(anyEr.wip_queue ?? anyEr.wipQueue ?? 0);
+        const total = asNum(anyEr.wip_total ?? anyEr.wipTotal ?? inProcess + waiting);
+        return {
+          name: er.name,
+          inProcess: Math.round(inProcess * 10) / 10,
+          waiting: Math.round(waiting * 10) / 10,
+          total: Math.round(total * 10) / 10,
+        };
+      })
+      .filter(e => e.inProcess > 0 || e.waiting > 0);
+  }, [results]);
 
   if (wipData.length === 0) return (
     <Card><CardContent className="py-12 text-center"><BarChart3 className="h-8 w-8 mx-auto text-muted-foreground/40 mb-2" /><p className="text-sm text-muted-foreground">Run the model to see Equipment WIP results.</p></CardContent></Card>

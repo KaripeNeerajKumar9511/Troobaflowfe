@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from "react"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
 import api, { ensureCsrfCookie } from "@/lib/api"
 import { clearCSRFToken } from "@/lib/csrf"
 
@@ -11,7 +10,6 @@ export default function LoginPage() {
   const [password, setPassword] = useState("")
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
-  const router = useRouter()
 
   useEffect(() => {
     // Ensure there is no CSRF cookie before login.
@@ -26,7 +24,8 @@ export default function LoginPage() {
       await api.post("/api/login/", { email: email.trim(), password })
       // After successful login, obtain the CSRF cookie once for subsequent protected requests.
       await ensureCsrfCookie()
-      router.push("/library")
+      // Force a clean app bootstrap after login so user-scoped stores load correct data.
+      window.location.replace("/library")
     } catch (err: unknown) {
       const msg = err && typeof err === "object" && "response" in err
         ? (err as { response?: { data?: { error?: string }; status?: number } }).response?.data?.error

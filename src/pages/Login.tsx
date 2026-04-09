@@ -29,7 +29,10 @@ export default function Login() {
     setSubmitting(false);
     if (error) {
       toast.error('Invalid email or password');
+      return;
     }
+    // Force a clean app bootstrap after login so user-scoped stores load correct data.
+    window.location.replace(from);
   };
 
   return (

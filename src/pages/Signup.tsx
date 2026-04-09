@@ -72,7 +72,7 @@ export default function Signup() {
       console.error('Demo seed error:', err);
       toast.success('Welcome to Trooba Flow!');
     }
-    navigate('/library');
+    navigate('trooba.com/request-access');
     setSubmitting(false);
   };
 

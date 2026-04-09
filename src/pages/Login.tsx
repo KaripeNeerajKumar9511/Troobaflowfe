@@ -53,10 +53,10 @@ export default function Login() {
               {submitting ? 'Signing in…' : 'Sign In'}
             </Button>
           </form>
-          {/* <div className="mt-5 text-center text-sm text-muted-foreground space-y-1.5">
+          <div className="mt-5 text-center text-sm text-muted-foreground space-y-1.5">
             <p><Link to="/forgot-password" className="text-primary hover:underline">Forgot password?</Link></p>
-            <p>Don't have an account? <Link to="/signup" className="text-primary hover:underline">Sign up</Link></p>
-          </div> */}
+            {/* <p>Don't have an account? <Link to="/signup" className="text-primary hover:underline">Sign up</Link></p> */}
+          </div>
         </CardContent>
       </Card>
     </div>

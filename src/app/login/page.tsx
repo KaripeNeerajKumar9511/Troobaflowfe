@@ -4,6 +4,7 @@ import { useState, useEffect } from "react"
 import Link from "next/link"
 import api, { ensureCsrfCookie } from "@/lib/api"
 import { clearCSRFToken } from "@/lib/csrf"
+import troobaLogoLight from "@/assets/trooba-logo-light.svg"
 
 export default function LoginPage() {
   const [email, setEmail] = useState("")
@@ -41,6 +42,9 @@ export default function LoginPage() {
       <div className="w-full max-w-md">
         <div className="rounded-2xl bg-white/5 border border-white/10 shadow-2xl p-8 backdrop-blur-sm">
           <div className="text-center mb-8">
+            <a href="https://trooba.com" aria-label="Go to trooba.com" className="inline-block mb-4">
+              <img src={troobaLogoLight} alt="Trooba Flow" style={{ height: "48px", width: "auto" }} className="mx-auto" />
+            </a>
             <h1 className="text-2xl font-bold text-white tracking-tight">Welcome back</h1>
             <p className="text-slate-400 text-sm mt-1">Sign in to your RMCT account</p>
           </div>

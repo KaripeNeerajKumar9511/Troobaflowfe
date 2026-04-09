@@ -39,7 +39,9 @@ export default function Login() {
     <div className="min-h-screen bg-sidebar flex items-center justify-center p-4">
       <Card className="w-full max-w-md p-2">
         <CardHeader className="text-center">
-          <img src={troobaLogoLight} alt="Trooba Flow" style={{ height: '48px', width: 'auto' }} className="mx-auto mb-4" />
+          <a href="https://trooba.com" aria-label="Go to trooba.com" className="inline-block mx-auto mb-4">
+            <img src={troobaLogoLight} alt="Trooba Flow" style={{ height: '48px', width: 'auto' }} />
+          </a>
           <CardDescription className="text-base">Sign in to your account</CardDescription>
         </CardHeader>
         <CardContent>

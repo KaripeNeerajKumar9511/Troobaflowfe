@@ -1,3 +1,4 @@
+// Legacy page implementation
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { ArrowUp, ArrowDown, ArrowUpDown, Lock } from 'lucide-react';
 import { useSortableTable, type SortDir } from '@/hooks/useSortableTable';
@@ -76,18 +77,28 @@ function opResultFor(results: CalcResults, op: any) {
   if (!matched.length) return undefined;
   const summed = matched.reduce(
     (acc: any, o: any) => {
+      acc.ueset += asNum(o.ueset);
+      acc.uerun += asNum(o.uerun);
+      acc.ulset += asNum(o.ulset);
+      acc.ulrun += asNum(o.ulrun);
       acc.w_equip += asNum(o.w_equip);
       acc.w_labor += asNum(o.w_labor);
       acc.w_setup += asNum(o.w_setup);
       acc.w_run += asNum(o.w_run);
       acc.w_lot += asNum(o.w_lot);
+      acc.qpoper += asNum(o.qpoper);
       acc.flowtime += asNum(o.flowtime);
+      acc.visits_per_100 = Math.max(acc.visits_per_100, asNum(o.visits_per_100 ?? asNum(o.visit_prob) * 100));
       acc.visits_per_good = Math.max(acc.visits_per_good, asNum(o.visits_per_good ?? o.vpergood));
       acc.n_setups = Math.max(acc.n_setups, asNum(o.n_setups));
       acc.avg_lot_size = Math.max(acc.avg_lot_size, asNum(o.avg_lot_size));
       return acc;
     },
-    { w_equip: 0, w_labor: 0, w_setup: 0, w_run: 0, w_lot: 0, flowtime: 0, visits_per_good: 0, n_setups: 0, avg_lot_size: 0 },
+    {
+      ueset: 0, uerun: 0, ulset: 0, ulrun: 0,
+      w_equip: 0, w_labor: 0, w_setup: 0, w_run: 0, w_lot: 0,
+      qpoper: 0, flowtime: 0, visits_per_100: 0, visits_per_good: 0, n_setups: 0, avg_lot_size: 0,
+    },
   );
   return summed;
 }
@@ -1840,13 +1851,13 @@ function ProductResultsTable({ results, model, displayScenarioResults }: {
             {sorted.map((row: any) => (
               <TableRow key={row.id}>
                 <TableCell className="font-mono font-medium">{row.name}</TableCell>
-                <TableCell className="font-mono text-right">{row.demand?.toLocaleString()}</TableCell>
-                <TableCell className="font-mono text-right">{row.goodMade.toLocaleString()}</TableCell>
-                <TableCell className="font-mono text-right">{row.goodShipped.toLocaleString()}</TableCell>
-                <TableCell className="font-mono text-right">{row.started.toLocaleString()}</TableCell>
-                <TableCell className="font-mono text-right">{row.scrap > 0 ? row.scrap.toLocaleString() : '—'}</TableCell>
+                <TableCell className="font-mono text-right">{asNum(row.demand).toLocaleString()}</TableCell>
+                <TableCell className="font-mono text-right">{asNum(row.goodMade).toLocaleString()}</TableCell>
+                <TableCell className="font-mono text-right">{asNum(row.goodShipped).toLocaleString()}</TableCell>
+                <TableCell className="font-mono text-right">{asNum(row.started).toLocaleString()}</TableCell>
+                <TableCell className="font-mono text-right">{asNum(row.scrap) > 0 ? asNum(row.scrap).toLocaleString() : '—'}</TableCell>
                 <TableCell className="font-mono text-right">{row.wip}</TableCell>
-                <TableCell className="font-mono text-right font-medium">{row.mct.toFixed(4)}</TableCell>
+                <TableCell className="font-mono text-right font-medium">{asNum(row.mct).toFixed(4)}</TableCell>
                 {hasScenarios && displayScenarioResults.map(sr => {
                   const sp = sr.results.products.find((p: any) => p.id === row.id);
                   return (
@@ -1878,36 +1889,29 @@ function ProductOperDetails({ model, results }: { model: Model; results: CalcRes
   const opsPerPeriod = conv1 * conv2;
 
   const allMetrics = useMemo(() => {
-    return model.operations.map(op => {
+    return (results.operations || []).map((opr: any) => {
+      const productId = String(opr?.product_id ?? '');
+      const opNumber = asNum(opr?.op_number);
+      const opName = String(opr?.op_name ?? opr?.operation ?? '');
+      const op = model.operations.find((mo: any) =>
+        String(mo.product_id) === productId &&
+        ((opNumber > 0 && asNum(mo.op_number) === opNumber) || String(mo.op_name) === opName)
+      );
+      if (!op) return null;
       const eq = model.equipment.find(e => e.id === op.equip_id);
       const prod = model.products.find(p => p.id === op.product_id);
-      const pr = results.products.find(p => p.id === op.product_id);
       const er = eq ? results.equipment.find(e => e.id === eq.id) : null;
       const lab = eq ? model.labor.find(l => l.id === eq.labor_group_id) : null;
-      if (!prod || !pr || !eq) return null;
-      const demand = pr.demand;
-      if (demand <= 0) return null;
-      const lotSize = Math.max(1, prod.lot_size * prod.lot_factor);
-      const tbatchSize = prod.tbatch_size === -1 ? lotSize : Math.max(1, prod.tbatch_size);
-      const numTbatches = Math.ceil(lotSize / tbatchSize);
-      const assignFrac = op.pct_assigned / 100;
-      const numLots = (demand / lotSize) * assignFrac;
-      const prodSetupFactor = prod.setup_factor || 1;
-      const eqSetupTime = numLots * (op.equip_setup_lot + op.equip_setup_piece * lotSize + op.equip_setup_tbatch * numTbatches) * eq.setup_factor * prodSetupFactor;
-      const eqRunTime = numLots * (op.equip_run_piece * lotSize + op.equip_run_lot + op.equip_run_tbatch * numTbatches) * eq.run_factor;
-      const eqCount = eq.count > 0 ? eq.count : 1;
-      const eqAvail = eqCount * (1 + eq.overtime_pct / 100) * (1 - (eq.unavail_pct || 0) / 100) * opsPerPeriod;
-      let repairFrac = 0;
-      if (eq.mttf > 0 && eq.mttr > 0) repairFrac = eq.mttr / (eq.mttf + eq.mttr);
-      const eqEffAvail = eqAvail * (1 - repairFrac);
-      const eqSetupUtil = eqEffAvail > 0 ? (eqSetupTime / eqEffAvail) * 100 : 0;
-      const eqRunUtil = eqEffAvail > 0 ? (eqRunTime / eqEffAvail) * 100 : 0;
-      const labSetupTime = lab ? numLots * (op.labor_setup_lot + op.labor_setup_piece * lotSize + op.labor_setup_tbatch * numTbatches) * lab.setup_factor * prodSetupFactor : 0;
-      const labRunTime = lab ? numLots * (op.labor_run_piece * lotSize + op.labor_run_lot + op.labor_run_tbatch * numTbatches) * lab.run_factor : 0;
-      const labAvail = lab ? lab.count * (1 + lab.overtime_pct / 100) * (1 - lab.unavail_pct / 100) * opsPerPeriod : 0;
-      const labSetupUtil = labAvail > 0 ? (labSetupTime / labAvail) * 100 : 0;
-      const labRunUtil = labAvail > 0 ? (labRunTime / labAvail) * 100 : 0;
-      const opr = opResultFor(results, op) as any;
+      if (!prod || !eq) return null;
+
+      const eqSetupTime = asNum(opr?.ueset);
+      const eqRunTime = asNum(opr?.uerun);
+      const labSetupTime = asNum(opr?.ulset);
+      const labRunTime = asNum(opr?.ulrun);
+      const eqSetupUtil = eqSetupTime;
+      const eqRunUtil = eqRunTime;
+      const labSetupUtil = labSetupTime;
+      const labRunUtil = labRunTime;
       const timeWaitingEquipment = asNum(opr?.w_equip);
       const timeWaitingLabor = asNum(opr?.w_labor);
       const timeInSetup = asNum(opr?.w_setup);
@@ -1916,11 +1920,8 @@ function ProductOperDetails({ model, results }: { model: Model; results: CalcRes
       const visitsPerGoodPiece = asNum(opr?.visits_per_good ?? opr?.vpergood);
       const noOfSetups = asNum(opr?.n_setups);
       const avgLotSize = asNum(opr?.avg_lot_size);
-      const allOpsForProd = model.operations.filter(o => o.product_id === op.product_id);
-      const wipShare = pr.wip / Math.max(1, allOpsForProd.length);
-      const perPieceSetup = numLots > 0 ? (eqSetupTime / numLots) / lotSize : 0;
-      const perPieceRun = numLots > 0 ? (eqRunTime / numLots) / lotSize : 0;
-      const mctAtOp = asNum(opr?.flowtime) || (timeWaitingEquipment + timeWaitingLabor + timeInSetup + timeInRun + timeWaitingRestOfLot) || (((perPieceSetup + perPieceRun) / conv1) * assignFrac);
+      const wipShare = asNum(opr?.qpoper);
+      const mctAtOp = asNum(opr?.flowtime);
       return {
         opId: op.id, opName: op.op_name, opNumber: op.op_number,
         productName: prod.name, productId: prod.id,
@@ -2081,12 +2082,12 @@ function NormalSummary({ results, model, scenarioResults }: {
   const renderProductRow = (row: ProductResult) => (
     <TableRow key={row.id}>
       <TableCell className="font-mono font-medium">{row.name}</TableCell>
-      <TableCell className="font-mono text-right">{row.goodMade.toLocaleString()}</TableCell>
-      <TableCell className="font-mono text-right">{row.goodShipped.toLocaleString()}</TableCell>
-      <TableCell className="font-mono text-right">{row.started.toLocaleString()}</TableCell>
-      <TableCell className="font-mono text-right">{row.scrap > 0 ? row.scrap.toLocaleString() : '—'}</TableCell>
+      <TableCell className="font-mono text-right">{asNum(row.goodMade).toLocaleString()}</TableCell>
+      <TableCell className="font-mono text-right">{asNum(row.goodShipped).toLocaleString()}</TableCell>
+      <TableCell className="font-mono text-right">{asNum(row.started).toLocaleString()}</TableCell>
+      <TableCell className="font-mono text-right">{asNum(row.scrap) > 0 ? asNum(row.scrap).toLocaleString() : '—'}</TableCell>
       <TableCell className="font-mono text-right">{row.wip}</TableCell>
-      <TableCell className="font-mono text-right font-medium">{row.mct.toFixed(4)}</TableCell>
+      <TableCell className="font-mono text-right font-medium">{asNum(row.mct).toFixed(4)}</TableCell>
       {hasScenarios && scenarioResults.map(sr => {
         const sp = sr.results.products.find(p => p.id === row.id);
         return (
@@ -2366,21 +2367,29 @@ function OperDetailsTab({ model, results }: { model: Model; results: CalcResults
       const assignFrac = op.pct_assigned / 100;
       const numLots = (demand / lotSize) * assignFrac;
       const prodSetupFactor = prod.setup_factor || 1;
-      const eqSetupTime = numLots * (op.equip_setup_lot + op.equip_setup_piece * lotSize + op.equip_setup_tbatch * numTbatches) * eq.setup_factor * prodSetupFactor;
-      const eqRunTime = numLots * (op.equip_run_piece * lotSize + op.equip_run_lot + op.equip_run_tbatch * numTbatches) * eq.run_factor;
+      const eqSetupTimeCalc = numLots * (op.equip_setup_lot + op.equip_setup_piece * lotSize + op.equip_setup_tbatch * numTbatches) * eq.setup_factor * prodSetupFactor;
+      const eqRunTimeCalc = numLots * (op.equip_run_piece * lotSize + op.equip_run_lot + op.equip_run_tbatch * numTbatches) * eq.run_factor;
       const eqCount = eq.count > 0 ? eq.count : 1;
       const eqAvail = eqCount * (1 + eq.overtime_pct / 100) * (1 - (eq.unavail_pct || 0) / 100) * opsPerPeriod;
       let repairFrac = 0;
       if (eq.mttf > 0 && eq.mttr > 0) repairFrac = eq.mttr / (eq.mttf + eq.mttr);
       const eqEffAvail = eqAvail * (1 - repairFrac);
-      const eqSetupUtil = eqEffAvail > 0 ? (eqSetupTime / eqEffAvail) * 100 : 0;
-      const eqRunUtil = eqEffAvail > 0 ? (eqRunTime / eqEffAvail) * 100 : 0;
-      const labSetupTime = lab ? numLots * (op.labor_setup_lot + op.labor_setup_piece * lotSize + op.labor_setup_tbatch * numTbatches) * lab.setup_factor * prodSetupFactor : 0;
-      const labRunTime = lab ? numLots * (op.labor_run_piece * lotSize + op.labor_run_lot + op.labor_run_tbatch * numTbatches) * lab.run_factor : 0;
+      const eqSetupUtilCalc = eqEffAvail > 0 ? (eqSetupTimeCalc / eqEffAvail) * 100 : 0;
+      const eqRunUtilCalc = eqEffAvail > 0 ? (eqRunTimeCalc / eqEffAvail) * 100 : 0;
+      const labSetupTimeCalc = lab ? numLots * (op.labor_setup_lot + op.labor_setup_piece * lotSize + op.labor_setup_tbatch * numTbatches) * lab.setup_factor * prodSetupFactor : 0;
+      const labRunTimeCalc = lab ? numLots * (op.labor_run_piece * lotSize + op.labor_run_lot + op.labor_run_tbatch * numTbatches) * lab.run_factor : 0;
       const labAvail = lab ? lab.count * (1 + lab.overtime_pct / 100) * (1 - lab.unavail_pct / 100) * opsPerPeriod : 0;
-      const labSetupUtil = labAvail > 0 ? (labSetupTime / labAvail) * 100 : 0;
-      const labRunUtil = labAvail > 0 ? (labRunTime / labAvail) * 100 : 0;
+      const labSetupUtilCalc = labAvail > 0 ? (labSetupTimeCalc / labAvail) * 100 : 0;
+      const labRunUtilCalc = labAvail > 0 ? (labRunTimeCalc / labAvail) * 100 : 0;
       const opr = opResultFor(results, op) as any;
+      const eqSetupTime = asNum(opr?.ueset) || eqSetupTimeCalc;
+      const eqRunTime = asNum(opr?.uerun) || eqRunTimeCalc;
+      const labSetupTime = asNum(opr?.ulset) || labSetupTimeCalc;
+      const labRunTime = asNum(opr?.ulrun) || labRunTimeCalc;
+      const eqSetupUtil = asNum(opr?.ueset) || Math.round(eqSetupUtilCalc * 10) / 10;
+      const eqRunUtil = asNum(opr?.uerun) || Math.round(eqRunUtilCalc * 10) / 10;
+      const labSetupUtil = asNum(opr?.ulset) || Math.round(labSetupUtilCalc * 10) / 10;
+      const labRunUtil = asNum(opr?.ulrun) || Math.round(labRunUtilCalc * 10) / 10;
       const timeWaitingEquipment = asNum(opr?.w_equip);
       const timeWaitingLabor = asNum(opr?.w_labor);
       const timeInSetup = asNum(opr?.w_setup);
@@ -2390,25 +2399,25 @@ function OperDetailsTab({ model, results }: { model: Model; results: CalcResults
       const noOfSetups = asNum(opr?.n_setups);
       const avgLotSize = asNum(opr?.avg_lot_size);
       const allOpsForProd = model.operations.filter(o => o.product_id === op.product_id);
-      const wipShare = pr.wip / Math.max(1, allOpsForProd.length);
+      const wipShare = asNum(opr?.qpoper) || (pr.wip / Math.max(1, allOpsForProd.length));
       const perPieceSetup = numLots > 0 ? (eqSetupTime / numLots) / lotSize : 0;
       const perPieceRun = numLots > 0 ? (eqRunTime / numLots) / lotSize : 0;
       const mctAtOp = asNum(opr?.flowtime) || (timeWaitingEquipment + timeWaitingLabor + timeInSetup + timeInRun + timeWaitingRestOfLot) || (((perPieceSetup + perPieceRun) / conv1) * assignFrac);
-      const visits = demand > 0 ? (numLots * lotSize / demand) * 100 : 100;
+      const visits = asNum(opr?.visits_per_100 ?? asNum(opr?.visit_prob) * 100) || (demand > 0 ? (numLots * lotSize / demand) * 100 : 100);
       return {
         opId: op.id, opName: op.op_name, opNumber: op.op_number,
         productName: prod.name, productId: prod.id,
         equipName: eq.name, equipId: eq.id,
         laborName: lab?.name || '—', laborId: lab?.id || '',
         pctAssigned: op.pct_assigned,
-        eqSetupUtil: Math.round(eqSetupUtil * 10) / 10,
-        eqRunUtil: Math.round(eqRunUtil * 10) / 10,
+        eqSetupUtil: eqSetupUtil,
+        eqRunUtil: eqRunUtil,
         eqSetupTime: Math.round(eqSetupTime * 1000) / 1000,
         eqRunTime: Math.round(eqRunTime * 1000) / 1000,
         waitLaborUtil: er?.waitLaborUtil || 0,
         repairUtil: er?.repairUtil || 0,
-        labSetupUtil: Math.round(labSetupUtil * 10) / 10,
-        labRunUtil: Math.round(labRunUtil * 10) / 10,
+        labSetupUtil: labSetupUtil,
+        labRunUtil: labRunUtil,
         labSetupTime: Math.round(labSetupTime * 1000) / 1000,
         labRunTime: Math.round(labRunTime * 1000) / 1000,
         timeWaitingEquipment: timeWaitingEquipment,
@@ -2680,21 +2689,29 @@ function EquipOperDetails({ model, results }: { model: Model; results: CalcResul
       const assignFrac = op.pct_assigned / 100;
       const numLots = (demand / lotSize) * assignFrac;
       const prodSetupFactor = prod.setup_factor || 1;
-      const eqSetupTime = numLots * (op.equip_setup_lot + op.equip_setup_piece * lotSize + op.equip_setup_tbatch * numTbatches) * eq.setup_factor * prodSetupFactor;
-      const eqRunTime = numLots * (op.equip_run_piece * lotSize + op.equip_run_lot + op.equip_run_tbatch * numTbatches) * eq.run_factor;
+      const eqSetupTimeCalc = numLots * (op.equip_setup_lot + op.equip_setup_piece * lotSize + op.equip_setup_tbatch * numTbatches) * eq.setup_factor * prodSetupFactor;
+      const eqRunTimeCalc = numLots * (op.equip_run_piece * lotSize + op.equip_run_lot + op.equip_run_tbatch * numTbatches) * eq.run_factor;
       const eqCount = eq.count > 0 ? eq.count : 1;
       const eqAvail = eqCount * (1 + eq.overtime_pct / 100) * (1 - (eq.unavail_pct || 0) / 100) * opsPerPeriod;
       let repairFrac = 0;
       if (eq.mttf > 0 && eq.mttr > 0) repairFrac = eq.mttr / (eq.mttf + eq.mttr);
       const eqEffAvail = eqAvail * (1 - repairFrac);
-      const eqSetupUtil = eqEffAvail > 0 ? (eqSetupTime / eqEffAvail) * 100 : 0;
-      const eqRunUtil = eqEffAvail > 0 ? (eqRunTime / eqEffAvail) * 100 : 0;
-      const labSetupTime = lab ? numLots * (op.labor_setup_lot + op.labor_setup_piece * lotSize + op.labor_setup_tbatch * numTbatches) * lab.setup_factor * prodSetupFactor : 0;
-      const labRunTime = lab ? numLots * (op.labor_run_piece * lotSize + op.labor_run_lot + op.labor_run_tbatch * numTbatches) * lab.run_factor : 0;
+      const eqSetupUtilCalc = eqEffAvail > 0 ? (eqSetupTimeCalc / eqEffAvail) * 100 : 0;
+      const eqRunUtilCalc = eqEffAvail > 0 ? (eqRunTimeCalc / eqEffAvail) * 100 : 0;
+      const labSetupTimeCalc = lab ? numLots * (op.labor_setup_lot + op.labor_setup_piece * lotSize + op.labor_setup_tbatch * numTbatches) * lab.setup_factor * prodSetupFactor : 0;
+      const labRunTimeCalc = lab ? numLots * (op.labor_run_piece * lotSize + op.labor_run_lot + op.labor_run_tbatch * numTbatches) * lab.run_factor : 0;
       const labAvail = lab ? lab.count * (1 + lab.overtime_pct / 100) * (1 - lab.unavail_pct / 100) * opsPerPeriod : 0;
-      const labSetupUtil = labAvail > 0 ? (labSetupTime / labAvail) * 100 : 0;
-      const labRunUtil = labAvail > 0 ? (labRunTime / labAvail) * 100 : 0;
+      const labSetupUtilCalc = labAvail > 0 ? (labSetupTimeCalc / labAvail) * 100 : 0;
+      const labRunUtilCalc = labAvail > 0 ? (labRunTimeCalc / labAvail) * 100 : 0;
       const opr = opResultFor(results, op) as any;
+      const eqSetupTime = asNum(opr?.ueset) || eqSetupTimeCalc;
+      const eqRunTime = asNum(opr?.uerun) || eqRunTimeCalc;
+      const labSetupTime = asNum(opr?.ulset) || labSetupTimeCalc;
+      const labRunTime = asNum(opr?.ulrun) || labRunTimeCalc;
+      const eqSetupUtil = asNum(opr?.ueset) || Math.round(eqSetupUtilCalc * 10) / 10;
+      const eqRunUtil = asNum(opr?.uerun) || Math.round(eqRunUtilCalc * 10) / 10;
+      const labSetupUtil = asNum(opr?.ulset) || Math.round(labSetupUtilCalc * 10) / 10;
+      const labRunUtil = asNum(opr?.ulrun) || Math.round(labRunUtilCalc * 10) / 10;
       const timeWaitingEquipment = asNum(opr?.w_equip);
       const timeWaitingLabor = asNum(opr?.w_labor);
       const timeInSetup = asNum(opr?.w_setup);
@@ -2704,25 +2721,25 @@ function EquipOperDetails({ model, results }: { model: Model; results: CalcResul
       const noOfSetups = asNum(opr?.n_setups);
       const avgLotSize = asNum(opr?.avg_lot_size);
       const allOpsForProd = model.operations.filter(o => o.product_id === op.product_id);
-      const wipShare = pr.wip / Math.max(1, allOpsForProd.length);
+      const wipShare = asNum(opr?.qpoper) || (pr.wip / Math.max(1, allOpsForProd.length));
       const perPieceSetup = numLots > 0 ? (eqSetupTime / numLots) / lotSize : 0;
       const perPieceRun = numLots > 0 ? (eqRunTime / numLots) / lotSize : 0;
       const mctAtOp = asNum(opr?.flowtime) || (timeWaitingEquipment + timeWaitingLabor + timeInSetup + timeInRun + timeWaitingRestOfLot) || (((perPieceSetup + perPieceRun) / conv1) * assignFrac);
-      const visits = demand > 0 ? (numLots * lotSize / demand) * 100 : 100;
+      const visits = asNum(opr?.visits_per_100 ?? asNum(opr?.visit_prob) * 100) || (demand > 0 ? (numLots * lotSize / demand) * 100 : 100);
       return {
         opId: op.id, opName: op.op_name, opNumber: op.op_number,
         productName: prod.name, productId: prod.id,
         equipName: eq.name, equipId: eq.id,
         laborName: lab?.name || '—', laborId: lab?.id || '',
         pctAssigned: op.pct_assigned,
-        eqSetupUtil: Math.round(eqSetupUtil * 10) / 10,
-        eqRunUtil: Math.round(eqRunUtil * 10) / 10,
+        eqSetupUtil: eqSetupUtil,
+        eqRunUtil: eqRunUtil,
         eqSetupTime: Math.round(eqSetupTime * 1000) / 1000,
         eqRunTime: Math.round(eqRunTime * 1000) / 1000,
         waitLaborUtil: er?.waitLaborUtil || 0,
         repairUtil: er?.repairUtil || 0,
-        labSetupUtil: Math.round(labSetupUtil * 10) / 10,
-        labRunUtil: Math.round(labRunUtil * 10) / 10,
+        labSetupUtil: labSetupUtil,
+        labRunUtil: labRunUtil,
         labSetupTime: Math.round(labSetupTime * 1000) / 1000,
         labRunTime: Math.round(labRunTime * 1000) / 1000,
         timeWaitingEquipment: timeWaitingEquipment,
@@ -2855,12 +2872,16 @@ function LaborOperDetails({ model, results }: { model: Model; results: CalcResul
       const assignFrac = op.pct_assigned / 100;
       const numLots = (demand / lotSize) * assignFrac;
       const prodSetupFactor = prod.setup_factor || 1;
-      const labSetupTime = numLots * (op.labor_setup_lot + op.labor_setup_piece * lotSize + op.labor_setup_tbatch * numTbatches) * lab.setup_factor * prodSetupFactor;
-      const labRunTime = numLots * (op.labor_run_piece * lotSize + op.labor_run_lot + op.labor_run_tbatch * numTbatches) * lab.run_factor;
+      const labSetupTimeCalc = numLots * (op.labor_setup_lot + op.labor_setup_piece * lotSize + op.labor_setup_tbatch * numTbatches) * lab.setup_factor * prodSetupFactor;
+      const labRunTimeCalc = numLots * (op.labor_run_piece * lotSize + op.labor_run_lot + op.labor_run_tbatch * numTbatches) * lab.run_factor;
       const labAvail = lab.count * (1 + lab.overtime_pct / 100) * (1 - lab.unavail_pct / 100) * opsPerPeriod;
-      const labSetupUtil = labAvail > 0 ? (labSetupTime / labAvail) * 100 : 0;
-      const labRunUtil = labAvail > 0 ? (labRunTime / labAvail) * 100 : 0;
+      const labSetupUtilCalc = labAvail > 0 ? (labSetupTimeCalc / labAvail) * 100 : 0;
+      const labRunUtilCalc = labAvail > 0 ? (labRunTimeCalc / labAvail) * 100 : 0;
       const opr = opResultFor(results, op) as any;
+      const labSetupTime = asNum(opr?.ulset) || labSetupTimeCalc;
+      const labRunTime = asNum(opr?.ulrun) || labRunTimeCalc;
+      const labSetupUtil = asNum(opr?.ulset) || Math.round(labSetupUtilCalc * 10) / 10;
+      const labRunUtil = asNum(opr?.ulrun) || Math.round(labRunUtilCalc * 10) / 10;
       const timeWaitingEquipment = asNum(opr?.w_equip);
       const timeWaitingLabor = asNum(opr?.w_labor);
       const timeInSetup = asNum(opr?.w_setup);
@@ -2873,7 +2894,7 @@ function LaborOperDetails({ model, results }: { model: Model; results: CalcResul
       const tended = er ? Math.min(1, (er.setupUtil + er.runUtil) / 100) * (eqModel?.count || 1) : 0;
       const waiting = er ? (er.waitLaborUtil / 100) * (eqModel?.count || 1) : 0;
       const allOpsForProd = model.operations.filter(o => o.product_id === op.product_id);
-      const wipShare = pr.wip / Math.max(1, allOpsForProd.length);
+      const wipShare = asNum(opr?.qpoper) || (pr.wip / Math.max(1, allOpsForProd.length));
       const perPieceSetup = numLots > 0 ? ((numLots * (op.equip_setup_lot + op.equip_setup_piece * lotSize + op.equip_setup_tbatch * numTbatches) * eq.setup_factor * prodSetupFactor) / numLots) / lotSize : 0;
       const perPieceRun = numLots > 0 ? ((numLots * (op.equip_run_piece * lotSize + op.equip_run_lot + op.equip_run_tbatch * numTbatches) * eq.run_factor) / numLots) / lotSize : 0;
       const mctAtOp = asNum(opr?.flowtime) || (timeWaitingEquipment + timeWaitingLabor + timeInSetup + timeInRun + timeWaitingRestOfLot) || (((perPieceSetup + perPieceRun) / conv1) * assignFrac);
@@ -2883,8 +2904,8 @@ function LaborOperDetails({ model, results }: { model: Model; results: CalcResul
         equipName: eq.name, equipId: eq.id,
         laborName: lab.name, laborId: lab.id,
         pctAssigned: op.pct_assigned,
-        labSetupUtil: Math.round(labSetupUtil * 10) / 10,
-        labRunUtil: Math.round(labRunUtil * 10) / 10,
+        labSetupUtil: labSetupUtil,
+        labRunUtil: labRunUtil,
         labSetupTime: Math.round(labSetupTime * 1000) / 1000,
         labRunTime: Math.round(labRunTime * 1000) / 1000,
         eqTended: Math.round(tended * 10) / 10,

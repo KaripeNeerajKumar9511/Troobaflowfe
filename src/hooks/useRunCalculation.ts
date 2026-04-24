@@ -139,6 +139,9 @@ export function useRunCalculation(): UseRunCalculationReturn {
 
       try {
         const calcResults: CalcResults = await fullCalculate(model, runScenario ?? null);
+        if (mode === 'full') {
+          console.log('[Full Calculate] frontend received data:', calcResults);
+        }
         setResults(resultKey, calcResults);
         setRunStatus(model.id, 'current');
         if (runScenario) markCalculated(runScenario.id);

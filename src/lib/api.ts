@@ -71,15 +71,38 @@ export async function apiJson<T>(path: string, init: RequestInit = {}): Promise<
   const res = await apiFetch(path, init);
   if (res.status === 204) return undefined as T;
   const text = await res.text();
+  const parseJson = (raw: string): unknown => {
+    try {
+      return JSON.parse(raw);
+    } catch (firstErr) {
+      // Some simulation responses can contain non-JSON numeric literals from native code output.
+      // Convert them to null so the frontend can still consume valid fields.
+      const sanitized = raw
+        .replace(/-?Infinity/gi, 'null')
+        .replace(/-?NaN(?:\(ind\))?/gi, 'null')
+        .replace(/-?\d+\.\#(?:IND|QNAN)/gi, 'null');
+      if (sanitized !== raw) {
+        try {
+          console.warn(`[apiJson] Sanitized invalid numeric JSON tokens for ${path}`);
+          return JSON.parse(sanitized);
+        } catch {
+          // Fall through and throw the original parse error with context.
+        }
+      }
+      const preview = raw.slice(0, 240).replace(/\s+/g, ' ');
+      const errMsg = firstErr instanceof Error ? firstErr.message : 'Unknown JSON parse error';
+      throw new Error(`Invalid JSON from ${path}: ${errMsg}. Response preview: ${preview || '<empty>'}`);
+    }
+  };
   if (!res.ok) {
     try {
-      const j = JSON.parse(text);
-      throw new Error(j.error || j.detail || text || res.statusText);
+      const j = parseJson(text) as { error?: string; detail?: string };
+      throw new Error(j?.error || j?.detail || text || res.statusText);
     } catch (e) {
       if (e instanceof Error && e.message !== '[object Object]') throw e;
       throw new Error(text || res.statusText);
     }
   }
   if (!text) return undefined as T;
-  return JSON.parse(text) as T;
+  return parseJson(text) as T;
 }

@@ -144,6 +144,10 @@ function buildGroupedProductWIPData(scenarios: ScenarioEntry[]) {
 const Tooltip = RechartsTooltip;
 const tooltipStyle = { background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: 6, fontSize: 12 };
 const axisStyle = { fontSize: 11, fontFamily: 'JetBrains Mono' };
+const asNum = (v: unknown, fallback = 0) => {
+  const n = typeof v === 'number' ? v : Number(v);
+  return Number.isFinite(n) ? n : fallback;
+};
 
 /* ─── Sortable Table Header ─── */
 function SortHead({ label, sortKey, current, onSort, align = 'right' }: {
@@ -438,27 +442,34 @@ function buildOperMetrics(model: Model, results: CalcResults): OperMetric[] {
     // Read per-op util from engine results where available (most accurate),
     // fall back to local proportion for oper-details display.
     const oprResult = results.operations
-      ? results.operations.find((o: any) => o.operation === op.op_name && o.product === prod.name)
+      ? results.operations.find((o: any) =>
+          String(o.product_id ?? '') === String(op.product_id) &&
+          (
+            String(o.op_id ?? o.opId ?? '') === String(op.id) ||
+            (asNum(o.op_number) > 0 && asNum(o.op_number) === asNum((op as any).op_number)) ||
+            String(o.operation ?? o.op_name ?? '') === String(op.op_name)
+          )
+        )
       : null;
 
     // BUG-E/F FIX: use engine results (ueset/uerun/ulset/ulrun) if present,
     // otherwise use locally-computed values from the corrected formula above.
     const eqSetupUtil = oprResult
-      ? (oprResult.ueset * 100)
+      ? Number(oprResult.ueset || 0)
       : (eqSetupUtilMap[eq.id] || 0);
     const eqRunUtil = oprResult
-      ? (oprResult.uerun * 100)
+      ? Number(oprResult.uerun || 0)
       : (eqRunUtilMap[eq.id] || 0);
     const repairUtil = er?.repairUtil || eqRepairUtilMap[eq.id] || 0;
     const labSetupUtil = oprResult
-      ? (oprResult.ulset * 100)
+      ? Number(oprResult.ulset || 0)
       : (labSetupUtilMap[lab?.id || ''] || 0);
     const labRunUtil = oprResult
-      ? (oprResult.ulrun * 100)
+      ? Number(oprResult.ulrun || 0)
       : (labRunUtilMap[lab?.id || ''] || 0);
 
     const allOpsForProd = model.operations.filter((o: any) => o.product_id === op.product_id);
-    const wipShare = pr.wip / Math.max(1, allOpsForProd.length);
+    const wipShare = oprResult ? Number(oprResult.qpoper || 0) : (pr.wip / Math.max(1, allOpsForProd.length));
 
     // MCT at op: use engine flowtime if available, else approximate
     const mctAtOp = oprResult
@@ -466,7 +477,7 @@ function buildOperMetrics(model: Model, results: CalcResults): OperMetric[] {
       : 0;
 
     const visits = oprResult
-      ? (oprResult.visit_prob * 100)
+      ? Number(oprResult.visits_per_100 || (Number(oprResult.visit_prob || 0) * 100))
       : (demand > 0 ? (numLots * lotSize / demand) * 100 : 100);
 
     const timeWaitingEquipment = oprResult ? Number(oprResult.w_equip || 0) : 0;
@@ -1448,6 +1459,7 @@ function ProductResultsTable({ results, model, displayScenarioResults }: {
 }) {
   const { sorted, sort, handleSort } = useSortableTable(results.products, 'mct', 'desc');
   const hasScenarios = displayScenarioResults.length > 0;
+  console.log("hi");
   return (
     <Card>
       <CardHeader><CardTitle className="text-base">Product Results Table</CardTitle></CardHeader>
@@ -1964,22 +1976,29 @@ function LaborWaitChart({ results, model }: { results: CalcResults; model: Model
     return model.labor.map(lab => {
       const equipGroups = model.equipment.filter(eq => eq.labor_group_id === lab.id);
       const laborResult = results.labor.find(l => l.id === lab.id);
-      const machinesTended = equipGroups.reduce((sum, eq) => {
+      const machinesTendedFallback = equipGroups.reduce((sum, eq) => {
         const er = results.equipment.find(e => e.id === eq.id);
         return sum + (er ? Math.min(1, (er.setupUtil + er.runUtil) / 100) * eq.count : 0);
       }, 0);
-      const machinesWaiting = equipGroups.reduce((sum, eq) => {
+      const machinesWaitingFallback = equipGroups.reduce((sum, eq) => {
         const er = results.equipment.find(e => e.id === eq.id);
         return sum + (er ? (er.waitLaborUtil / 100) * eq.count : 0);
       }, 0);
+      const anyLabor: any = laborResult as any;
+      const machinesTended = asNum(anyLabor?.machinesTended ?? machinesTendedFallback);
+      const machinesWaiting = asNum(anyLabor?.machinesWaiting ?? machinesWaitingFallback);
+      const avgWaitLaborUtil = asNum(
+        anyLabor?.avgWaitLaborUtil ??
+        equipGroups.reduce((sum, eq) => { const er = results.equipment.find(e => e.id === eq.id); return sum + (er?.waitLaborUtil || 0); }, 0) / Math.max(1, equipGroups.length),
+      );
       return {
         name: lab.name,
         tended: Math.round(machinesTended * 10) / 10,
         waiting: Math.round(machinesWaiting * 10) / 10,
-        waitLaborUtil: equipGroups.reduce((sum, eq) => { const er = results.equipment.find(e => e.id === eq.id); return sum + (er?.waitLaborUtil || 0); }, 0) / Math.max(1, equipGroups.length),
+        waitLaborUtil: avgWaitLaborUtil,
         idle: laborResult?.idle || 0,
       };
-    }).filter(d => d.tended > 0 || d.waiting > 0);
+    }).filter(d => d.tended > 0 || d.waiting > 0 || d.waitLaborUtil > 0);
   }, [results, model]);
 
   if (waitData.length === 0) return (

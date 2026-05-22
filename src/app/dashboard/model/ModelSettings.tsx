@@ -1,7 +1,22 @@
-import { useState, useEffect } from 'react';
+"use client";
+
+import { useState, useEffect, Suspense } from 'react';
+import { flushSync } from 'react-dom';
+import { ModelTransferOverlay, yieldForOverlayPaint } from '@/components/ModelTransferOverlay';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useModelStore } from '@/stores/modelStore';
 import { useResultsStore } from '@/stores/resultsStore';
-import { db, getParamNames, getVersions, createVersion, getVersionSnapshot, updateVersionLabel, deleteVersion, restoreVersionToModel } from '@/lib/supabaseData';
+import {
+  db,
+  getParamNames,
+  fetchModelVersions,
+  buildModelSnapshot,
+  createModelCheckpoint,
+  patchModelVersionLabel,
+  deleteModelVersion,
+  restoreModelFromVersion,
+  type ModelVersionRow,
+} from '@/lib/supabaseData';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -16,48 +31,33 @@ import {
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
-import { Save, Trash2, Archive, Download, RotateCcw, X, Plus, Clock, Pencil, ChevronDown } from 'lucide-react';
+import { Save, Trash2, Archive, Download, RotateCcw, X, Plus, Clock, Pencil, ChevronDown, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { NoModelSelected } from '@/components/NoModelSelected';
+import { usePageTitle } from '@/hooks/usePageTitle';
 
-interface ParamNames {
-  gen1_name: string; gen2_name: string; gen3_name: string; gen4_name: string;
-  lab1_name: string; lab2_name: string; lab3_name: string; lab4_name: string;
-  eq1_name: string; eq2_name: string; eq3_name: string; eq4_name: string;
-  prod1_name: string; prod2_name: string; prod3_name: string; prod4_name: string;
-  oper1_name: string; oper2_name: string; oper3_name: string; oper4_name: string;
-}
+const SETTINGS_TABS = new Set(['general', 'versions', 'danger']);
 
-const defaultParamNames: ParamNames = {
-  gen1_name: 'Gen1', gen2_name: 'Gen2', gen3_name: 'Gen3', gen4_name: 'Gen4',
-  lab1_name: 'Lab1', lab2_name: 'Lab2', lab3_name: 'Lab3', lab4_name: 'Lab4',
-  eq1_name: 'Eq1', eq2_name: 'Eq2', eq3_name: 'Eq3', eq4_name: 'Eq4',
-  prod1_name: 'Prod1', prod2_name: 'Prod2', prod3_name: 'Prod3', prod4_name: 'Prod4',
-  oper1_name: 'Oper1', oper2_name: 'Oper2', oper3_name: 'Oper3', oper4_name: 'Oper4',
-};
 
-interface Version {
-  id: string;
-  label: string;
-  created_at: string;
-}
-
-export default function ModelSettings() {
-  const [searchParams] = useSearchParams();
-  const initialTab = searchParams.get('tab') || 'general';
+function ModelSettingsContent() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const rawTab = searchParams.get('tab') || 'general';
+  const initialTab =
+    rawTab === 'params' || !SETTINGS_TABS.has(rawTab) ? 'general' : rawTab;
   const model = useModelStore(s => s.getActiveModel());
   const renameModel = useModelStore(s => s.renameModel);
   const archiveModel = useModelStore(s => s.archiveModel);
   const deleteModel = useModelStore(s => s.deleteModel);
-  const navigate = useNavigate();
+
+  usePageTitle('Model Settings');
 
   const [name, setName] = useState('');
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [tags, setTags] = useState<string[]>([]);
   const [newTag, setNewTag] = useState('');
-  const [paramNames, setParamNames] = useState<ParamNames>(defaultParamNames);
-  const [versions, setVersions] = useState<Version[]>([]);
+  const [versions, setVersions] = useState<ModelVersionRow[]>([]);
   const [showDelete, setShowDelete] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState('');
   const [restoreVersionId, setRestoreVersionId] = useState<string | null>(null);
@@ -66,6 +66,7 @@ export default function ModelSettings() {
   const [editingVersionName, setEditingVersionName] = useState('');
   const [deleteVersionId, setDeleteVersionId] = useState<string | null>(null);
   const [visibleCount, setVisibleCount] = useState(10);
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     if (!model) return;
@@ -73,34 +74,39 @@ export default function ModelSettings() {
     setTitle(model.general.model_title);
     setDescription(model.description);
     setTags(model.tags);
-    // Load param names (from backend or model payload)
-    const pn = getParamNames(model.id) || model.param_names;
-    if (pn) setParamNames(pn);
     loadVersions();
   }, [model?.id]);
 
   const loadVersions = async () => {
     if (!model) return;
-    const list = await getVersions(model.id);
+    const list = await fetchModelVersions(model.id);
     setVersions(list);
   };
 
   const handleRenameVersion = async (versionId: string) => {
     if (!editingVersionName.trim()) return;
-    await updateVersionLabel(versionId, editingVersionName.trim());
+    const ok = await patchModelVersionLabel(versionId, editingVersionName.trim());
+    if (!ok) {
+      toast.error('Failed to rename checkpoint');
+      return;
+    }
     toast.success('Checkpoint renamed');
     setEditingVersionId(null);
     loadVersions();
   };
 
   const handleDeleteVersion = async (versionId: string) => {
-    await deleteVersion(versionId);
+    const ok = await deleteModelVersion(versionId);
+    if (!ok) {
+      toast.error('Failed to delete checkpoint');
+      return;
+    }
     toast.success('Checkpoint deleted');
     setDeleteVersionId(null);
     loadVersions();
   };
 
-  if (!model) return null;
+  if (!model) return <NoModelSelected />;
 
   const handleSaveName = () => {
     if (!name.trim()) return;
@@ -141,16 +147,8 @@ export default function ModelSettings() {
     }));
   };
 
-  const handleSaveParamNames = async () => {
-    db.upsertParamNames(model.id, paramNames);
-    useModelStore.setState(s => ({
-      models: s.models.map(m => m.id === model.id ? { ...m, param_names: { ...paramNames }, updated_at: new Date().toISOString() } : m),
-    }));
-    toast.success('Parameter names saved');
-  };
-
   const handleSaveCheckpoint = async () => {
-    const pn = getParamNames(model.id) || paramNames;
+    const pn = getParamNames(model.id) || model.param_names;
     const snapshot = {
       general: model.general,
       labor: model.labor,
@@ -161,7 +159,11 @@ export default function ModelSettings() {
       ibom: model.ibom,
       param_names: pn,
     };
-    await createVersion(model.id, 'Manual Checkpoint', snapshot);
+    const ok = await createModelCheckpoint(model.id, 'Manual Checkpoint', snapshot);
+    if (!ok) {
+      toast.error('Failed to save checkpoint');
+      return;
+    }
     toast.success('Checkpoint saved');
     loadVersions();
   };
@@ -169,23 +171,22 @@ export default function ModelSettings() {
   const handleRestore = async (versionId: string) => {
     setIsRestoring(true);
     try {
-      const data = await getVersionSnapshot(versionId);
-      if (!data?.snapshot) {
-        toast.error('Failed to load version snapshot');
-        setIsRestoring(false);
-        setRestoreVersionId(null);
+      const result = await restoreModelFromVersion(model.id, versionId);
+      if (!result) {
+        toast.error('Failed to restore checkpoint');
         return;
       }
-
-      const modelId = model.id;
-      await restoreVersionToModel(versionId, modelId);
-
       useResultsStore.getState().clearAllForModel();
       await useModelStore.getState().loadModels(true);
-      useModelStore.getState().setActiveModel(modelId);
-
-      toast.success(`Model restored to checkpoint from ${new Date(data.created_at).toLocaleString()}`);
-      navigate(`/models/${modelId}/general`);
+      useModelStore.getState().setActiveModel(model.id);
+      toast.success(
+        result.consumedUndo
+          ? 'Model restored from undo checkpoint. That undo slot is cleared — restore another checkpoint to create a new auto-save.'
+          : `Model restored. Previous data saved as "${result.rollbackLabel || 'Previous state (auto-saved)'}".`,
+        { duration: 6000 },
+      );
+      loadVersions();
+      router.push('/dashboard/generaldata');
     } catch (err) {
       console.error('Restore error:', err);
       toast.error('Failed to restore checkpoint');
@@ -195,27 +196,34 @@ export default function ModelSettings() {
     }
   };
 
-  const handleExport = () => {
-    const exportData = {
-      name: model.name,
-      description: model.description,
-      tags: model.tags,
-      general: model.general,
-      labor: model.labor,
-      equipment: model.equipment,
-      products: model.products,
-      operations: model.operations,
-      routing: model.routing,
-      ibom: model.ibom,
-    };
-    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${model.name.replace(/\s+/g, '_')}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-    toast.success('Model exported');
+  const handleExport = async () => {
+    if (!model || exporting) return;
+    flushSync(() => setExporting(true));
+    await yieldForOverlayPaint();
+    try {
+      const exportData = {
+        name: model.name,
+        description: model.description,
+        tags: model.tags,
+        general: model.general,
+        labor: model.labor,
+        equipment: model.equipment,
+        products: model.products,
+        operations: model.operations,
+        routing: model.routing,
+        ibom: model.ibom,
+      };
+      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${model.name.replace(/\s+/g, '_')}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success('Model exported');
+    } finally {
+      setExporting(false);
+    }
   };
 
   const handleDelete = () => {
@@ -226,26 +234,16 @@ export default function ModelSettings() {
     window.location.href = '/library';
   };
 
-  const paramField = (key: keyof ParamNames, label: string) => (
-    <div key={key}>
-      <Label className="text-xs text-muted-foreground">{label}</Label>
-      <Input
-        className="h-8 font-mono text-sm"
-        value={paramNames[key]}
-        onChange={e => setParamNames(p => ({ ...p, [key]: e.target.value }))}
-      />
-    </div>
-  );
-
   return (
+    <>
+      {exporting && <ModelTransferOverlay mode="export" />}
     <div className="p-6 max-w-3xl animate-fade-in">
       <h1 className="text-xl font-bold mb-1">Model Settings</h1>
-      <p className="text-sm text-muted-foreground mb-6">Configure model metadata, parameter labels, and manage versions.</p>
+      <p className="text-sm text-muted-foreground mb-6">Configure model metadata and manage versions.</p>
 
       <Tabs defaultValue={initialTab}>
         <TabsList>
           <TabsTrigger value="general">General</TabsTrigger>
-          <TabsTrigger value="params">Parameter Names</TabsTrigger>
           <TabsTrigger value="versions">Version History</TabsTrigger>
           <TabsTrigger value="danger">Danger Zone</TabsTrigger>
         </TabsList>
@@ -308,65 +306,6 @@ export default function ModelSettings() {
                   </Button>
                 </div>
               </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="params" className="mt-4 space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Custom Parameter Names</CardTitle>
-              <CardDescription>Rename Gen1–4, Lab1–4, Eq1–4, Prod1–4, Oper1–4 labels for this model.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <h4 className="text-xs font-semibold text-muted-foreground uppercase mb-2">General Parameters</h4>
-                <div className="grid grid-cols-4 gap-2">
-                  {paramField('gen1_name', 'Gen1')}
-                  {paramField('gen2_name', 'Gen2')}
-                  {paramField('gen3_name', 'Gen3')}
-                  {paramField('gen4_name', 'Gen4')}
-                </div>
-              </div>
-              <div>
-                <h4 className="text-xs font-semibold text-muted-foreground uppercase mb-2">Labor Parameters</h4>
-                <div className="grid grid-cols-4 gap-2">
-                  {paramField('lab1_name', 'Lab1')}
-                  {paramField('lab2_name', 'Lab2')}
-                  {paramField('lab3_name', 'Lab3')}
-                  {paramField('lab4_name', 'Lab4')}
-                </div>
-              </div>
-              <div>
-                <h4 className="text-xs font-semibold text-muted-foreground uppercase mb-2">Equipment Parameters</h4>
-                <div className="grid grid-cols-4 gap-2">
-                  {paramField('eq1_name', 'Eq1')}
-                  {paramField('eq2_name', 'Eq2')}
-                  {paramField('eq3_name', 'Eq3')}
-                  {paramField('eq4_name', 'Eq4')}
-                </div>
-              </div>
-              <div>
-                <h4 className="text-xs font-semibold text-muted-foreground uppercase mb-2">Product Parameters</h4>
-                <div className="grid grid-cols-4 gap-2">
-                  {paramField('prod1_name', 'Prod1')}
-                  {paramField('prod2_name', 'Prod2')}
-                  {paramField('prod3_name', 'Prod3')}
-                  {paramField('prod4_name', 'Prod4')}
-                </div>
-              </div>
-              <div>
-                <h4 className="text-xs font-semibold text-muted-foreground uppercase mb-2">Operation Parameters</h4>
-                <div className="grid grid-cols-4 gap-2">
-                  {paramField('oper1_name', 'Oper1')}
-                  {paramField('oper2_name', 'Oper2')}
-                  {paramField('oper3_name', 'Oper3')}
-                  {paramField('oper4_name', 'Oper4')}
-                </div>
-              </div>
-              <Button onClick={handleSaveParamNames}>
-                <Save className="h-3.5 w-3.5 mr-1" /> Save Parameter Names
-              </Button>
             </CardContent>
           </Card>
         </TabsContent>
@@ -473,8 +412,8 @@ export default function ModelSettings() {
                   <p className="text-sm font-medium">Export Model</p>
                   <p className="text-xs text-muted-foreground">Download full model data as JSON.</p>
                 </div>
-                <Button variant="outline" size="sm" onClick={handleExport}>
-                  <Download className="h-3.5 w-3.5 mr-1" /> Export
+                <Button variant="outline" size="sm" onClick={handleExport} disabled={exporting}>
+                  <Download className="h-3.5 w-3.5 mr-1" /> {exporting ? 'Exporting…' : 'Export'}
                 </Button>
               </div>
               <div className="flex items-center justify-between p-3 rounded-md border border-destructive/30 bg-destructive/5">
@@ -571,5 +510,20 @@ export default function ModelSettings() {
         </AlertDialogContent>
       </AlertDialog>
     </div>
+    </>
+  );
+}
+
+export default function ModelSettings() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-[200px] items-center justify-center">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      }
+    >
+      <ModelSettingsContent />
+    </Suspense>
   );
 }

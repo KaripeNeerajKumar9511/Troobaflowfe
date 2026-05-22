@@ -23,7 +23,7 @@ export default function ScenarioContextBar() {
   const lastRunAt = model?.last_run_at;
 
   return (
-    <div className="h-7 flex items-center justify-between px-6 bg-muted/30 border-b border-border text-xs shrink-0 -mx-6">
+    <div className="h-7 flex items-center justify-between px-6 bg-[#EAEFEF] border-b border-border text-xs shrink-0 -mx-6">
       <div className="flex items-center gap-1.5">
         <span className="text-muted-foreground">Showing results for:</span>
         {isBasecase ? (

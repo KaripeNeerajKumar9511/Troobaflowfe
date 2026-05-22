@@ -13,7 +13,7 @@ const LEVELS: { value: UserLevel; label: string; description: string }[] = [
 ];
 
 export function UserProfileDropdown() {
-  const { user, signOut } = useAuth();
+  const { user, signOut, refreshProfile } = useAuth();
   const { userLevel, setUserLevel } = useUserLevelStore();
   const [open, setOpen] = useState(false);
 
@@ -32,6 +32,7 @@ export function UserProfileDropdown() {
 
   const handleLevelChange = async (level: UserLevel) => {
     await setUserLevel(level);
+    await refreshProfile();
     toast.success(`Switched to ${LEVELS.find(l => l.value === level)?.label} mode`);
   };
 

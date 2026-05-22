@@ -11,10 +11,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { Save, UserCircle, Building2, Trash2, Plus, Mail, LogOut } from 'lucide-react';
+import { Save, UserCircle, Building2, Mail, LogOut } from 'lucide-react';
 import { UserLevelChip } from '@/components/UserLevelChip';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
+import troobaLogoDark from '@/assets/trooba-logo-dark.svg';
 
 interface TeamMember {
   id: string;
@@ -70,6 +71,7 @@ export default function SettingsPage() {
 
   const handleChangeLevel = async (level: UserLevel) => {
     await setUserLevel(level);
+    await refreshProfile();
     toast.success(`User level changed to ${level}`);
   };
 
@@ -110,17 +112,24 @@ export default function SettingsPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="border-b bg-card">
-        <div className="max-w-3xl mx-auto px-6 py-6">
+      <header className="border-b border-[rgba(255,255,255,0.08)] bg-sidebar">
+        <div className="max-w-7xl mx-auto px-6 py-6">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
-              <p className="text-sm text-muted-foreground mt-1">Manage your profile and organization</p>
+              <img src={troobaLogoDark} alt="Trooba Flow" style={{ height: '34px', width: 'auto' }} />
+              <p className="subbrand-line mt-1.5 text-[11px] tracking-[0.18em]">Flow Intelligence</p>
             </div>
             <div className="flex gap-2 items-center">
               <UserLevelChip />
-              <Button variant="outline" size="sm" onClick={() => navigate('/library')}>← Back to Library</Button>
-              <Button variant="ghost" size="sm" onClick={handleSignOut} className="text-muted-foreground gap-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => navigate('/library')}
+                className="text-sidebar-muted hover:text-sidebar-foreground hover:bg-sidebar-accent"
+              >
+                Back to Library
+              </Button>
+              <Button variant="ghost" size="sm" onClick={handleSignOut} className="text-sidebar-muted hover:text-sidebar-foreground hover:bg-sidebar-accent gap-1">
                 <LogOut className="h-4 w-4" /> Sign Out
               </Button>
             </div>
@@ -128,15 +137,25 @@ export default function SettingsPage() {
         </div>
       </header>
 
-      <div className="max-w-3xl mx-auto px-6 py-6">
+      <div className="max-w-7xl mx-auto px-6 py-6">
+        <div className="mb-5">
+          <h1 className="text-xl font-semibold text-foreground">Settings</h1>
+          <p className="text-sm text-muted-foreground mt-1">Manage your profile and organization</p>
+        </div>
         <Tabs defaultValue="profile">
-          <TabsList>
-            <TabsTrigger value="profile"><UserCircle className="h-4 w-4 mr-1" /> Profile</TabsTrigger>
-            {isAdmin && <TabsTrigger value="organization"><Building2 className="h-4 w-4 mr-1" /> Organization</TabsTrigger>}
+          <TabsList className="bg-muted/50 backdrop-blur-sm p-1 rounded-xl">
+            <TabsTrigger value="profile" className="text-sm">
+              <UserCircle className="h-4 w-4 mr-1" /> Profile
+            </TabsTrigger>
+            {isAdmin && (
+              <TabsTrigger value="organization" className="text-sm">
+                <Building2 className="h-4 w-4 mr-1" /> Organization
+              </TabsTrigger>
+            )}
           </TabsList>
 
           <TabsContent value="profile" className="mt-4 space-y-4">
-            <Card>
+            <Card className="border-border/70 shadow-sm">
               <CardHeader>
                 <CardTitle className="text-base">Profile Information</CardTitle>
               </CardHeader>
@@ -150,7 +169,7 @@ export default function SettingsPage() {
                 </div>
                 <div>
                   <Label>Email</Label>
-                  <Input value={user?.email || ''} disabled className="bg-muted" />
+                  <Input value={user?.email || ''} disabled className="bg-muted/60" />
                 </div>
                 <div>
                   <Label>User Level</Label>
@@ -167,7 +186,7 @@ export default function SettingsPage() {
               </CardContent>
             </Card>
 
-            <Card>
+            <Card className="border-border/70 shadow-sm">
               <CardHeader>
                 <CardTitle className="text-base">Change Password</CardTitle>
               </CardHeader>
@@ -191,7 +210,7 @@ export default function SettingsPage() {
 
           {isAdmin && (
             <TabsContent value="organization" className="mt-4 space-y-4">
-              <Card>
+              <Card className="border-border/70 shadow-sm">
                 <CardHeader>
                   <CardTitle className="text-base">Organization</CardTitle>
                   <CardDescription>Manage your organization settings</CardDescription>
@@ -199,13 +218,13 @@ export default function SettingsPage() {
                 <CardContent className="space-y-4">
                   <div>
                     <Label>Organization Name</Label>
-                    <Input value={orgName} disabled className="bg-muted" />
+                    <Input value={orgName} disabled className="bg-muted/60" />
                     <p className="text-xs text-muted-foreground mt-1">Contact support to change your organization name.</p>
                   </div>
                 </CardContent>
               </Card>
 
-              <Card>
+              <Card className="border-border/70 shadow-sm">
                 <CardHeader>
                   <CardTitle className="text-base">Team Members</CardTitle>
                   <CardDescription>{members.length} member(s)</CardDescription>

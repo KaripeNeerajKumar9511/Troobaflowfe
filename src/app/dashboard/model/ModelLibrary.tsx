@@ -1,12 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
 import { flushSync } from 'react-dom';
 import { useRouter } from 'next/navigation';
-import { useModelStore, type Model, defaultParamNames } from '@/stores/modelStore';
+import { useModelStore, type Model, defaultParamNames, defaultGeneral } from '@/stores/modelStore';
 import { useAuth } from '@/contexts/AuthContext';
 import { useUserLevelStore } from '@/hooks/useUserLevel';
 import { UserLevelChip } from '@/components/UserLevelChip';
 import { usePageTitle } from '@/hooks/usePageTitle';
-import { saveFullModelToDB } from '@/lib/supabaseData';
+import { saveFullModelToDB, fetchModelById } from '@/lib/supabaseData';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -26,6 +26,8 @@ import {
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
+import troobaMarkDark from '@/assets/trooba-mark-dark.svg';
+import { ModelTransferOverlay, yieldForOverlayPaint, type ModelTransferMode } from '@/components/ModelTransferOverlay';
 
 type StatusFilter = 'all' | 'never_run' | 'current' | 'needs_recalc';
 
@@ -57,8 +59,9 @@ export default function ModelLibrary() {
   const [deleteConfirmName, setDeleteConfirmName] = useState('');
   const [renameTarget, setRenameTarget] = useState<Model | null>(null);
   const [renameValue, setRenameValue] = useState('');
-  const [importing, setImporting] = useState(false);
+  const [jsonTransfer, setJsonTransfer] = useState<ModelTransferMode | null>(null);
   const [showAccountInfo, setShowAccountInfo] = useState(false);
+  const [duplicatingModelId, setDuplicatingModelId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!modelsLoaded && !modelsLoading) loadModels();
@@ -73,14 +76,19 @@ export default function ModelLibrary() {
     return m.name.toLowerCase().includes(q) || m.description.toLowerCase().includes(q);
   });
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     if (!newName.trim()) return;
-    const id = createModel(newName.trim(), newDesc.trim());
-    setShowCreate(false); setNewName(''); setNewDesc('');
-    flushSync(() => {
-      useModelStore.getState().setActiveModel(id);
-    });
-    router.push('/dashboard/generaldata');
+    try {
+      const id = await createModel(newName.trim(), newDesc.trim());
+      setShowCreate(false); setNewName(''); setNewDesc('');
+      flushSync(() => {
+        useModelStore.getState().setActiveModel(id);
+      });
+      router.push('/dashboard/generaldata');
+    } catch (err) {
+      console.error('handleCreate:', err);
+      toast.error(err instanceof Error ? err.message : 'Could not save the new model. Check your session and try again.');
+    }
   };
 
   const displayName = user
@@ -116,85 +124,170 @@ export default function ModelLibrary() {
     router.push('/dashboard/overview');
   };
 
-  const handleExportModel = (model: Model) => {
-    const exportData = {
-      name: model.name, description: model.description, tags: model.tags,
-      general: model.general, labor: model.labor, equipment: model.equipment,
-      products: model.products, operations: model.operations, routing: model.routing, ibom: model.ibom,
-    };
-    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    const date = new Date().toISOString().split('T')[0];
-    a.download = `${model.name.replace(/\s+/g, '-')}-export-${date}.json`;
-    a.click(); URL.revokeObjectURL(url);
-    toast.success('Model exported');
+  const handleExportModel = async (model: Model) => {
+    if (jsonTransfer) return;
+    flushSync(() => setJsonTransfer('export'));
+    await yieldForOverlayPaint();
+    try {
+      const exportData = {
+        name: model.name, description: model.description, tags: model.tags,
+        general: model.general, labor: model.labor, equipment: model.equipment,
+        products: model.products, operations: model.operations, routing: model.routing, ibom: model.ibom,
+      };
+      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const date = new Date().toISOString().split('T')[0];
+      a.download = `${model.name.replace(/\s+/g, '-')}-export-${date}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success('Model exported');
+    } finally {
+      setJsonTransfer(null);
+    }
   };
 
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    setImporting(true);
+    flushSync(() => setJsonTransfer('import'));
+    await yieldForOverlayPaint();
     try {
       const text = await file.text();
-      const snap = JSON.parse(text);
-      if (!snap.general || !snap.labor || !snap.equipment || !snap.products) {
+      const parsed = JSON.parse(text) as Record<string, unknown>;
+      const snap =
+        parsed.model && typeof parsed.model === 'object' && parsed.model !== null
+          ? ({ ...parsed, ...(parsed.model as Record<string, unknown>) } as Record<string, unknown>)
+          : parsed;
+
+      const laborRaw = snap.labor;
+      const equipRaw = snap.equipment;
+      const productsRaw = snap.products ?? snap.parts;
+      const generalRaw = snap.general;
+      const generalPatch =
+        generalRaw && typeof generalRaw === 'object' && !Array.isArray(generalRaw)
+          ? (generalRaw as Partial<Model['general']>)
+          : {};
+
+      if (!Array.isArray(laborRaw) || !Array.isArray(equipRaw) || !Array.isArray(productsRaw)) {
         toast.error('Invalid model file — missing required data sections');
-        setImporting(false); return;
+        return;
       }
-      const { createDemoModel } = await import('@/stores/modelStore');
+
+      const importName = String(snap.name || 'Imported Model');
+      const mergedGeneral: Model['general'] = {
+        ...defaultGeneral,
+        ...generalPatch,
+        model_title: generalPatch.model_title || importName,
+      };
+
       const uid = () => crypto.randomUUID();
       const idMap: Record<string, string> = {};
-      const newUid = (old: string) => { const n = uid(); idMap[old] = n; return n; };
+      const newUid = (stableKey: string) => {
+        if (idMap[stableKey]) return idMap[stableKey];
+        const n = uid();
+        idMap[stableKey] = n;
+        return n;
+      };
 
-      // Build imported model with new IDs
       const modelId = uid();
-      const labor = (snap.labor || []).map((l: any) => ({ ...l, id: newUid(l.id) }));
-      const equipment = (snap.equipment || []).map((e: any) => ({
-        ...e, id: newUid(e.id),
-        labor_group_id: e.labor_group_id ? (idMap[e.labor_group_id] || e.labor_group_id) : '',
+      const labor = (laborRaw as any[]).map((l: any, idx: number) => {
+        const key = l.id != null && String(l.id) !== '' ? String(l.id) : `labor:${idx}`;
+        return { ...l, id: newUid(key) };
+      });
+      const equipment = (equipRaw as any[]).map((e: any, idx: number) => {
+        const key = e.id != null && String(e.id) !== '' ? String(e.id) : `equipment:${idx}`;
+        return {
+          ...e,
+          id: newUid(key),
+          labor_group_id: e.labor_group_id ? (idMap[String(e.labor_group_id)] || String(e.labor_group_id)) : '',
+        };
+      });
+      const products = (productsRaw as any[]).map((p: any, idx: number) => {
+        const key = p.id != null && String(p.id) !== '' ? String(p.id) : `product:${idx}`;
+        return { ...p, id: newUid(key) };
+      });
+
+      const opDefaults = {
+        equip_setup_piece: 0,
+        equip_setup_tbatch: 0,
+        equip_run_lot: 0,
+        equip_run_tbatch: 0,
+        labor_setup_piece: 0,
+        labor_setup_tbatch: 0,
+        labor_run_lot: 0,
+        labor_run_tbatch: 0,
+        oper1: 0,
+        oper2: 0,
+        oper3: 0,
+        oper4: 0,
+      };
+
+      const operations = ((snap.operations || []) as any[]).map((o: any, idx: number) => {
+        const key = o.id != null && String(o.id) !== '' ? String(o.id) : `operation:${idx}`;
+        const rawPid = o.product_id != null ? String(o.product_id) : '';
+        return {
+          ...opDefaults,
+          ...o,
+          id: newUid(key),
+          op_name: String(o.op_name ?? o.name ?? ''),
+          product_id: idMap[rawPid] || rawPid,
+          equip_id: o.equip_id != null && String(o.equip_id) !== '' ? (idMap[String(o.equip_id)] || String(o.equip_id)) : '',
+        };
+      });
+      const routing = ((snap.routing || []) as any[]).map((r: any) => ({
+        ...r,
+        id: uid(),
+        product_id: idMap[String(r.product_id)] || String(r.product_id),
       }));
-      const products = (snap.products || []).map((p: any) => ({ ...p, id: newUid(p.id) }));
-      const operations = (snap.operations || []).map((o: any) => ({
-        ...o, id: newUid(o.id),
-        product_id: idMap[o.product_id] || o.product_id,
-        equip_id: o.equip_id ? (idMap[o.equip_id] || o.equip_id) : '',
-      }));
-      const routing = (snap.routing || []).map((r: any) => ({
-        ...r, id: uid(),
-        product_id: idMap[r.product_id] || r.product_id,
-      }));
-      const ibom = (snap.ibom || []).map((i: any) => ({
-        ...i, id: uid(),
-        parent_product_id: idMap[i.parent_product_id] || i.parent_product_id,
-        component_product_id: idMap[i.component_product_id] || i.component_product_id,
+      const ibom = ((snap.ibom || []) as any[]).map((i: any) => ({
+        ...i,
+        id: uid(),
+        parent_product_id: idMap[String(i.parent_product_id)] || String(i.parent_product_id),
+        component_product_id: idMap[String(i.component_product_id)] || String(i.component_product_id),
       }));
 
       const importedModel: Model = {
         id: modelId,
-        name: `${snap.name || 'Imported Model'} (Imported)`,
-        description: snap.description || '',
-        tags: snap.tags || [],
+        name: `${importName} (Imported)`,
+        description: String(snap.description || ''),
+        tags: (snap.tags as string[]) || [],
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         last_run_at: null, run_status: 'never_run',
         is_archived: false, is_demo: false, is_starred: false,
-        general: snap.general, param_names: snap.param_names || { ...defaultParamNames }, labor, equipment, products, operations, routing, ibom,
+        general: mergedGeneral,
+        param_names: (snap.param_names as Model['param_names']) || { ...defaultParamNames },
+        labor,
+        equipment,
+        products,
+        operations,
+        routing,
+        ibom,
       };
 
       await saveFullModelToDB(importedModel);
-      useModelStore.setState(s => ({ models: [importedModel, ...s.models] }));
-      toast.success(`Model "${importedModel.name}" imported successfully`);
+      await useModelStore.getState().loadModels(true);
+      let fromServer = useModelStore.getState().models.find((m) => m.id === modelId) ?? (await fetchModelById(modelId));
+      if (!fromServer) {
+        throw new Error(
+          'Import saved but the model could not be loaded from the server. Check that you are signed in and the API is reachable.',
+        );
+      }
+      useModelStore.setState((s) => ({
+        models: [fromServer!, ...s.models.filter((m) => m.id !== modelId)],
+      }));
+      toast.success(`Model "${fromServer.name}" imported successfully`);
       flushSync(() => {
         useModelStore.getState().setActiveModel(modelId);
       });
       router.push('/dashboard/overview');
     } catch (err) {
       console.error('Import error:', err);
-      toast.error('Failed to import model — invalid file format');
+      toast.error(err instanceof Error ? err.message : 'Failed to import model — invalid file format');
     } finally {
-      setImporting(false);
+      setJsonTransfer(null);
       if (importRef.current) importRef.current.value = '';
     }
   };
@@ -227,10 +320,31 @@ export default function ModelLibrary() {
         <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setRenameTarget(model); setRenameValue(model.name); }}>
           <Pencil className="h-4 w-4 mr-2" /> Rename
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={(e) => { e.stopPropagation(); duplicateModel(model.id); toast.success('Model duplicated'); }}>
+        <DropdownMenuItem
+          onClick={async (e) => {
+            e.stopPropagation();
+            if (duplicatingModelId) return;
+            flushSync(() => {
+              setDuplicatingModelId(model.id);
+            });
+            try {
+              await duplicateModel(model.id);
+              toast.success('Model duplicated');
+            } catch (err) {
+              console.error('duplicateModel:', err);
+              toast.error(err instanceof Error ? err.message : 'Could not duplicate model');
+            } finally {
+              setDuplicatingModelId(null);
+            }
+          }}
+          disabled={!!duplicatingModelId}
+        >
           <Copy className="h-4 w-4 mr-2" /> Duplicate
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleExportModel(model); }}>
+        <DropdownMenuItem
+          onClick={async (e) => { e.stopPropagation(); await handleExportModel(model); }}
+          disabled={!!jsonTransfer}
+        >
           <Download className="h-4 w-4 mr-2" /> Export JSON
         </DropdownMenuItem>
         <DropdownMenuItem onClick={(e) => { e.stopPropagation(); archiveModel(model.id); toast.success(model.is_archived ? 'Model restored' : 'Model archived'); }}>
@@ -258,6 +372,24 @@ export default function ModelLibrary() {
 
   return (
     <div className="min-h-screen bg-background">
+      {jsonTransfer && <ModelTransferOverlay mode={jsonTransfer} />}
+      {duplicatingModelId && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90">
+          <div className="flex flex-col items-center justify-center px-6 py-12 text-center">
+            <div className="relative flex h-24 w-24 items-center justify-center">
+              <div className="absolute h-40 w-40 rounded-full bg-primary/20 blur-2xl animate-pulse" />
+              <div className="h-20 w-20 rounded-full border-2 border-primary/30 border-t-primary animate-spin" />
+              <img src={troobaMarkDark} alt="" className="absolute h-12 w-12" />
+            </div>
+            <p className="mt-6 font-mono text-xs uppercase tracking-[0.2em] text-white/90">
+              Duplicating model
+            </p>
+            <p className="mt-2 max-w-xs text-sm text-white/75 animate-pulse">
+              Copying all model data…
+            </p>
+          </div>
+        </div>
+      )}
       <input ref={importRef} type="file" accept=".json" className="hidden" onChange={handleImport} />
       <header className="border-b bg-card">
         <div className="max-w-7xl mx-auto px-6 py-6">
@@ -267,8 +399,8 @@ export default function ModelLibrary() {
               <p className="text-sm text-muted-foreground mt-1">Manufacturing Cycle Time Analysis Platform</p>
             </div>
             <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" className="gap-1" onClick={() => importRef.current?.click()} disabled={importing}>
-                <Upload className="h-4 w-4" /> {importing ? 'Importing…' : 'Import'}
+              <Button variant="outline" size="sm" className="gap-1" onClick={() => importRef.current?.click()} disabled={!!jsonTransfer}>
+                <Upload className="h-4 w-4" /> {jsonTransfer === 'import' ? 'Importing…' : 'Import'}
               </Button>
               <Button onClick={() => setShowCreate(true)} className="gap-2">
                 <Plus className="h-4 w-4" /> New Model

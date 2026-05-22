@@ -1,0 +1,2977 @@
+{
+  "meta": {
+    "source": "Errors, Warnings and Validation Messages (1).xlsx",
+    "sheet": "Errors & Warnings",
+    "generatedAt": "2026-05-16",
+    "totalCount": 150,
+    "errorCount": 111,
+    "warningCount": 20,
+    "successCount": 1,
+    "validationCount": 18,
+    "description": "DLL, portal utilization, and validation messages for Run & Results."
+  },
+  "errors": [
+    {
+      "id": "E1",
+      "serialNo": 1,
+      "sourceFile": "Brent.cpp",
+      "sourceLine": 166,
+      "kind": "error",
+      "dllMessage": "quiting brentgd   too many times around ...",
+      "userMessage": "(E1) Review the input values for unrealistic routing, timing, or capacity settings."
+    },
+    {
+      "id": "E2",
+      "serialNo": 2,
+      "sourceFile": "calc.cpp",
+      "sourceLine": 98,
+      "kind": "error",
+      "dllMessage": "Cannot Calculate anything.\n No Parts have been added yet.",
+      "userMessage": "(E2) Missing Products"
+    },
+    {
+      "id": "E3",
+      "serialNo": 3,
+      "sourceFile": "calc.cpp",
+      "sourceLine": 127,
+      "kind": "error",
+      "dllMessage": "error before ...set demand start",
+      "userMessage": "(E3) Check demand/production quantity inputs."
+    },
+    {
+      "id": "E4",
+      "serialNo": 7,
+      "sourceFile": "calc1.cpp",
+      "sourceLine": 164,
+      "kind": "error",
+      "dllMessage": "ERROR: #(41) \n Mean Time To Failure \n for equipment \n is too small. Please change value",
+      "userMessage": "(E4) Mean time to Failure: Enter a realistic positive failure-time value.",
+      "errorCode": "41"
+    },
+    {
+      "id": "E5",
+      "serialNo": 8,
+      "sourceFile": "calc1.cpp",
+      "sourceLine": 221,
+      "kind": "error",
+      "dllMessage": "ERROR: #(7)\n Number of types of equipment is %d and exceeds limit of %d \n Some internal routing equations cannot be solved due to lack of memory",
+      "userMessage": "(E5) No of Equipment types exceeds system limit.",
+      "errorCode": "7"
+    },
+    {
+      "id": "E6",
+      "serialNo": 13,
+      "sourceFile": "calc1.cpp",
+      "sourceLine": 527,
+      "kind": "error",
+      "dllMessage": "MAJOR ERROR: #(103) CONTACT BUILD TO DEMAND.COM \n Equipment wait time < 0.0",
+      "userMessage": "(E6) Invalid equipment wait time. Review equipment capacity, operation times, and routing inputs.",
+      "errorCode": "103"
+    },
+    {
+      "id": "E7",
+      "serialNo": 14,
+      "sourceFile": "calc1.cpp",
+      "sourceLine": 531,
+      "kind": "error",
+      "dllMessage": "MAJOR ERROR: #(103) CONTACT CONTACT BUILD TO DEMAND.COM \n Equipment wait time < 0.0",
+      "userMessage": "(E7) Invalid negative equipment wait time. Review equipment capacity, operation times, and routing inputs.",
+      "errorCode": "103"
+    },
+    {
+      "id": "E8",
+      "serialNo": 16,
+      "sourceFile": "calc1.cpp",
+      "sourceLine": 1294,
+      "kind": "error",
+      "dllMessage": "INTERNAL ERROR: #(84)\n Operation is a sink for pieces.\n There are no `FROM-TO' routings from this operation?",
+      "userMessage": "(E8) Operation/Routing error. Check FROM-TO routing path.",
+      "errorCode": "84"
+    },
+    {
+      "id": "E9",
+      "serialNo": 17,
+      "sourceFile": "calc1.cpp",
+      "sourceLine": 1314,
+      "kind": "error",
+      "dllMessage": "INTERNAL ERROR: #(85)\n Operation data cannot be found.\n There is no `OPERATION ASSIGNMENT' record for this operation",
+      "userMessage": "(E9) Operation/Routing error. Missing operation assignment.",
+      "errorCode": "85"
+    },
+    {
+      "id": "E10",
+      "serialNo": 18,
+      "sourceFile": "calc11.cpp",
+      "sourceLine": 134,
+      "kind": "error",
+      "dllMessage": "in fvalue Internal error, calculation stopped",
+      "userMessage": "(E10) Input data error. Review the all inputs and try again."
+    },
+    {
+      "id": "E11",
+      "serialNo": 19,
+      "sourceFile": "calc11.cpp",
+      "sourceLine": 663,
+      "kind": "error",
+      "dllMessage": "quiting frprmn",
+      "userMessage": "(E11) Unrealistic routing or capacity settings."
+    },
+    {
+      "id": "E12",
+      "serialNo": 22,
+      "sourceFile": "calc2.cpp",
+      "sourceLine": 350,
+      "kind": "error",
+      "dllMessage": "INTERNAL ERROR: #(XX)\n Number in Labor group is too small.\n Value is %f ??",
+      "userMessage": "(E12) Invalid Labor group quantiy"
+    },
+    {
+      "id": "E13",
+      "serialNo": 23,
+      "sourceFile": "calc2.cpp",
+      "sourceLine": 353,
+      "kind": "error",
+      "dllMessage": "INTERNAL ERROR: #(XX)\n Number in Labor group %s is too small.\n Value is %f ??",
+      "userMessage": "(E13) Invalid Labor group quantiy"
+    },
+    {
+      "id": "E14",
+      "serialNo": 24,
+      "sourceFile": "calc3.cpp",
+      "sourceLine": 133,
+      "kind": "error",
+      "dllMessage": "ERROR CACALC aoper null",
+      "userMessage": "(E14) Missing Operation or Routing details"
+    },
+    {
+      "id": "E15",
+      "serialNo": 26,
+      "sourceFile": "calc3.cpp",
+      "sourceLine": 388,
+      "kind": "error",
+      "dllMessage": "MAJOR ERROR: #(47b) \n CONTACT BUILD TO DEMAND.COM \n Inversion of arrival variances Equipment",
+      "userMessage": "(E15) Equipment variability Issue. Review equipment MTTF/MTTR, routing, and variability inputs.",
+      "errorCode": "47b"
+    },
+    {
+      "id": "E16",
+      "serialNo": 27,
+      "sourceFile": "calc3.cpp",
+      "sourceLine": 499,
+      "kind": "error",
+      "dllMessage": "INTERNAL ERROR: #(48) \n Numerical Problems \n Equipment Varability Routing cannot be solved",
+      "userMessage": "(E16) Equipment variability Issue. Review equipment MTTF/MTTR, routing, and variability inputs.",
+      "errorCode": "48"
+    },
+    {
+      "id": "E17",
+      "serialNo": 29,
+      "sourceFile": "calc5.cpp",
+      "sourceLine": 80,
+      "kind": "error",
+      "dllMessage": "error in doall visits",
+      "userMessage": "(E17) Routing incomplete"
+    },
+    {
+      "id": "E18",
+      "serialNo": 30,
+      "sourceFile": "calc5.cpp",
+      "sourceLine": 236,
+      "kind": "error",
+      "dllMessage": "ERROR: #(6)\n Number of operations for product exceeds limit of %d \n The routing equations cannot be solved due to lack of memory",
+      "userMessage": "(E18) Operation count not supported. Reduce no of operations.",
+      "errorCode": "6"
+    },
+    {
+      "id": "E19",
+      "serialNo": 31,
+      "sourceFile": "calc5.cpp",
+      "sourceLine": 264,
+      "kind": "error",
+      "dllMessage": "mem error  !!!",
+      "userMessage": "(E19) Unexpected memory error. Contact support@trooba.com"
+    },
+    {
+      "id": "E20",
+      "serialNo": 32,
+      "sourceFile": "calc5.cpp",
+      "sourceLine": 270,
+      "kind": "error",
+      "dllMessage": "INSUFFICIENT MEMORY: #(12) \n Insufficient Memory Space. Cannot Solve Routing equations",
+      "userMessage": "(E20) Unexpected memory error. Contact support@trooba.com",
+      "errorCode": "12"
+    },
+    {
+      "id": "E21",
+      "serialNo": 33,
+      "sourceFile": "calc5.cpp",
+      "sourceLine": 362,
+      "kind": "error",
+      "dllMessage": "ERROR: #(69) \n Routing cannot be solved for Product. \n CHECK IF THERE IS A PATH FROM EVERY OPERATION TO 'STOCK'.",
+      "userMessage": "(E21) Routing incomplete",
+      "errorCode": "69"
+    },
+    {
+      "id": "E22",
+      "serialNo": 34,
+      "sourceFile": "calc5.cpp",
+      "sourceLine": 387,
+      "kind": "error",
+      "dllMessage": "Error: \n No pieces of Part %s are being routed to STOCK !\n Please change routing...",
+      "userMessage": "(E22) Routing/Operations Error. Nothing routed to STOCK."
+    },
+    {
+      "id": "E23",
+      "serialNo": 35,
+      "sourceFile": "calc5.cpp",
+      "sourceLine": 390,
+      "kind": "error",
+      "dllMessage": "Error: \n No pieces of product are being routed to STOCK !\n Please change routing...(1)",
+      "userMessage": "(E23) Routing/Operations Error. Nothing routed to STOCK."
+    },
+    {
+      "id": "E24",
+      "serialNo": 36,
+      "sourceFile": "calc5.cpp",
+      "sourceLine": 525,
+      "kind": "error",
+      "dllMessage": "INTERNAL ERROR: #(21b) \n Routing cannot be solved for product",
+      "userMessage": "(E24) Routing/Operations Error. Nothing routed to STOCK.",
+      "errorCode": "21b"
+    },
+    {
+      "id": "E25",
+      "serialNo": 37,
+      "sourceFile": "calc5.cpp",
+      "sourceLine": 541,
+      "kind": "error",
+      "dllMessage": "Error: \n No pieces of Part %s are being routed to STOCK !\n Please change routing...",
+      "userMessage": "(E25) Routing/Operations Error. Nothing routed to STOCK."
+    },
+    {
+      "id": "E26",
+      "serialNo": 38,
+      "sourceFile": "calc5.cpp",
+      "sourceLine": 544,
+      "kind": "error",
+      "dllMessage": "Error: \n No pieces of product are being routed to STOCK !\n Please change routing...(2)",
+      "userMessage": "(E26) Routing/Operations Error. Nothing routed to STOCK."
+    },
+    {
+      "id": "E27",
+      "serialNo": 39,
+      "sourceFile": "calc5.cpp",
+      "sourceLine": 658,
+      "kind": "error",
+      "dllMessage": "INTERNAL ERROR: #(21c) \n Routing cannot be solved for product",
+      "userMessage": "(E27) Routing/Operations Error.",
+      "errorCode": "21c"
+    },
+    {
+      "id": "E28",
+      "serialNo": 40,
+      "sourceFile": "calc5.cpp",
+      "sourceLine": 756,
+      "kind": "error",
+      "dllMessage": "INSUFFICIENT MEMORY: #(22a) \n Insufficient Memory to calculate No. times operations done for product",
+      "userMessage": "(E28) Memory Error. Contact support@trooba.com",
+      "errorCode": "22a"
+    },
+    {
+      "id": "E29",
+      "serialNo": 41,
+      "sourceFile": "calc5.cpp",
+      "sourceLine": 782,
+      "kind": "error",
+      "dllMessage": "ERROR: #(74) \n For part %s %% of pieces Routed out of DOCK does not equal  100.0%%",
+      "userMessage": "(E29) Routing/Operations Error. Routing percentages out of DOCK must total 100%.",
+      "errorCode": "74"
+    },
+    {
+      "id": "E30",
+      "serialNo": 42,
+      "sourceFile": "calc5.cpp",
+      "sourceLine": 785,
+      "kind": "error",
+      "dllMessage": "ERROR: #(74) \n %% of pieces Routed out of DOCK does not equal 100.0%%",
+      "userMessage": "(E30) Routing/Operations Error. Routing percentages out of DOCK must total 100%.",
+      "errorCode": "74"
+    },
+    {
+      "id": "E31",
+      "serialNo": 43,
+      "sourceFile": "calc5.cpp",
+      "sourceLine": 808,
+      "kind": "error",
+      "dllMessage": "INSUFFICIENT MEMORY: #(22c) \n Insufficient Memory to calculate \n No. times operations done for product",
+      "userMessage": "(E31) Memory Error. Contact support@trooba.com",
+      "errorCode": "22c"
+    },
+    {
+      "id": "E32",
+      "serialNo": 44,
+      "sourceFile": "calc5.cpp",
+      "sourceLine": 841,
+      "kind": "error",
+      "dllMessage": "ERROR: #(75) \n For part %s Total Proportion \n Assigned to Operation %s is not equal to 100.0%%",
+      "userMessage": "(E32) Routing/Operations Error. Routing percentages must total 100%.",
+      "errorCode": "75"
+    },
+    {
+      "id": "E33",
+      "serialNo": 45,
+      "sourceFile": "calc5.cpp",
+      "sourceLine": 845,
+      "kind": "error",
+      "dllMessage": "ERROR: #(75) \n Total Proportion \n Assigned to Operation is not equal to 100.0%%",
+      "userMessage": "(E33) Routing/Operations Error. Routing percentages must total 100%.",
+      "errorCode": "75"
+    },
+    {
+      "id": "E34",
+      "serialNo": 46,
+      "sourceFile": "calc5.cpp",
+      "sourceLine": 860,
+      "kind": "error",
+      "dllMessage": "ERROR: #(76c) \n %% of pieces routed \n out of operation does not equal  100.0%%",
+      "userMessage": "(E34) Routing/Operations Error. Routing percentages must total 100%.",
+      "errorCode": "76c"
+    },
+    {
+      "id": "E35",
+      "serialNo": 47,
+      "sourceFile": "calc5.cpp",
+      "sourceLine": 876,
+      "kind": "error",
+      "dllMessage": "INSUFFICIENT MEMORY: #(22d) \n Insufficient Memory to calculate \n No. times operations done for product",
+      "userMessage": "(E35) Memory Error. Contact support@trooba.com",
+      "errorCode": "22d"
+    },
+    {
+      "id": "E36",
+      "serialNo": 48,
+      "sourceFile": "calc5.cpp",
+      "sourceLine": 932,
+      "kind": "error",
+      "dllMessage": "ERROR: #(75b) \n For part %s Total Proportion \n Assigned to Operation %s is not equal to 100.0%%",
+      "userMessage": "(E36) Routing/Operations Error. Routing percentages must total 100%.",
+      "errorCode": "75b"
+    },
+    {
+      "id": "E37",
+      "serialNo": 49,
+      "sourceFile": "calc5.cpp",
+      "sourceLine": 936,
+      "kind": "error",
+      "dllMessage": "ERROR: #(75b) \n Total Proportion \n Assigned to operation is not equal to 100.0%%",
+      "userMessage": "(E37) Routing/Operations Error. Routing percentages must total 100%.",
+      "errorCode": "75b"
+    },
+    {
+      "id": "E38",
+      "serialNo": 50,
+      "sourceFile": "calc5.cpp",
+      "sourceLine": 950,
+      "kind": "error",
+      "dllMessage": "ERROR: #(76b) \n For part %s %% of pieces \n routed out of Operation %s does not equal 100.0%%",
+      "userMessage": "(E38) Routing/Operations Error. Routing percentages must total 100%.",
+      "errorCode": "76b"
+    },
+    {
+      "id": "E39",
+      "serialNo": 51,
+      "sourceFile": "calc5.cpp",
+      "sourceLine": 953,
+      "kind": "error",
+      "dllMessage": "ERROR: #(76b) \n %% of pieces \n routed out of operation does not equal 100.0%%",
+      "userMessage": "(E39) Routing/Operations Error. Routing percentages must total 100%.",
+      "errorCode": "76b"
+    },
+    {
+      "id": "E40",
+      "serialNo": 52,
+      "sourceFile": "calc5.cpp",
+      "sourceLine": 1070,
+      "kind": "error",
+      "dllMessage": "MAJOR ERROR: #(26) \n CONTACT BUILD TO DEMAND.COM \n CANNOT FIND 'TO' OPERATION listed as a 'FROM' OPERATION",
+      "userMessage": "(E40) Routing/Operations Error.",
+      "errorCode": "26"
+    },
+    {
+      "id": "E41",
+      "serialNo": 53,
+      "sourceFile": "calc5.cpp",
+      "sourceLine": 1155,
+      "kind": "error",
+      "dllMessage": "ERROR: #(77) \n All pieces go to SCRAP from an operation.  This is not allowed.  (Hint: send 0.0001%% to STOCK)",
+      "userMessage": "(E41) Routing/Operations Error. All pieces are routed to SCRAP.",
+      "errorCode": "77"
+    },
+    {
+      "id": "E42",
+      "serialNo": 56,
+      "sourceFile": "calc7.cpp",
+      "sourceLine": 161,
+      "kind": "error",
+      "dllMessage": "MAJOR ERROR: #201 \n No operations for a product.",
+      "userMessage": "(E42) Product missing operations/routing.",
+      "errorCode": "201"
+    },
+    {
+      "id": "E43",
+      "serialNo": 57,
+      "sourceFile": "calc7.cpp",
+      "sourceLine": 163,
+      "kind": "error",
+      "dllMessage": "at check_eq start error no routes ?  %s %i %i",
+      "userMessage": "(E43) Product missing operations/routing."
+    },
+    {
+      "id": "E44",
+      "serialNo": 59,
+      "sourceFile": "calc7.cpp",
+      "sourceLine": 231,
+      "kind": "error",
+      "dllMessage": "ERROR: #(42) \n No Equipment assigned for \n Part and Operation",
+      "userMessage": "(E44) Equipment assignment missing.",
+      "errorCode": "42"
+    },
+    {
+      "id": "E45",
+      "serialNo": 60,
+      "sourceFile": "calc9.cpp",
+      "sourceLine": 248,
+      "kind": "error",
+      "dllMessage": "can't write to lot.res",
+      "userMessage": "(E45) The system could not save the results. Contact support@trooba.com"
+    },
+    {
+      "id": "E46",
+      "serialNo": 61,
+      "sourceFile": "calc9_1.cpp",
+      "sourceLine": 331,
+      "kind": "error",
+      "dllMessage": "Internal error, calculation stopped",
+      "userMessage": "(E46) Internal data error. Contact support@trooba.com"
+    },
+    {
+      "id": "E47",
+      "serialNo": 62,
+      "sourceFile": "dll2.cpp",
+      "sourceLine": 238,
+      "kind": "error",
+      "dllMessage": "INTERNAL ERROR: #(6) \n Equipment uses an unknown Labor Group",
+      "userMessage": "(E47) Equipment assigned to incorrect labor group.",
+      "errorCode": "6"
+    },
+    {
+      "id": "E48",
+      "serialNo": 63,
+      "sourceFile": "dll2.cpp",
+      "sourceLine": 297,
+      "kind": "error",
+      "dllMessage": "INTERNAL ERROR: #(7) \n Operation is tied to an unknown Product",
+      "userMessage": "(E48) An operation/routing linked to invalid product.",
+      "errorCode": "7"
+    },
+    {
+      "id": "E49",
+      "serialNo": 64,
+      "sourceFile": "dll2.cpp",
+      "sourceLine": 311,
+      "kind": "error",
+      "dllMessage": "INTERNAL ERROR: #(8) \n Operation is tied to an unknown Equipment group",
+      "userMessage": "(E49) Operation linked to incorrect equipment group.",
+      "errorCode": "8"
+    },
+    {
+      "id": "E50",
+      "serialNo": 65,
+      "sourceFile": "dll2.cpp",
+      "sourceLine": 361,
+      "kind": "error",
+      "dllMessage": "INTERNAL ERROR: #(9) \n Routing is tied to an unknown Product",
+      "userMessage": "(E50) An operation/routing linked to invalid product.",
+      "errorCode": "9"
+    },
+    {
+      "id": "E51",
+      "serialNo": 66,
+      "sourceFile": "dll2.cpp",
+      "sourceLine": 377,
+      "kind": "error",
+      "dllMessage": "INTERNAL ERROR: #(10) \n Routing FROM is tied to an unknown Operation",
+      "userMessage": "(E51) Routing/Operations Error. A routing FROM operation does not exist.",
+      "errorCode": "10"
+    },
+    {
+      "id": "E52",
+      "serialNo": 67,
+      "sourceFile": "dll2.cpp",
+      "sourceLine": 390,
+      "kind": "error",
+      "dllMessage": "INTERNAL ERROR: #(11) \n Routing TO is tied to an unknown Operation",
+      "userMessage": "(E52) Routing/Operations Error. A routing TO operation does not exist.",
+      "errorCode": "11"
+    },
+    {
+      "id": "E53",
+      "serialNo": 68,
+      "sourceFile": "dll2.cpp",
+      "sourceLine": 1037,
+      "kind": "error",
+      "dllMessage": "internal error/data error ... NO write_results in run it",
+      "userMessage": "(E53) Internal error. Contact support@trooba.com"
+    },
+    {
+      "id": "E54",
+      "serialNo": 71,
+      "sourceFile": "io_code.cpp",
+      "sourceLine": 695,
+      "kind": "error",
+      "dllMessage": "IN GROUP  GROUP                FAILURE  REPAIR   RATE (%%)  MULTIPLIER  MULTIPLIER  MULTIPLIER",
+      "userMessage": "(E54) Equipment MTTF/MTTR error."
+    },
+    {
+      "id": "E55",
+      "serialNo": 72,
+      "sourceFile": "log.h",
+      "sourceLine": 61,
+      "kind": "error",
+      "dllMessage": "ERROR",
+      "userMessage": "(E55) Check Input data."
+    },
+    {
+      "id": "E56",
+      "serialNo": 75,
+      "sourceFile": "log.h",
+      "sourceLine": 82,
+      "kind": "error",
+      "dllMessage": "ERROR",
+      "userMessage": "(E56) Internal error. Contact support@trooba.com"
+    },
+    {
+      "id": "E57",
+      "serialNo": 76,
+      "sourceFile": "log.h",
+      "sourceLine": 84,
+      "kind": "error",
+      "dllMessage": "Unknown logging level '",
+      "userMessage": "(E57) Internal error. Contact support@trooba.com"
+    },
+    {
+      "id": "E58",
+      "serialNo": 77,
+      "sourceFile": "log.h",
+      "sourceLine": 144,
+      "kind": "error",
+      "dllMessage": "Error in NowTime()",
+      "userMessage": "(E58) Internal error. Contact support@trooba.com"
+    },
+    {
+      "id": "E59",
+      "serialNo": 78,
+      "sourceFile": "mpx_c1.cpp",
+      "sourceLine": 1790,
+      "kind": "error",
+      "dllMessage": "Cannot find Product for an operation",
+      "userMessage": "(E59) An operation/routing linked to invalid product."
+    },
+    {
+      "id": "E60",
+      "serialNo": 79,
+      "sourceFile": "mpx_c1.cpp",
+      "sourceLine": 1809,
+      "kind": "error",
+      "dllMessage": "Cannot find equipment for an operation",
+      "userMessage": "(E60) Operation linked to incorrect equipment group."
+    },
+    {
+      "id": "E61",
+      "serialNo": 80,
+      "sourceFile": "mpx_c1.cpp",
+      "sourceLine": 1828,
+      "kind": "error",
+      "dllMessage": "Cannot find DOCK for a product ??",
+      "userMessage": "(E61) Routing/Operations Error. Missing DOCK operation."
+    },
+    {
+      "id": "E62",
+      "serialNo": 81,
+      "sourceFile": "mpx_c1.cpp",
+      "sourceLine": 1851,
+      "kind": "error",
+      "dllMessage": "Cannot find STOCK for a product ??",
+      "userMessage": "(E62) Routing/Operations Error. Missing STOCK operation."
+    },
+    {
+      "id": "E63",
+      "serialNo": 82,
+      "sourceFile": "mpx_c1.cpp",
+      "sourceLine": 1873,
+      "kind": "error",
+      "dllMessage": "Cannot find STOCK for a product ??",
+      "userMessage": "(E63) Routing/Operations Error. Missing STOCK operation."
+    },
+    {
+      "id": "E64",
+      "serialNo": 83,
+      "sourceFile": "mpx_c1.cpp",
+      "sourceLine": 1902,
+      "kind": "error",
+      "dllMessage": "Cannot add operation",
+      "userMessage": "(E64) Routing/Operations Error."
+    },
+    {
+      "id": "E65",
+      "serialNo": 84,
+      "sourceFile": "mpx_c1.cpp",
+      "sourceLine": 2440,
+      "kind": "error",
+      "dllMessage": "ERROR : \n Cannot open file %s for results data",
+      "userMessage": "(E65) Internal error. Contact support@trooba.com"
+    },
+    {
+      "id": "E66",
+      "serialNo": 85,
+      "sourceFile": "mpx_c1.cpp",
+      "sourceLine": 2469,
+      "kind": "error",
+      "dllMessage": "ERROR : \n Cannot open file %s for results data",
+      "userMessage": "(E66) Internal error. Contact support@trooba.com"
+    },
+    {
+      "id": "E67",
+      "serialNo": 86,
+      "sourceFile": "mpx_c1.cpp",
+      "sourceLine": 2500,
+      "kind": "error",
+      "dllMessage": "ERROR : \n Cannot open file %s for results data",
+      "userMessage": "(E67) Internal error. Contact support@trooba.com"
+    },
+    {
+      "id": "E68",
+      "serialNo": 87,
+      "sourceFile": "mpx_c1.cpp",
+      "sourceLine": 2529,
+      "kind": "error",
+      "dllMessage": "ERROR : \n Cannot open file %s for results data",
+      "userMessage": "(E68) Internal error. Contact support@trooba.com"
+    },
+    {
+      "id": "E69",
+      "serialNo": 88,
+      "sourceFile": "mpx_c1.cpp",
+      "sourceLine": 2566,
+      "kind": "error",
+      "dllMessage": "ERROR : \n Cannot open file %s for results data",
+      "userMessage": "(E69) Internal error. Contact support@trooba.com"
+    },
+    {
+      "id": "E70",
+      "serialNo": 89,
+      "sourceFile": "mpx_c1.cpp",
+      "sourceLine": 2615,
+      "kind": "error",
+      "dllMessage": "ERROR : \n Cannot open file %s for results data",
+      "userMessage": "(E70) Internal error. Contact support@trooba.com"
+    },
+    {
+      "id": "E71",
+      "serialNo": 90,
+      "sourceFile": "mpx_c1.cpp",
+      "sourceLine": 2746,
+      "kind": "error",
+      "dllMessage": "ERROR : \n Cannot open file %s for results data",
+      "userMessage": "(E71) Internal error. Contact support@trooba.com"
+    },
+    {
+      "id": "E72",
+      "serialNo": 91,
+      "sourceFile": "mpx_c1.cpp",
+      "sourceLine": 2825,
+      "kind": "error",
+      "dllMessage": "Cannot open error file to write message !1!?\n %s",
+      "userMessage": "(E72) Internal error. Contact support@trooba.com"
+    },
+    {
+      "id": "E73",
+      "serialNo": 92,
+      "sourceFile": "mpx_c1.cpp",
+      "sourceLine": 2840,
+      "kind": "error",
+      "dllMessage": "Cannot open error file to write message !2!??\n %s",
+      "userMessage": "(E73) Internal error. Contact support@trooba.com"
+    },
+    {
+      "id": "E74",
+      "serialNo": 93,
+      "sourceFile": "mpx_c1.cpp",
+      "sourceLine": 2864,
+      "kind": "error",
+      "dllMessage": "Cannot open error file to write message %s !3!??\n %s",
+      "userMessage": "(E74) Internal error. Contact support@trooba.com"
+    },
+    {
+      "id": "E75",
+      "serialNo": 94,
+      "sourceFile": "mpx_c1.cpp",
+      "sourceLine": 2869,
+      "kind": "error",
+      "dllMessage": "Can open error file to write message %s !3!??\n %s %f",
+      "userMessage": "(E75) Internal error. Contact support@trooba.com"
+    },
+    {
+      "id": "E76",
+      "serialNo": 95,
+      "sourceFile": "mpx_c1.cpp",
+      "sourceLine": 2912,
+      "kind": "error",
+      "dllMessage": "ERROR : \n Cannot open file %s for download data",
+      "userMessage": "(E76) Internal error. Contact support@trooba.com"
+    },
+    {
+      "id": "E77",
+      "serialNo": 96,
+      "sourceFile": "mpx_c1.cpp",
+      "sourceLine": 2919,
+      "kind": "error",
+      "dllMessage": "ERROR : \n Cannot open file %s for reformatted MRP data",
+      "userMessage": "(E77) Internal MRP data error. Contact support@trooba.com"
+    },
+    {
+      "id": "E78",
+      "serialNo": 97,
+      "sourceFile": "mpx_c1.cpp",
+      "sourceLine": 2937,
+      "kind": "error",
+      "dllMessage": "Read error Infile 4 ?? \n stopping at line  ...",
+      "userMessage": "(E78) Internal error. Contact support@trooba.com"
+    },
+    {
+      "id": "E79",
+      "serialNo": 98,
+      "sourceFile": "mpx_c1.cpp",
+      "sourceLine": 3040,
+      "kind": "error",
+      "dllMessage": "ERROR : \n Cannot open file %s for download data",
+      "userMessage": "(E79) Internal error. Contact support@trooba.com"
+    },
+    {
+      "id": "E80",
+      "serialNo": 99,
+      "sourceFile": "mpx_c1.cpp",
+      "sourceLine": 3048,
+      "kind": "error",
+      "dllMessage": "ERROR : \n Cannot open file %s for reformatted MRP data",
+      "userMessage": "(E80) Internal MRP data error. Contact support@trooba.com"
+    },
+    {
+      "id": "E81",
+      "serialNo": 100,
+      "sourceFile": "mpx_c1.cpp",
+      "sourceLine": 3076,
+      "kind": "error",
+      "dllMessage": "Read error Infile1 ?? \n stopping at line  ...",
+      "userMessage": "(E81) Internal error. Contact support@trooba.com"
+    },
+    {
+      "id": "E82",
+      "serialNo": 101,
+      "sourceFile": "mpx_c1.cpp",
+      "sourceLine": 3227,
+      "kind": "error",
+      "dllMessage": "ERROR : \n Cannot open file %s for download data",
+      "userMessage": "(E82) Internal error. Contact support@trooba.com"
+    },
+    {
+      "id": "E83",
+      "serialNo": 102,
+      "sourceFile": "mpx_c1.cpp",
+      "sourceLine": 3234,
+      "kind": "error",
+      "dllMessage": "ERROR : \n Cannot open file %s for reformatted MRP data",
+      "userMessage": "(E83) Internal MRP data error. Contact support@trooba.com"
+    },
+    {
+      "id": "E84",
+      "serialNo": 103,
+      "sourceFile": "mpx_c1.cpp",
+      "sourceLine": 3250,
+      "kind": "error",
+      "dllMessage": "Read error Infile 2 ?? \n stopping at line  ...",
+      "userMessage": "(E84) Internal error. Contact support@trooba.com"
+    },
+    {
+      "id": "E85",
+      "serialNo": 104,
+      "sourceFile": "mpx_c1.cpp",
+      "sourceLine": 3312,
+      "kind": "error",
+      "dllMessage": "ERROR : \n Cannot open file %s for download data",
+      "userMessage": "(E85) Internal error. Contact support@trooba.com"
+    },
+    {
+      "id": "E86",
+      "serialNo": 105,
+      "sourceFile": "mpx_c1.cpp",
+      "sourceLine": 3319,
+      "kind": "error",
+      "dllMessage": "ERROR : \n Cannot open file %s for reformatted MRP data",
+      "userMessage": "(E86) Internal MRP data error. Contact support@trooba.com"
+    },
+    {
+      "id": "E87",
+      "serialNo": 106,
+      "sourceFile": "mpx_c1.cpp",
+      "sourceLine": 3338,
+      "kind": "error",
+      "dllMessage": "Read error Infile 3 ?? \n stopping at line  ...",
+      "userMessage": "(E87) Internal error. Contact support@trooba.com"
+    },
+    {
+      "id": "E88",
+      "serialNo": 107,
+      "sourceFile": "mpx_c1.cpp",
+      "sourceLine": 3591,
+      "kind": "error",
+      "dllMessage": "INSUFFICIENT MEMORY: #(18a) \n Insufficient Memory to add ANY LABOR GROUP",
+      "userMessage": "(E88) Memory Error. Contact support@trooba.com",
+      "errorCode": "18a"
+    },
+    {
+      "id": "E89",
+      "serialNo": 108,
+      "sourceFile": "mpx_c1.cpp",
+      "sourceLine": 3612,
+      "kind": "error",
+      "dllMessage": "INSUFFICIENT MEMORY: #(18b) \n Insufficient Memory to add ANY EQUIPMENT GROUP",
+      "userMessage": "(E89) Memory Error. Contact support@trooba.com",
+      "errorCode": "18b"
+    },
+    {
+      "id": "E90",
+      "serialNo": 109,
+      "sourceFile": "mpx_c1.cpp",
+      "sourceLine": 3635,
+      "kind": "error",
+      "dllMessage": "INSUFFICIENT MEMORY: #(18c) \n Insufficient Memory to add ANY PART DATA",
+      "userMessage": "(E90) Memory Error. Contact support@trooba.com",
+      "errorCode": "18c"
+    },
+    {
+      "id": "E91",
+      "serialNo": 110,
+      "sourceFile": "mpx_c1.cpp",
+      "sourceLine": 3665,
+      "kind": "error",
+      "dllMessage": "INSUFFICIENT MEMORY: #(18d) \n Insufficient Memory to add ANY WHAT-IF CASES",
+      "userMessage": "(E91) Memory Error. Contact support@trooba.com",
+      "errorCode": "18d"
+    },
+    {
+      "id": "E92",
+      "serialNo": 111,
+      "sourceFile": "nrutil.c",
+      "sourceLine": 10,
+      "kind": "error",
+      "dllMessage": "Numerical Recipes run-time error...",
+      "userMessage": "(E92) Memory Error. Contact support@trooba.com"
+    },
+    {
+      "id": "E93",
+      "serialNo": 112,
+      "sourceFile": "nrutil.c",
+      "sourceLine": 22,
+      "kind": "error",
+      "dllMessage": "allocation failure in vector()",
+      "userMessage": "(E93) Memory Error. Contact support@trooba.com"
+    },
+    {
+      "id": "E94",
+      "serialNo": 113,
+      "sourceFile": "nrutil.c",
+      "sourceLine": 32,
+      "kind": "error",
+      "dllMessage": "allocation failure in ivector()",
+      "userMessage": "(E94) Memory Error. Contact support@trooba.com"
+    },
+    {
+      "id": "E95",
+      "serialNo": 114,
+      "sourceFile": "nrutil.c",
+      "sourceLine": 42,
+      "kind": "error",
+      "dllMessage": "allocation failure in cvector()",
+      "userMessage": "(E95) Memory Error. Contact support@trooba.com"
+    },
+    {
+      "id": "E96",
+      "serialNo": 115,
+      "sourceFile": "nrutil.c",
+      "sourceLine": 52,
+      "kind": "error",
+      "dllMessage": "allocation failure in lvector()",
+      "userMessage": "(E96) Memory Error. Contact support@trooba.com"
+    },
+    {
+      "id": "E97",
+      "serialNo": 116,
+      "sourceFile": "nrutil.c",
+      "sourceLine": 62,
+      "kind": "error",
+      "dllMessage": "allocation failure in dvector()",
+      "userMessage": "(E97) Memory Error. Contact support@trooba.com"
+    },
+    {
+      "id": "E98",
+      "serialNo": 117,
+      "sourceFile": "nrutil.c",
+      "sourceLine": 74,
+      "kind": "error",
+      "dllMessage": "allocation failure 1 in matrix()",
+      "userMessage": "(E98) Memory Error. Contact support@trooba.com"
+    },
+    {
+      "id": "E99",
+      "serialNo": 118,
+      "sourceFile": "nrutil.c",
+      "sourceLine": 80,
+      "kind": "error",
+      "dllMessage": "allocation failure 2 in matrix()",
+      "userMessage": "(E99) Memory Error. Contact support@trooba.com"
+    },
+    {
+      "id": "E100",
+      "serialNo": 119,
+      "sourceFile": "nrutil.c",
+      "sourceLine": 98,
+      "kind": "error",
+      "dllMessage": "allocation failure 1 in matrix()",
+      "userMessage": "(E100) Memory Error. Contact support@trooba.com"
+    },
+    {
+      "id": "E101",
+      "serialNo": 120,
+      "sourceFile": "nrutil.c",
+      "sourceLine": 104,
+      "kind": "error",
+      "dllMessage": "allocation failure 2 in matrix()",
+      "userMessage": "(E101) Memory Error. Contact support@trooba.com"
+    },
+    {
+      "id": "E102",
+      "serialNo": 121,
+      "sourceFile": "nrutil.c",
+      "sourceLine": 122,
+      "kind": "error",
+      "dllMessage": "allocation failure 1 in matrix()",
+      "userMessage": "(E102) Memory Error. Contact support@trooba.com"
+    },
+    {
+      "id": "E103",
+      "serialNo": 122,
+      "sourceFile": "nrutil.c",
+      "sourceLine": 129,
+      "kind": "error",
+      "dllMessage": "allocation failure 2 in matrix()",
+      "userMessage": "(E103) Memory Error. Contact support@trooba.com"
+    },
+    {
+      "id": "E104",
+      "serialNo": 123,
+      "sourceFile": "nrutil.c",
+      "sourceLine": 148,
+      "kind": "error",
+      "dllMessage": "allocation failure in submatrix()",
+      "userMessage": "(E104) Memory Error. Contact support@trooba.com"
+    },
+    {
+      "id": "E105",
+      "serialNo": 124,
+      "sourceFile": "nrutil.c",
+      "sourceLine": 170,
+      "kind": "error",
+      "dllMessage": "allocation failure in convert_matrix()",
+      "userMessage": "(E105) Memory Error. Contact support@trooba.com"
+    },
+    {
+      "id": "E106",
+      "serialNo": 125,
+      "sourceFile": "nrutil.c",
+      "sourceLine": 193,
+      "kind": "error",
+      "dllMessage": "allocation failure in convert_matrix()",
+      "userMessage": "(E106) Memory Error. Contact support@trooba.com"
+    },
+    {
+      "id": "E107",
+      "serialNo": 126,
+      "sourceFile": "nrutil.c",
+      "sourceLine": 213,
+      "kind": "error",
+      "dllMessage": "allocation failure 1 in f3tensor()",
+      "userMessage": "(E107) Memory Error. Contact support@trooba.com"
+    },
+    {
+      "id": "E108",
+      "serialNo": 127,
+      "sourceFile": "nrutil.c",
+      "sourceLine": 219,
+      "kind": "error",
+      "dllMessage": "allocation failure 2 in f3tensor()",
+      "userMessage": "(E108) Memory Error. Contact support@trooba.com"
+    },
+    {
+      "id": "E109",
+      "serialNo": 128,
+      "sourceFile": "nrutil.c",
+      "sourceLine": 225,
+      "kind": "error",
+      "dllMessage": "allocation failure 3 in f3tensor()",
+      "userMessage": "(E109) Memory Error. Contact support@trooba.com"
+    },
+    {
+      "id": "E110",
+      "sourceFile": "portal/dll_full_calculate.py",
+      "kind": "error",
+      "category": "utilization",
+      "whenShown": "after_full_calculate",
+      "dllMessage": "Equipment: {resourceName} ({totalUtil}%)",
+      "userMessage": "(E110) Equipment is over the utilization limit.",
+      "resultField": "overLimitResources",
+      "serialNo": 129
+    },
+    {
+      "id": "E111",
+      "sourceFile": "portal/dll_full_calculate.py",
+      "kind": "error",
+      "category": "utilization",
+      "whenShown": "after_full_calculate",
+      "dllMessage": "Labor: {resourceName} ({totalUtil}%)",
+      "userMessage": "(E111) Labor is over the utilization limit.",
+      "resultField": "overLimitResources",
+      "serialNo": 130
+    }
+  ],
+  "warnings": [
+    {
+      "id": "W1",
+      "serialNo": 5,
+      "sourceFile": "calc.cpp",
+      "sourceLine": 244,
+      "kind": "warning",
+      "dllMessage": "Warning: Production Level is NOT SUSTAINABLE. \nLabor resources will be overutilized. \nManufacturing Cycle Time and WIP cannot be calculated.",
+      "userMessage": "(W1) Production not sustainable. Labor is overcapacity. Adjust capacity, reduce demand, or rebalance routing."
+    },
+    {
+      "id": "W2",
+      "serialNo": 6,
+      "sourceFile": "calc.cpp",
+      "sourceLine": 245,
+      "kind": "warning",
+      "dllMessage": "Warning: Production Level is NOT SUSTAINABLE. \nEquipment resources will be overutilized. \nManufacturing Cycle Time and WIP cannot be calculated.",
+      "userMessage": "(W2) Production not sustainable. Equipment capacity overloaded. Adjust capacity, reduce demand, or rebalance routing."
+    },
+    {
+      "id": "W3",
+      "serialNo": 9,
+      "sourceFile": "calc1.cpp",
+      "sourceLine": 466,
+      "kind": "warning",
+      "dllMessage": "LABOR and EQUIPMENT resources are over-utilized.",
+      "userMessage": "(W3) Production not sustainable. Labor and equipment are over capacity. Adjust capacity, reduce demand, or rebalance routing."
+    },
+    {
+      "id": "W4",
+      "serialNo": 10,
+      "sourceFile": "calc1.cpp",
+      "sourceLine": 468,
+      "kind": "warning",
+      "dllMessage": "EQUIPMENT resources are over-utilized.",
+      "userMessage": "(W4) Production not sustainable. Equipment capacity overloaded. Adjust capacity, reduce demand, or rebalance routing."
+    },
+    {
+      "id": "W5",
+      "serialNo": 11,
+      "sourceFile": "calc1.cpp",
+      "sourceLine": 470,
+      "kind": "warning",
+      "dllMessage": "LABOR resources are over-utilized.",
+      "userMessage": "(W5) Production not sustainable. Labor is overcapacity. Adjust capacity, reduce demand, or rebalance routing."
+    },
+    {
+      "id": "W6",
+      "serialNo": 12,
+      "sourceFile": "calc1.cpp",
+      "sourceLine": 473,
+      "kind": "warning",
+      "dllMessage": "WARNING:\n \nProduction level is not sustainable.\n %s \n Manufacturing Cycle Time and WIP cannot be calculated.",
+      "userMessage": "(W6) Production not sustainable. Labor and equipment are over capacity. Adjust capacity, reduce demand, or rebalance routing."
+    },
+    {
+      "id": "W7",
+      "serialNo": 15,
+      "sourceFile": "calc1.cpp",
+      "sourceLine": 678,
+      "kind": "warning",
+      "dllMessage": "INTERNAL ERROR: #(71)\n Contact Build to Demand at  BUILD TO DEMAND.COM \n Flow time details are questionable - \n Calculation will continue",
+      "userMessage": "(W7) Flow-time results unreliable. The calculation continued, but you should review routing, capacity, and timing inputs.",
+      "errorCode": "71"
+    },
+    {
+      "id": "W8",
+      "serialNo": 20,
+      "sourceFile": "calc2.cpp",
+      "sourceLine": 332,
+      "kind": "warning",
+      "dllMessage": "WARNING: #(89) \n Labor Group %s is not Used",
+      "userMessage": "(W8) Unassigned Labor group. Remove or assign to operation",
+      "errorCode": "89"
+    },
+    {
+      "id": "W9",
+      "serialNo": 21,
+      "sourceFile": "calc2.cpp",
+      "sourceLine": 335,
+      "kind": "warning",
+      "dllMessage": "WARNING: #(89) \n Labor Group is not Used",
+      "userMessage": "(W9) Unassigned Labor group. Remove or assign to operation",
+      "errorCode": "89"
+    },
+    {
+      "id": "W10",
+      "serialNo": 25,
+      "sourceFile": "calc3.cpp",
+      "sourceLine": 322,
+      "kind": "warning",
+      "dllMessage": "MAJOR ERROR: #(47a) \n CONTACT BUILD TO DEMAND.COM \n warning at line 113",
+      "userMessage": "(W10) Unreliable results. Contact support@trooba.com",
+      "errorCode": "47a"
+    },
+    {
+      "id": "W11",
+      "serialNo": 28,
+      "sourceFile": "calc5.cpp",
+      "sourceLine": 48,
+      "kind": "warning",
+      "dllMessage": "WARNING: #(56) \n   Transfer Batch Size is greater than lotsize.\n Transfer Batch Size should be -1 (meaning it is the same as the lotsize) or less than or equal to Lotsize.",
+      "userMessage": "(W11) Transfer batch size cannot be greater than lot size.",
+      "errorCode": "56"
+    },
+    {
+      "id": "W12",
+      "serialNo": 54,
+      "sourceFile": "calc7.cpp",
+      "sourceLine": 79,
+      "kind": "warning",
+      "dllMessage": "WARNING: #(80)\n  Equipment Time=0.0 and Labor Time>0.0 for an operation  \n Please check operation time data",
+      "userMessage": "(W12) An operation has labor time but zero equipment time.",
+      "errorCode": "80"
+    },
+    {
+      "id": "W13",
+      "serialNo": 55,
+      "sourceFile": "calc7.cpp",
+      "sourceLine": 111,
+      "kind": "warning",
+      "dllMessage": "WARNING: #(83)\n Equipment Time  setup %f run %f is less than Labor Time setup %f run %f for an operation. Be sure you want more than 1 person assigned to the operation.",
+      "userMessage": "(W13) Equipment time is lower than labor time for an operation. Confirm multiple people are intentionally assigned to that operation.",
+      "errorCode": "83"
+    },
+    {
+      "id": "W14",
+      "serialNo": 58,
+      "sourceFile": "calc7.cpp",
+      "sourceLine": 213,
+      "kind": "warning",
+      "dllMessage": "WARNING: #(70) \n The ratio of labor to equipment exceeds the available laborers",
+      "userMessage": "(W14) Assigned labor-to-equipment ratio is higher than available labor capacity. Reduce assigned labor or add labor capacity.",
+      "errorCode": "70"
+    },
+    {
+      "id": "W15",
+      "serialNo": 69,
+      "sourceFile": "io_code.cpp",
+      "sourceLine": 72,
+      "kind": "warning",
+      "dllMessage": "At prob warn err results.err",
+      "userMessage": "(W15) Internal error. Contact support@trooba.com"
+    },
+    {
+      "id": "W16",
+      "serialNo": 70,
+      "sourceFile": "io_code.cpp",
+      "sourceLine": 74,
+      "kind": "warning",
+      "dllMessage": "warning/error!!! %d   %s   %s %s %s   %s %s %s",
+      "userMessage": "(W16) Internal error. Contact support@trooba.com"
+    },
+    {
+      "id": "W17",
+      "serialNo": 73,
+      "sourceFile": "log.h",
+      "sourceLine": 61,
+      "kind": "warning",
+      "dllMessage": "WARNING",
+      "userMessage": "(W17) Review input data. Input data adjustments needed for reliable output."
+    },
+    {
+      "id": "W18",
+      "serialNo": 74,
+      "sourceFile": "log.h",
+      "sourceLine": 80,
+      "kind": "warning",
+      "dllMessage": "WARNING",
+      "userMessage": "(W18) Review input data. Input data adjustments needed for reliable output."
+    },
+    {
+      "id": "W19",
+      "sourceFile": "portal/dll_full_calculate.py",
+      "kind": "warning",
+      "category": "utilization",
+      "whenShown": "after_full_calculate",
+      "dllMessage": "Equipment \"{resourceName}\" util ({totalUtil}%) > limit ({utilLimit}%)",
+      "userMessage": "(W19) Equipment utilization exceeds the configured limit.",
+      "resultField": "warnings",
+      "serialNo": 131
+    },
+    {
+      "id": "W20",
+      "sourceFile": "portal/dll_full_calculate.py",
+      "kind": "warning",
+      "category": "utilization",
+      "whenShown": "after_full_calculate",
+      "dllMessage": "Labor \"{resourceName}\" util ({totalUtil}%) > limit ({utilLimit}%)",
+      "userMessage": "(W20) Labor utilization exceeds the configured limit.",
+      "resultField": "warnings",
+      "serialNo": 132
+    }
+  ],
+  "success": [
+    {
+      "id": "R4",
+      "serialNo": 4,
+      "sourceFile": "calc.cpp",
+      "sourceLine": 227,
+      "kind": "success",
+      "dllMessage": "Value Stream Modeling EVALUATION IS COMPLETED\n However the resouce utilization is very high and the Manufacturing Cycle Time numbers are not as accurate.",
+      "userMessage": "Evaluation completed. Resource utilization is very high, so cycle-time and WIP results may be less accurate. Review overloaded resources before using the results."
+    }
+  ],
+  "all": [
+    {
+      "id": "E1",
+      "serialNo": 1,
+      "sourceFile": "Brent.cpp",
+      "sourceLine": 166,
+      "kind": "error",
+      "dllMessage": "quiting brentgd   too many times around ...",
+      "userMessage": "(E1) Review the input values for unrealistic routing, timing, or capacity settings."
+    },
+    {
+      "id": "E2",
+      "serialNo": 2,
+      "sourceFile": "calc.cpp",
+      "sourceLine": 98,
+      "kind": "error",
+      "dllMessage": "Cannot Calculate anything.\n No Parts have been added yet.",
+      "userMessage": "(E2) Missing Products"
+    },
+    {
+      "id": "E3",
+      "serialNo": 3,
+      "sourceFile": "calc.cpp",
+      "sourceLine": 127,
+      "kind": "error",
+      "dllMessage": "error before ...set demand start",
+      "userMessage": "(E3) Check demand/production quantity inputs."
+    },
+    {
+      "id": "E4",
+      "serialNo": 7,
+      "sourceFile": "calc1.cpp",
+      "sourceLine": 164,
+      "kind": "error",
+      "dllMessage": "ERROR: #(41) \n Mean Time To Failure \n for equipment \n is too small. Please change value",
+      "userMessage": "(E4) Mean time to Failure: Enter a realistic positive failure-time value.",
+      "errorCode": "41"
+    },
+    {
+      "id": "E5",
+      "serialNo": 8,
+      "sourceFile": "calc1.cpp",
+      "sourceLine": 221,
+      "kind": "error",
+      "dllMessage": "ERROR: #(7)\n Number of types of equipment is %d and exceeds limit of %d \n Some internal routing equations cannot be solved due to lack of memory",
+      "userMessage": "(E5) No of Equipment types exceeds system limit.",
+      "errorCode": "7"
+    },
+    {
+      "id": "E6",
+      "serialNo": 13,
+      "sourceFile": "calc1.cpp",
+      "sourceLine": 527,
+      "kind": "error",
+      "dllMessage": "MAJOR ERROR: #(103) CONTACT BUILD TO DEMAND.COM \n Equipment wait time < 0.0",
+      "userMessage": "(E6) Invalid equipment wait time. Review equipment capacity, operation times, and routing inputs.",
+      "errorCode": "103"
+    },
+    {
+      "id": "E7",
+      "serialNo": 14,
+      "sourceFile": "calc1.cpp",
+      "sourceLine": 531,
+      "kind": "error",
+      "dllMessage": "MAJOR ERROR: #(103) CONTACT CONTACT BUILD TO DEMAND.COM \n Equipment wait time < 0.0",
+      "userMessage": "(E7) Invalid negative equipment wait time. Review equipment capacity, operation times, and routing inputs.",
+      "errorCode": "103"
+    },
+    {
+      "id": "E8",
+      "serialNo": 16,
+      "sourceFile": "calc1.cpp",
+      "sourceLine": 1294,
+      "kind": "error",
+      "dllMessage": "INTERNAL ERROR: #(84)\n Operation is a sink for pieces.\n There are no `FROM-TO' routings from this operation?",
+      "userMessage": "(E8) Operation/Routing error. Check FROM-TO routing path.",
+      "errorCode": "84"
+    },
+    {
+      "id": "E9",
+      "serialNo": 17,
+      "sourceFile": "calc1.cpp",
+      "sourceLine": 1314,
+      "kind": "error",
+      "dllMessage": "INTERNAL ERROR: #(85)\n Operation data cannot be found.\n There is no `OPERATION ASSIGNMENT' record for this operation",
+      "userMessage": "(E9) Operation/Routing error. Missing operation assignment.",
+      "errorCode": "85"
+    },
+    {
+      "id": "E10",
+      "serialNo": 18,
+      "sourceFile": "calc11.cpp",
+      "sourceLine": 134,
+      "kind": "error",
+      "dllMessage": "in fvalue Internal error, calculation stopped",
+      "userMessage": "(E10) Input data error. Review the all inputs and try again."
+    },
+    {
+      "id": "E11",
+      "serialNo": 19,
+      "sourceFile": "calc11.cpp",
+      "sourceLine": 663,
+      "kind": "error",
+      "dllMessage": "quiting frprmn",
+      "userMessage": "(E11) Unrealistic routing or capacity settings."
+    },
+    {
+      "id": "E12",
+      "serialNo": 22,
+      "sourceFile": "calc2.cpp",
+      "sourceLine": 350,
+      "kind": "error",
+      "dllMessage": "INTERNAL ERROR: #(XX)\n Number in Labor group is too small.\n Value is %f ??",
+      "userMessage": "(E12) Invalid Labor group quantiy"
+    },
+    {
+      "id": "E13",
+      "serialNo": 23,
+      "sourceFile": "calc2.cpp",
+      "sourceLine": 353,
+      "kind": "error",
+      "dllMessage": "INTERNAL ERROR: #(XX)\n Number in Labor group %s is too small.\n Value is %f ??",
+      "userMessage": "(E13) Invalid Labor group quantiy"
+    },
+    {
+      "id": "E14",
+      "serialNo": 24,
+      "sourceFile": "calc3.cpp",
+      "sourceLine": 133,
+      "kind": "error",
+      "dllMessage": "ERROR CACALC aoper null",
+      "userMessage": "(E14) Missing Operation or Routing details"
+    },
+    {
+      "id": "E15",
+      "serialNo": 26,
+      "sourceFile": "calc3.cpp",
+      "sourceLine": 388,
+      "kind": "error",
+      "dllMessage": "MAJOR ERROR: #(47b) \n CONTACT BUILD TO DEMAND.COM \n Inversion of arrival variances Equipment",
+      "userMessage": "(E15) Equipment variability Issue. Review equipment MTTF/MTTR, routing, and variability inputs.",
+      "errorCode": "47b"
+    },
+    {
+      "id": "E16",
+      "serialNo": 27,
+      "sourceFile": "calc3.cpp",
+      "sourceLine": 499,
+      "kind": "error",
+      "dllMessage": "INTERNAL ERROR: #(48) \n Numerical Problems \n Equipment Varability Routing cannot be solved",
+      "userMessage": "(E16) Equipment variability Issue. Review equipment MTTF/MTTR, routing, and variability inputs.",
+      "errorCode": "48"
+    },
+    {
+      "id": "E17",
+      "serialNo": 29,
+      "sourceFile": "calc5.cpp",
+      "sourceLine": 80,
+      "kind": "error",
+      "dllMessage": "error in doall visits",
+      "userMessage": "(E17) Routing incomplete"
+    },
+    {
+      "id": "E18",
+      "serialNo": 30,
+      "sourceFile": "calc5.cpp",
+      "sourceLine": 236,
+      "kind": "error",
+      "dllMessage": "ERROR: #(6)\n Number of operations for product exceeds limit of %d \n The routing equations cannot be solved due to lack of memory",
+      "userMessage": "(E18) Operation count not supported. Reduce no of operations.",
+      "errorCode": "6"
+    },
+    {
+      "id": "E19",
+      "serialNo": 31,
+      "sourceFile": "calc5.cpp",
+      "sourceLine": 264,
+      "kind": "error",
+      "dllMessage": "mem error  !!!",
+      "userMessage": "(E19) Unexpected memory error. Contact support@trooba.com"
+    },
+    {
+      "id": "E20",
+      "serialNo": 32,
+      "sourceFile": "calc5.cpp",
+      "sourceLine": 270,
+      "kind": "error",
+      "dllMessage": "INSUFFICIENT MEMORY: #(12) \n Insufficient Memory Space. Cannot Solve Routing equations",
+      "userMessage": "(E20) Unexpected memory error. Contact support@trooba.com",
+      "errorCode": "12"
+    },
+    {
+      "id": "E21",
+      "serialNo": 33,
+      "sourceFile": "calc5.cpp",
+      "sourceLine": 362,
+      "kind": "error",
+      "dllMessage": "ERROR: #(69) \n Routing cannot be solved for Product. \n CHECK IF THERE IS A PATH FROM EVERY OPERATION TO 'STOCK'.",
+      "userMessage": "(E21) Routing incomplete",
+      "errorCode": "69"
+    },
+    {
+      "id": "E22",
+      "serialNo": 34,
+      "sourceFile": "calc5.cpp",
+      "sourceLine": 387,
+      "kind": "error",
+      "dllMessage": "Error: \n No pieces of Part %s are being routed to STOCK !\n Please change routing...",
+      "userMessage": "(E22) Routing/Operations Error. Nothing routed to STOCK."
+    },
+    {
+      "id": "E23",
+      "serialNo": 35,
+      "sourceFile": "calc5.cpp",
+      "sourceLine": 390,
+      "kind": "error",
+      "dllMessage": "Error: \n No pieces of product are being routed to STOCK !\n Please change routing...(1)",
+      "userMessage": "(E23) Routing/Operations Error. Nothing routed to STOCK."
+    },
+    {
+      "id": "E24",
+      "serialNo": 36,
+      "sourceFile": "calc5.cpp",
+      "sourceLine": 525,
+      "kind": "error",
+      "dllMessage": "INTERNAL ERROR: #(21b) \n Routing cannot be solved for product",
+      "userMessage": "(E24) Routing/Operations Error. Nothing routed to STOCK.",
+      "errorCode": "21b"
+    },
+    {
+      "id": "E25",
+      "serialNo": 37,
+      "sourceFile": "calc5.cpp",
+      "sourceLine": 541,
+      "kind": "error",
+      "dllMessage": "Error: \n No pieces of Part %s are being routed to STOCK !\n Please change routing...",
+      "userMessage": "(E25) Routing/Operations Error. Nothing routed to STOCK."
+    },
+    {
+      "id": "E26",
+      "serialNo": 38,
+      "sourceFile": "calc5.cpp",
+      "sourceLine": 544,
+      "kind": "error",
+      "dllMessage": "Error: \n No pieces of product are being routed to STOCK !\n Please change routing...(2)",
+      "userMessage": "(E26) Routing/Operations Error. Nothing routed to STOCK."
+    },
+    {
+      "id": "E27",
+      "serialNo": 39,
+      "sourceFile": "calc5.cpp",
+      "sourceLine": 658,
+      "kind": "error",
+      "dllMessage": "INTERNAL ERROR: #(21c) \n Routing cannot be solved for product",
+      "userMessage": "(E27) Routing/Operations Error.",
+      "errorCode": "21c"
+    },
+    {
+      "id": "E28",
+      "serialNo": 40,
+      "sourceFile": "calc5.cpp",
+      "sourceLine": 756,
+      "kind": "error",
+      "dllMessage": "INSUFFICIENT MEMORY: #(22a) \n Insufficient Memory to calculate No. times operations done for product",
+      "userMessage": "(E28) Memory Error. Contact support@trooba.com",
+      "errorCode": "22a"
+    },
+    {
+      "id": "E29",
+      "serialNo": 41,
+      "sourceFile": "calc5.cpp",
+      "sourceLine": 782,
+      "kind": "error",
+      "dllMessage": "ERROR: #(74) \n For part %s %% of pieces Routed out of DOCK does not equal  100.0%%",
+      "userMessage": "(E29) Routing/Operations Error. Routing percentages out of DOCK must total 100%.",
+      "errorCode": "74"
+    },
+    {
+      "id": "E30",
+      "serialNo": 42,
+      "sourceFile": "calc5.cpp",
+      "sourceLine": 785,
+      "kind": "error",
+      "dllMessage": "ERROR: #(74) \n %% of pieces Routed out of DOCK does not equal 100.0%%",
+      "userMessage": "(E30) Routing/Operations Error. Routing percentages out of DOCK must total 100%.",
+      "errorCode": "74"
+    },
+    {
+      "id": "E31",
+      "serialNo": 43,
+      "sourceFile": "calc5.cpp",
+      "sourceLine": 808,
+      "kind": "error",
+      "dllMessage": "INSUFFICIENT MEMORY: #(22c) \n Insufficient Memory to calculate \n No. times operations done for product",
+      "userMessage": "(E31) Memory Error. Contact support@trooba.com",
+      "errorCode": "22c"
+    },
+    {
+      "id": "E32",
+      "serialNo": 44,
+      "sourceFile": "calc5.cpp",
+      "sourceLine": 841,
+      "kind": "error",
+      "dllMessage": "ERROR: #(75) \n For part %s Total Proportion \n Assigned to Operation %s is not equal to 100.0%%",
+      "userMessage": "(E32) Routing/Operations Error. Routing percentages must total 100%.",
+      "errorCode": "75"
+    },
+    {
+      "id": "E33",
+      "serialNo": 45,
+      "sourceFile": "calc5.cpp",
+      "sourceLine": 845,
+      "kind": "error",
+      "dllMessage": "ERROR: #(75) \n Total Proportion \n Assigned to Operation is not equal to 100.0%%",
+      "userMessage": "(E33) Routing/Operations Error. Routing percentages must total 100%.",
+      "errorCode": "75"
+    },
+    {
+      "id": "E34",
+      "serialNo": 46,
+      "sourceFile": "calc5.cpp",
+      "sourceLine": 860,
+      "kind": "error",
+      "dllMessage": "ERROR: #(76c) \n %% of pieces routed \n out of operation does not equal  100.0%%",
+      "userMessage": "(E34) Routing/Operations Error. Routing percentages must total 100%.",
+      "errorCode": "76c"
+    },
+    {
+      "id": "E35",
+      "serialNo": 47,
+      "sourceFile": "calc5.cpp",
+      "sourceLine": 876,
+      "kind": "error",
+      "dllMessage": "INSUFFICIENT MEMORY: #(22d) \n Insufficient Memory to calculate \n No. times operations done for product",
+      "userMessage": "(E35) Memory Error. Contact support@trooba.com",
+      "errorCode": "22d"
+    },
+    {
+      "id": "E36",
+      "serialNo": 48,
+      "sourceFile": "calc5.cpp",
+      "sourceLine": 932,
+      "kind": "error",
+      "dllMessage": "ERROR: #(75b) \n For part %s Total Proportion \n Assigned to Operation %s is not equal to 100.0%%",
+      "userMessage": "(E36) Routing/Operations Error. Routing percentages must total 100%.",
+      "errorCode": "75b"
+    },
+    {
+      "id": "E37",
+      "serialNo": 49,
+      "sourceFile": "calc5.cpp",
+      "sourceLine": 936,
+      "kind": "error",
+      "dllMessage": "ERROR: #(75b) \n Total Proportion \n Assigned to operation is not equal to 100.0%%",
+      "userMessage": "(E37) Routing/Operations Error. Routing percentages must total 100%.",
+      "errorCode": "75b"
+    },
+    {
+      "id": "E38",
+      "serialNo": 50,
+      "sourceFile": "calc5.cpp",
+      "sourceLine": 950,
+      "kind": "error",
+      "dllMessage": "ERROR: #(76b) \n For part %s %% of pieces \n routed out of Operation %s does not equal 100.0%%",
+      "userMessage": "(E38) Routing/Operations Error. Routing percentages must total 100%.",
+      "errorCode": "76b"
+    },
+    {
+      "id": "E39",
+      "serialNo": 51,
+      "sourceFile": "calc5.cpp",
+      "sourceLine": 953,
+      "kind": "error",
+      "dllMessage": "ERROR: #(76b) \n %% of pieces \n routed out of operation does not equal 100.0%%",
+      "userMessage": "(E39) Routing/Operations Error. Routing percentages must total 100%.",
+      "errorCode": "76b"
+    },
+    {
+      "id": "E40",
+      "serialNo": 52,
+      "sourceFile": "calc5.cpp",
+      "sourceLine": 1070,
+      "kind": "error",
+      "dllMessage": "MAJOR ERROR: #(26) \n CONTACT BUILD TO DEMAND.COM \n CANNOT FIND 'TO' OPERATION listed as a 'FROM' OPERATION",
+      "userMessage": "(E40) Routing/Operations Error.",
+      "errorCode": "26"
+    },
+    {
+      "id": "E41",
+      "serialNo": 53,
+      "sourceFile": "calc5.cpp",
+      "sourceLine": 1155,
+      "kind": "error",
+      "dllMessage": "ERROR: #(77) \n All pieces go to SCRAP from an operation.  This is not allowed.  (Hint: send 0.0001%% to STOCK)",
+      "userMessage": "(E41) Routing/Operations Error. All pieces are routed to SCRAP.",
+      "errorCode": "77"
+    },
+    {
+      "id": "E42",
+      "serialNo": 56,
+      "sourceFile": "calc7.cpp",
+      "sourceLine": 161,
+      "kind": "error",
+      "dllMessage": "MAJOR ERROR: #201 \n No operations for a product.",
+      "userMessage": "(E42) Product missing operations/routing.",
+      "errorCode": "201"
+    },
+    {
+      "id": "E43",
+      "serialNo": 57,
+      "sourceFile": "calc7.cpp",
+      "sourceLine": 163,
+      "kind": "error",
+      "dllMessage": "at check_eq start error no routes ?  %s %i %i",
+      "userMessage": "(E43) Product missing operations/routing."
+    },
+    {
+      "id": "E44",
+      "serialNo": 59,
+      "sourceFile": "calc7.cpp",
+      "sourceLine": 231,
+      "kind": "error",
+      "dllMessage": "ERROR: #(42) \n No Equipment assigned for \n Part and Operation",
+      "userMessage": "(E44) Equipment assignment missing.",
+      "errorCode": "42"
+    },
+    {
+      "id": "E45",
+      "serialNo": 60,
+      "sourceFile": "calc9.cpp",
+      "sourceLine": 248,
+      "kind": "error",
+      "dllMessage": "can't write to lot.res",
+      "userMessage": "(E45) The system could not save the results. Contact support@trooba.com"
+    },
+    {
+      "id": "E46",
+      "serialNo": 61,
+      "sourceFile": "calc9_1.cpp",
+      "sourceLine": 331,
+      "kind": "error",
+      "dllMessage": "Internal error, calculation stopped",
+      "userMessage": "(E46) Internal data error. Contact support@trooba.com"
+    },
+    {
+      "id": "E47",
+      "serialNo": 62,
+      "sourceFile": "dll2.cpp",
+      "sourceLine": 238,
+      "kind": "error",
+      "dllMessage": "INTERNAL ERROR: #(6) \n Equipment uses an unknown Labor Group",
+      "userMessage": "(E47) Equipment assigned to incorrect labor group.",
+      "errorCode": "6"
+    },
+    {
+      "id": "E48",
+      "serialNo": 63,
+      "sourceFile": "dll2.cpp",
+      "sourceLine": 297,
+      "kind": "error",
+      "dllMessage": "INTERNAL ERROR: #(7) \n Operation is tied to an unknown Product",
+      "userMessage": "(E48) An operation/routing linked to invalid product.",
+      "errorCode": "7"
+    },
+    {
+      "id": "E49",
+      "serialNo": 64,
+      "sourceFile": "dll2.cpp",
+      "sourceLine": 311,
+      "kind": "error",
+      "dllMessage": "INTERNAL ERROR: #(8) \n Operation is tied to an unknown Equipment group",
+      "userMessage": "(E49) Operation linked to incorrect equipment group.",
+      "errorCode": "8"
+    },
+    {
+      "id": "E50",
+      "serialNo": 65,
+      "sourceFile": "dll2.cpp",
+      "sourceLine": 361,
+      "kind": "error",
+      "dllMessage": "INTERNAL ERROR: #(9) \n Routing is tied to an unknown Product",
+      "userMessage": "(E50) An operation/routing linked to invalid product.",
+      "errorCode": "9"
+    },
+    {
+      "id": "E51",
+      "serialNo": 66,
+      "sourceFile": "dll2.cpp",
+      "sourceLine": 377,
+      "kind": "error",
+      "dllMessage": "INTERNAL ERROR: #(10) \n Routing FROM is tied to an unknown Operation",
+      "userMessage": "(E51) Routing/Operations Error. A routing FROM operation does not exist.",
+      "errorCode": "10"
+    },
+    {
+      "id": "E52",
+      "serialNo": 67,
+      "sourceFile": "dll2.cpp",
+      "sourceLine": 390,
+      "kind": "error",
+      "dllMessage": "INTERNAL ERROR: #(11) \n Routing TO is tied to an unknown Operation",
+      "userMessage": "(E52) Routing/Operations Error. A routing TO operation does not exist.",
+      "errorCode": "11"
+    },
+    {
+      "id": "E53",
+      "serialNo": 68,
+      "sourceFile": "dll2.cpp",
+      "sourceLine": 1037,
+      "kind": "error",
+      "dllMessage": "internal error/data error ... NO write_results in run it",
+      "userMessage": "(E53) Internal error. Contact support@trooba.com"
+    },
+    {
+      "id": "E54",
+      "serialNo": 71,
+      "sourceFile": "io_code.cpp",
+      "sourceLine": 695,
+      "kind": "error",
+      "dllMessage": "IN GROUP  GROUP                FAILURE  REPAIR   RATE (%%)  MULTIPLIER  MULTIPLIER  MULTIPLIER",
+      "userMessage": "(E54) Equipment MTTF/MTTR error."
+    },
+    {
+      "id": "E55",
+      "serialNo": 72,
+      "sourceFile": "log.h",
+      "sourceLine": 61,
+      "kind": "error",
+      "dllMessage": "ERROR",
+      "userMessage": "(E55) Check Input data."
+    },
+    {
+      "id": "E56",
+      "serialNo": 75,
+      "sourceFile": "log.h",
+      "sourceLine": 82,
+      "kind": "error",
+      "dllMessage": "ERROR",
+      "userMessage": "(E56) Internal error. Contact support@trooba.com"
+    },
+    {
+      "id": "E57",
+      "serialNo": 76,
+      "sourceFile": "log.h",
+      "sourceLine": 84,
+      "kind": "error",
+      "dllMessage": "Unknown logging level '",
+      "userMessage": "(E57) Internal error. Contact support@trooba.com"
+    },
+    {
+      "id": "E58",
+      "serialNo": 77,
+      "sourceFile": "log.h",
+      "sourceLine": 144,
+      "kind": "error",
+      "dllMessage": "Error in NowTime()",
+      "userMessage": "(E58) Internal error. Contact support@trooba.com"
+    },
+    {
+      "id": "E59",
+      "serialNo": 78,
+      "sourceFile": "mpx_c1.cpp",
+      "sourceLine": 1790,
+      "kind": "error",
+      "dllMessage": "Cannot find Product for an operation",
+      "userMessage": "(E59) An operation/routing linked to invalid product."
+    },
+    {
+      "id": "E60",
+      "serialNo": 79,
+      "sourceFile": "mpx_c1.cpp",
+      "sourceLine": 1809,
+      "kind": "error",
+      "dllMessage": "Cannot find equipment for an operation",
+      "userMessage": "(E60) Operation linked to incorrect equipment group."
+    },
+    {
+      "id": "E61",
+      "serialNo": 80,
+      "sourceFile": "mpx_c1.cpp",
+      "sourceLine": 1828,
+      "kind": "error",
+      "dllMessage": "Cannot find DOCK for a product ??",
+      "userMessage": "(E61) Routing/Operations Error. Missing DOCK operation."
+    },
+    {
+      "id": "E62",
+      "serialNo": 81,
+      "sourceFile": "mpx_c1.cpp",
+      "sourceLine": 1851,
+      "kind": "error",
+      "dllMessage": "Cannot find STOCK for a product ??",
+      "userMessage": "(E62) Routing/Operations Error. Missing STOCK operation."
+    },
+    {
+      "id": "E63",
+      "serialNo": 82,
+      "sourceFile": "mpx_c1.cpp",
+      "sourceLine": 1873,
+      "kind": "error",
+      "dllMessage": "Cannot find STOCK for a product ??",
+      "userMessage": "(E63) Routing/Operations Error. Missing STOCK operation."
+    },
+    {
+      "id": "E64",
+      "serialNo": 83,
+      "sourceFile": "mpx_c1.cpp",
+      "sourceLine": 1902,
+      "kind": "error",
+      "dllMessage": "Cannot add operation",
+      "userMessage": "(E64) Routing/Operations Error."
+    },
+    {
+      "id": "E65",
+      "serialNo": 84,
+      "sourceFile": "mpx_c1.cpp",
+      "sourceLine": 2440,
+      "kind": "error",
+      "dllMessage": "ERROR : \n Cannot open file %s for results data",
+      "userMessage": "(E65) Internal error. Contact support@trooba.com"
+    },
+    {
+      "id": "E66",
+      "serialNo": 85,
+      "sourceFile": "mpx_c1.cpp",
+      "sourceLine": 2469,
+      "kind": "error",
+      "dllMessage": "ERROR : \n Cannot open file %s for results data",
+      "userMessage": "(E66) Internal error. Contact support@trooba.com"
+    },
+    {
+      "id": "E67",
+      "serialNo": 86,
+      "sourceFile": "mpx_c1.cpp",
+      "sourceLine": 2500,
+      "kind": "error",
+      "dllMessage": "ERROR : \n Cannot open file %s for results data",
+      "userMessage": "(E67) Internal error. Contact support@trooba.com"
+    },
+    {
+      "id": "E68",
+      "serialNo": 87,
+      "sourceFile": "mpx_c1.cpp",
+      "sourceLine": 2529,
+      "kind": "error",
+      "dllMessage": "ERROR : \n Cannot open file %s for results data",
+      "userMessage": "(E68) Internal error. Contact support@trooba.com"
+    },
+    {
+      "id": "E69",
+      "serialNo": 88,
+      "sourceFile": "mpx_c1.cpp",
+      "sourceLine": 2566,
+      "kind": "error",
+      "dllMessage": "ERROR : \n Cannot open file %s for results data",
+      "userMessage": "(E69) Internal error. Contact support@trooba.com"
+    },
+    {
+      "id": "E70",
+      "serialNo": 89,
+      "sourceFile": "mpx_c1.cpp",
+      "sourceLine": 2615,
+      "kind": "error",
+      "dllMessage": "ERROR : \n Cannot open file %s for results data",
+      "userMessage": "(E70) Internal error. Contact support@trooba.com"
+    },
+    {
+      "id": "E71",
+      "serialNo": 90,
+      "sourceFile": "mpx_c1.cpp",
+      "sourceLine": 2746,
+      "kind": "error",
+      "dllMessage": "ERROR : \n Cannot open file %s for results data",
+      "userMessage": "(E71) Internal error. Contact support@trooba.com"
+    },
+    {
+      "id": "E72",
+      "serialNo": 91,
+      "sourceFile": "mpx_c1.cpp",
+      "sourceLine": 2825,
+      "kind": "error",
+      "dllMessage": "Cannot open error file to write message !1!?\n %s",
+      "userMessage": "(E72) Internal error. Contact support@trooba.com"
+    },
+    {
+      "id": "E73",
+      "serialNo": 92,
+      "sourceFile": "mpx_c1.cpp",
+      "sourceLine": 2840,
+      "kind": "error",
+      "dllMessage": "Cannot open error file to write message !2!??\n %s",
+      "userMessage": "(E73) Internal error. Contact support@trooba.com"
+    },
+    {
+      "id": "E74",
+      "serialNo": 93,
+      "sourceFile": "mpx_c1.cpp",
+      "sourceLine": 2864,
+      "kind": "error",
+      "dllMessage": "Cannot open error file to write message %s !3!??\n %s",
+      "userMessage": "(E74) Internal error. Contact support@trooba.com"
+    },
+    {
+      "id": "E75",
+      "serialNo": 94,
+      "sourceFile": "mpx_c1.cpp",
+      "sourceLine": 2869,
+      "kind": "error",
+      "dllMessage": "Can open error file to write message %s !3!??\n %s %f",
+      "userMessage": "(E75) Internal error. Contact support@trooba.com"
+    },
+    {
+      "id": "E76",
+      "serialNo": 95,
+      "sourceFile": "mpx_c1.cpp",
+      "sourceLine": 2912,
+      "kind": "error",
+      "dllMessage": "ERROR : \n Cannot open file %s for download data",
+      "userMessage": "(E76) Internal error. Contact support@trooba.com"
+    },
+    {
+      "id": "E77",
+      "serialNo": 96,
+      "sourceFile": "mpx_c1.cpp",
+      "sourceLine": 2919,
+      "kind": "error",
+      "dllMessage": "ERROR : \n Cannot open file %s for reformatted MRP data",
+      "userMessage": "(E77) Internal MRP data error. Contact support@trooba.com"
+    },
+    {
+      "id": "E78",
+      "serialNo": 97,
+      "sourceFile": "mpx_c1.cpp",
+      "sourceLine": 2937,
+      "kind": "error",
+      "dllMessage": "Read error Infile 4 ?? \n stopping at line  ...",
+      "userMessage": "(E78) Internal error. Contact support@trooba.com"
+    },
+    {
+      "id": "E79",
+      "serialNo": 98,
+      "sourceFile": "mpx_c1.cpp",
+      "sourceLine": 3040,
+      "kind": "error",
+      "dllMessage": "ERROR : \n Cannot open file %s for download data",
+      "userMessage": "(E79) Internal error. Contact support@trooba.com"
+    },
+    {
+      "id": "E80",
+      "serialNo": 99,
+      "sourceFile": "mpx_c1.cpp",
+      "sourceLine": 3048,
+      "kind": "error",
+      "dllMessage": "ERROR : \n Cannot open file %s for reformatted MRP data",
+      "userMessage": "(E80) Internal MRP data error. Contact support@trooba.com"
+    },
+    {
+      "id": "E81",
+      "serialNo": 100,
+      "sourceFile": "mpx_c1.cpp",
+      "sourceLine": 3076,
+      "kind": "error",
+      "dllMessage": "Read error Infile1 ?? \n stopping at line  ...",
+      "userMessage": "(E81) Internal error. Contact support@trooba.com"
+    },
+    {
+      "id": "E82",
+      "serialNo": 101,
+      "sourceFile": "mpx_c1.cpp",
+      "sourceLine": 3227,
+      "kind": "error",
+      "dllMessage": "ERROR : \n Cannot open file %s for download data",
+      "userMessage": "(E82) Internal error. Contact support@trooba.com"
+    },
+    {
+      "id": "E83",
+      "serialNo": 102,
+      "sourceFile": "mpx_c1.cpp",
+      "sourceLine": 3234,
+      "kind": "error",
+      "dllMessage": "ERROR : \n Cannot open file %s for reformatted MRP data",
+      "userMessage": "(E83) Internal MRP data error. Contact support@trooba.com"
+    },
+    {
+      "id": "E84",
+      "serialNo": 103,
+      "sourceFile": "mpx_c1.cpp",
+      "sourceLine": 3250,
+      "kind": "error",
+      "dllMessage": "Read error Infile 2 ?? \n stopping at line  ...",
+      "userMessage": "(E84) Internal error. Contact support@trooba.com"
+    },
+    {
+      "id": "E85",
+      "serialNo": 104,
+      "sourceFile": "mpx_c1.cpp",
+      "sourceLine": 3312,
+      "kind": "error",
+      "dllMessage": "ERROR : \n Cannot open file %s for download data",
+      "userMessage": "(E85) Internal error. Contact support@trooba.com"
+    },
+    {
+      "id": "E86",
+      "serialNo": 105,
+      "sourceFile": "mpx_c1.cpp",
+      "sourceLine": 3319,
+      "kind": "error",
+      "dllMessage": "ERROR : \n Cannot open file %s for reformatted MRP data",
+      "userMessage": "(E86) Internal MRP data error. Contact support@trooba.com"
+    },
+    {
+      "id": "E87",
+      "serialNo": 106,
+      "sourceFile": "mpx_c1.cpp",
+      "sourceLine": 3338,
+      "kind": "error",
+      "dllMessage": "Read error Infile 3 ?? \n stopping at line  ...",
+      "userMessage": "(E87) Internal error. Contact support@trooba.com"
+    },
+    {
+      "id": "E88",
+      "serialNo": 107,
+      "sourceFile": "mpx_c1.cpp",
+      "sourceLine": 3591,
+      "kind": "error",
+      "dllMessage": "INSUFFICIENT MEMORY: #(18a) \n Insufficient Memory to add ANY LABOR GROUP",
+      "userMessage": "(E88) Memory Error. Contact support@trooba.com",
+      "errorCode": "18a"
+    },
+    {
+      "id": "E89",
+      "serialNo": 108,
+      "sourceFile": "mpx_c1.cpp",
+      "sourceLine": 3612,
+      "kind": "error",
+      "dllMessage": "INSUFFICIENT MEMORY: #(18b) \n Insufficient Memory to add ANY EQUIPMENT GROUP",
+      "userMessage": "(E89) Memory Error. Contact support@trooba.com",
+      "errorCode": "18b"
+    },
+    {
+      "id": "E90",
+      "serialNo": 109,
+      "sourceFile": "mpx_c1.cpp",
+      "sourceLine": 3635,
+      "kind": "error",
+      "dllMessage": "INSUFFICIENT MEMORY: #(18c) \n Insufficient Memory to add ANY PART DATA",
+      "userMessage": "(E90) Memory Error. Contact support@trooba.com",
+      "errorCode": "18c"
+    },
+    {
+      "id": "E91",
+      "serialNo": 110,
+      "sourceFile": "mpx_c1.cpp",
+      "sourceLine": 3665,
+      "kind": "error",
+      "dllMessage": "INSUFFICIENT MEMORY: #(18d) \n Insufficient Memory to add ANY WHAT-IF CASES",
+      "userMessage": "(E91) Memory Error. Contact support@trooba.com",
+      "errorCode": "18d"
+    },
+    {
+      "id": "E92",
+      "serialNo": 111,
+      "sourceFile": "nrutil.c",
+      "sourceLine": 10,
+      "kind": "error",
+      "dllMessage": "Numerical Recipes run-time error...",
+      "userMessage": "(E92) Memory Error. Contact support@trooba.com"
+    },
+    {
+      "id": "E93",
+      "serialNo": 112,
+      "sourceFile": "nrutil.c",
+      "sourceLine": 22,
+      "kind": "error",
+      "dllMessage": "allocation failure in vector()",
+      "userMessage": "(E93) Memory Error. Contact support@trooba.com"
+    },
+    {
+      "id": "E94",
+      "serialNo": 113,
+      "sourceFile": "nrutil.c",
+      "sourceLine": 32,
+      "kind": "error",
+      "dllMessage": "allocation failure in ivector()",
+      "userMessage": "(E94) Memory Error. Contact support@trooba.com"
+    },
+    {
+      "id": "E95",
+      "serialNo": 114,
+      "sourceFile": "nrutil.c",
+      "sourceLine": 42,
+      "kind": "error",
+      "dllMessage": "allocation failure in cvector()",
+      "userMessage": "(E95) Memory Error. Contact support@trooba.com"
+    },
+    {
+      "id": "E96",
+      "serialNo": 115,
+      "sourceFile": "nrutil.c",
+      "sourceLine": 52,
+      "kind": "error",
+      "dllMessage": "allocation failure in lvector()",
+      "userMessage": "(E96) Memory Error. Contact support@trooba.com"
+    },
+    {
+      "id": "E97",
+      "serialNo": 116,
+      "sourceFile": "nrutil.c",
+      "sourceLine": 62,
+      "kind": "error",
+      "dllMessage": "allocation failure in dvector()",
+      "userMessage": "(E97) Memory Error. Contact support@trooba.com"
+    },
+    {
+      "id": "E98",
+      "serialNo": 117,
+      "sourceFile": "nrutil.c",
+      "sourceLine": 74,
+      "kind": "error",
+      "dllMessage": "allocation failure 1 in matrix()",
+      "userMessage": "(E98) Memory Error. Contact support@trooba.com"
+    },
+    {
+      "id": "E99",
+      "serialNo": 118,
+      "sourceFile": "nrutil.c",
+      "sourceLine": 80,
+      "kind": "error",
+      "dllMessage": "allocation failure 2 in matrix()",
+      "userMessage": "(E99) Memory Error. Contact support@trooba.com"
+    },
+    {
+      "id": "E100",
+      "serialNo": 119,
+      "sourceFile": "nrutil.c",
+      "sourceLine": 98,
+      "kind": "error",
+      "dllMessage": "allocation failure 1 in matrix()",
+      "userMessage": "(E100) Memory Error. Contact support@trooba.com"
+    },
+    {
+      "id": "E101",
+      "serialNo": 120,
+      "sourceFile": "nrutil.c",
+      "sourceLine": 104,
+      "kind": "error",
+      "dllMessage": "allocation failure 2 in matrix()",
+      "userMessage": "(E101) Memory Error. Contact support@trooba.com"
+    },
+    {
+      "id": "E102",
+      "serialNo": 121,
+      "sourceFile": "nrutil.c",
+      "sourceLine": 122,
+      "kind": "error",
+      "dllMessage": "allocation failure 1 in matrix()",
+      "userMessage": "(E102) Memory Error. Contact support@trooba.com"
+    },
+    {
+      "id": "E103",
+      "serialNo": 122,
+      "sourceFile": "nrutil.c",
+      "sourceLine": 129,
+      "kind": "error",
+      "dllMessage": "allocation failure 2 in matrix()",
+      "userMessage": "(E103) Memory Error. Contact support@trooba.com"
+    },
+    {
+      "id": "E104",
+      "serialNo": 123,
+      "sourceFile": "nrutil.c",
+      "sourceLine": 148,
+      "kind": "error",
+      "dllMessage": "allocation failure in submatrix()",
+      "userMessage": "(E104) Memory Error. Contact support@trooba.com"
+    },
+    {
+      "id": "E105",
+      "serialNo": 124,
+      "sourceFile": "nrutil.c",
+      "sourceLine": 170,
+      "kind": "error",
+      "dllMessage": "allocation failure in convert_matrix()",
+      "userMessage": "(E105) Memory Error. Contact support@trooba.com"
+    },
+    {
+      "id": "E106",
+      "serialNo": 125,
+      "sourceFile": "nrutil.c",
+      "sourceLine": 193,
+      "kind": "error",
+      "dllMessage": "allocation failure in convert_matrix()",
+      "userMessage": "(E106) Memory Error. Contact support@trooba.com"
+    },
+    {
+      "id": "E107",
+      "serialNo": 126,
+      "sourceFile": "nrutil.c",
+      "sourceLine": 213,
+      "kind": "error",
+      "dllMessage": "allocation failure 1 in f3tensor()",
+      "userMessage": "(E107) Memory Error. Contact support@trooba.com"
+    },
+    {
+      "id": "E108",
+      "serialNo": 127,
+      "sourceFile": "nrutil.c",
+      "sourceLine": 219,
+      "kind": "error",
+      "dllMessage": "allocation failure 2 in f3tensor()",
+      "userMessage": "(E108) Memory Error. Contact support@trooba.com"
+    },
+    {
+      "id": "E109",
+      "serialNo": 128,
+      "sourceFile": "nrutil.c",
+      "sourceLine": 225,
+      "kind": "error",
+      "dllMessage": "allocation failure 3 in f3tensor()",
+      "userMessage": "(E109) Memory Error. Contact support@trooba.com"
+    },
+    {
+      "id": "E110",
+      "sourceFile": "portal/dll_full_calculate.py",
+      "kind": "error",
+      "category": "utilization",
+      "whenShown": "after_full_calculate",
+      "dllMessage": "Equipment: {resourceName} ({totalUtil}%)",
+      "userMessage": "(E110) Equipment is over the utilization limit.",
+      "resultField": "overLimitResources",
+      "serialNo": 129
+    },
+    {
+      "id": "E111",
+      "sourceFile": "portal/dll_full_calculate.py",
+      "kind": "error",
+      "category": "utilization",
+      "whenShown": "after_full_calculate",
+      "dllMessage": "Labor: {resourceName} ({totalUtil}%)",
+      "userMessage": "(E111) Labor is over the utilization limit.",
+      "resultField": "overLimitResources",
+      "serialNo": 130
+    },
+    {
+      "id": "W1",
+      "serialNo": 5,
+      "sourceFile": "calc.cpp",
+      "sourceLine": 244,
+      "kind": "warning",
+      "dllMessage": "Warning: Production Level is NOT SUSTAINABLE. \nLabor resources will be overutilized. \nManufacturing Cycle Time and WIP cannot be calculated.",
+      "userMessage": "(W1) Production not sustainable. Labor is overcapacity. Adjust capacity, reduce demand, or rebalance routing."
+    },
+    {
+      "id": "W2",
+      "serialNo": 6,
+      "sourceFile": "calc.cpp",
+      "sourceLine": 245,
+      "kind": "warning",
+      "dllMessage": "Warning: Production Level is NOT SUSTAINABLE. \nEquipment resources will be overutilized. \nManufacturing Cycle Time and WIP cannot be calculated.",
+      "userMessage": "(W2) Production not sustainable. Equipment capacity overloaded. Adjust capacity, reduce demand, or rebalance routing."
+    },
+    {
+      "id": "W3",
+      "serialNo": 9,
+      "sourceFile": "calc1.cpp",
+      "sourceLine": 466,
+      "kind": "warning",
+      "dllMessage": "LABOR and EQUIPMENT resources are over-utilized.",
+      "userMessage": "(W3) Production not sustainable. Labor and equipment are over capacity. Adjust capacity, reduce demand, or rebalance routing."
+    },
+    {
+      "id": "W4",
+      "serialNo": 10,
+      "sourceFile": "calc1.cpp",
+      "sourceLine": 468,
+      "kind": "warning",
+      "dllMessage": "EQUIPMENT resources are over-utilized.",
+      "userMessage": "(W4) Production not sustainable. Equipment capacity overloaded. Adjust capacity, reduce demand, or rebalance routing."
+    },
+    {
+      "id": "W5",
+      "serialNo": 11,
+      "sourceFile": "calc1.cpp",
+      "sourceLine": 470,
+      "kind": "warning",
+      "dllMessage": "LABOR resources are over-utilized.",
+      "userMessage": "(W5) Production not sustainable. Labor is overcapacity. Adjust capacity, reduce demand, or rebalance routing."
+    },
+    {
+      "id": "W6",
+      "serialNo": 12,
+      "sourceFile": "calc1.cpp",
+      "sourceLine": 473,
+      "kind": "warning",
+      "dllMessage": "WARNING:\n \nProduction level is not sustainable.\n %s \n Manufacturing Cycle Time and WIP cannot be calculated.",
+      "userMessage": "(W6) Production not sustainable. Labor and equipment are over capacity. Adjust capacity, reduce demand, or rebalance routing."
+    },
+    {
+      "id": "W7",
+      "serialNo": 15,
+      "sourceFile": "calc1.cpp",
+      "sourceLine": 678,
+      "kind": "warning",
+      "dllMessage": "INTERNAL ERROR: #(71)\n Contact Build to Demand at  BUILD TO DEMAND.COM \n Flow time details are questionable - \n Calculation will continue",
+      "userMessage": "(W7) Flow-time results unreliable. The calculation continued, but you should review routing, capacity, and timing inputs.",
+      "errorCode": "71"
+    },
+    {
+      "id": "W8",
+      "serialNo": 20,
+      "sourceFile": "calc2.cpp",
+      "sourceLine": 332,
+      "kind": "warning",
+      "dllMessage": "WARNING: #(89) \n Labor Group %s is not Used",
+      "userMessage": "(W8) Unassigned Labor group. Remove or assign to operation",
+      "errorCode": "89"
+    },
+    {
+      "id": "W9",
+      "serialNo": 21,
+      "sourceFile": "calc2.cpp",
+      "sourceLine": 335,
+      "kind": "warning",
+      "dllMessage": "WARNING: #(89) \n Labor Group is not Used",
+      "userMessage": "(W9) Unassigned Labor group. Remove or assign to operation",
+      "errorCode": "89"
+    },
+    {
+      "id": "W10",
+      "serialNo": 25,
+      "sourceFile": "calc3.cpp",
+      "sourceLine": 322,
+      "kind": "warning",
+      "dllMessage": "MAJOR ERROR: #(47a) \n CONTACT BUILD TO DEMAND.COM \n warning at line 113",
+      "userMessage": "(W10) Unreliable results. Contact support@trooba.com",
+      "errorCode": "47a"
+    },
+    {
+      "id": "W11",
+      "serialNo": 28,
+      "sourceFile": "calc5.cpp",
+      "sourceLine": 48,
+      "kind": "warning",
+      "dllMessage": "WARNING: #(56) \n   Transfer Batch Size is greater than lotsize.\n Transfer Batch Size should be -1 (meaning it is the same as the lotsize) or less than or equal to Lotsize.",
+      "userMessage": "(W11) Transfer batch size cannot be greater than lot size.",
+      "errorCode": "56"
+    },
+    {
+      "id": "W12",
+      "serialNo": 54,
+      "sourceFile": "calc7.cpp",
+      "sourceLine": 79,
+      "kind": "warning",
+      "dllMessage": "WARNING: #(80)\n  Equipment Time=0.0 and Labor Time>0.0 for an operation  \n Please check operation time data",
+      "userMessage": "(W12) An operation has labor time but zero equipment time.",
+      "errorCode": "80"
+    },
+    {
+      "id": "W13",
+      "serialNo": 55,
+      "sourceFile": "calc7.cpp",
+      "sourceLine": 111,
+      "kind": "warning",
+      "dllMessage": "WARNING: #(83)\n Equipment Time  setup %f run %f is less than Labor Time setup %f run %f for an operation. Be sure you want more than 1 person assigned to the operation.",
+      "userMessage": "(W13) Equipment time is lower than labor time for an operation. Confirm multiple people are intentionally assigned to that operation.",
+      "errorCode": "83"
+    },
+    {
+      "id": "W14",
+      "serialNo": 58,
+      "sourceFile": "calc7.cpp",
+      "sourceLine": 213,
+      "kind": "warning",
+      "dllMessage": "WARNING: #(70) \n The ratio of labor to equipment exceeds the available laborers",
+      "userMessage": "(W14) Assigned labor-to-equipment ratio is higher than available labor capacity. Reduce assigned labor or add labor capacity.",
+      "errorCode": "70"
+    },
+    {
+      "id": "W15",
+      "serialNo": 69,
+      "sourceFile": "io_code.cpp",
+      "sourceLine": 72,
+      "kind": "warning",
+      "dllMessage": "At prob warn err results.err",
+      "userMessage": "(W15) Internal error. Contact support@trooba.com"
+    },
+    {
+      "id": "W16",
+      "serialNo": 70,
+      "sourceFile": "io_code.cpp",
+      "sourceLine": 74,
+      "kind": "warning",
+      "dllMessage": "warning/error!!! %d   %s   %s %s %s   %s %s %s",
+      "userMessage": "(W16) Internal error. Contact support@trooba.com"
+    },
+    {
+      "id": "W17",
+      "serialNo": 73,
+      "sourceFile": "log.h",
+      "sourceLine": 61,
+      "kind": "warning",
+      "dllMessage": "WARNING",
+      "userMessage": "(W17) Review input data. Input data adjustments needed for reliable output."
+    },
+    {
+      "id": "W18",
+      "serialNo": 74,
+      "sourceFile": "log.h",
+      "sourceLine": 80,
+      "kind": "warning",
+      "dllMessage": "WARNING",
+      "userMessage": "(W18) Review input data. Input data adjustments needed for reliable output."
+    },
+    {
+      "id": "W19",
+      "sourceFile": "portal/dll_full_calculate.py",
+      "kind": "warning",
+      "category": "utilization",
+      "whenShown": "after_full_calculate",
+      "dllMessage": "Equipment \"{resourceName}\" util ({totalUtil}%) > limit ({utilLimit}%)",
+      "userMessage": "(W19) Equipment utilization exceeds the configured limit.",
+      "resultField": "warnings",
+      "serialNo": 131
+    },
+    {
+      "id": "W20",
+      "sourceFile": "portal/dll_full_calculate.py",
+      "kind": "warning",
+      "category": "utilization",
+      "whenShown": "after_full_calculate",
+      "dllMessage": "Labor \"{resourceName}\" util ({totalUtil}%) > limit ({utilLimit}%)",
+      "userMessage": "(W20) Labor utilization exceeds the configured limit.",
+      "resultField": "warnings",
+      "serialNo": 132
+    },
+    {
+      "id": "V1",
+      "serialNo": 129,
+      "sourceFile": "portal/calculationEngine.ts",
+      "kind": "validation",
+      "validationKind": "error",
+      "category": "validation",
+      "whenShown": "before_full_calculate",
+      "blocksCalculate": true,
+      "dllMessage": "No products defined.",
+      "userMessage": "(V1) No products defined.",
+      "whereToFix": "Product Data"
+    },
+    {
+      "id": "V2",
+      "serialNo": 130,
+      "sourceFile": "portal/calculationEngine.ts",
+      "kind": "validation",
+      "validationKind": "error",
+      "category": "validation",
+      "whenShown": "before_full_calculate",
+      "blocksCalculate": true,
+      "dllMessage": "No operations defined for any product.",
+      "userMessage": "(V2) No operations defined for any product.",
+      "whereToFix": "Operations Data"
+    },
+    {
+      "id": "V3",
+      "serialNo": 131,
+      "sourceFile": "portal/calculationEngine.ts",
+      "kind": "validation",
+      "validationKind": "error",
+      "category": "validation",
+      "whenShown": "before_full_calculate",
+      "blocksCalculate": true,
+      "dllMessage": "MCT Conversion (operations per MCT time unit) must be greater than 0 — General Data → Time Settings.",
+      "userMessage": "(V3) MCT Conversion (operations per MCT time unit) must be greater than 0 — General Data → Time Settings.",
+      "whereToFix": "General Data → Time Settings"
+    },
+    {
+      "id": "V4",
+      "serialNo": 132,
+      "sourceFile": "portal/calculationEngine.ts",
+      "kind": "validation",
+      "validationKind": "error",
+      "category": "validation",
+      "whenShown": "before_full_calculate",
+      "blocksCalculate": true,
+      "dllMessage": "Production Period Conversion (MCT units per production period) must be greater than 0 — General Data → Time Settings.",
+      "userMessage": "(V4) Production Period Conversion (MCT units per production period) must be greater than 0 — General Data → Time Settings.",
+      "whereToFix": "General Data → Time Settings"
+    },
+    {
+      "id": "V5",
+      "serialNo": 133,
+      "sourceFile": "portal/calculationEngine.ts",
+      "kind": "validation",
+      "validationKind": "error",
+      "category": "validation",
+      "whenShown": "before_full_calculate",
+      "blocksCalculate": true,
+      "dllMessage": "Equipment \"{equipmentName}\" references a labor group that does not exist — assign a valid group on Equipment Data.",
+      "userMessage": "(V5) Equipment references a labor group that does not exist — assign a valid group on Equipment Data.",
+      "whereToFix": "Equipment Data"
+    },
+    {
+      "id": "V6",
+      "serialNo": 134,
+      "sourceFile": "portal/calculationEngine.ts",
+      "kind": "validation",
+      "validationKind": "error",
+      "category": "validation",
+      "whenShown": "before_full_calculate",
+      "blocksCalculate": true,
+      "dllMessage": "Equipment \"{equipmentName}\": MTTF must be ≥ 1 ({opsTimeUnit}). Use Equipment Data to set mean time to failure.",
+      "userMessage": "(V6) Equipment MTTF must be ≥ 1. Use Equipment Data to set mean time to failure.",
+      "whereToFix": "Equipment Data"
+    },
+    {
+      "id": "V7",
+      "serialNo": 135,
+      "sourceFile": "portal/calculationEngine.ts",
+      "kind": "validation",
+      "validationKind": "error",
+      "category": "validation",
+      "whenShown": "before_full_calculate",
+      "blocksCalculate": true,
+      "dllMessage": "Operation \"{operationName}\" references equipment that does not exist — fix equipment assignment on Operations Data.",
+      "userMessage": "(V7) Operation references equipment that does not exist — fix equipment assignment on Operations Data.",
+      "whereToFix": "Operations Data"
+    },
+    {
+      "id": "V8",
+      "serialNo": 136,
+      "sourceFile": "portal/calculationEngine.ts",
+      "kind": "validation",
+      "validationKind": "error",
+      "category": "validation",
+      "whenShown": "before_full_calculate",
+      "blocksCalculate": true,
+      "dllMessage": "Product \"{productName}\": add at least one operation (Operations Data).",
+      "userMessage": "(V8) Product needs at least one operation (Operations Data).",
+      "whereToFix": "Operations Data"
+    },
+    {
+      "id": "V9",
+      "serialNo": 137,
+      "sourceFile": "portal/calculationEngine.ts",
+      "kind": "validation",
+      "validationKind": "error",
+      "category": "validation",
+      "whenShown": "before_full_calculate",
+      "blocksCalculate": true,
+      "dllMessage": "Product \"{productName}\": add at least one routing row with From and To operations (Routing Data).",
+      "userMessage": "(V9) Product needs at least one routing row with From and To operations (Routing Data).",
+      "whereToFix": "Routing Data"
+    },
+    {
+      "id": "V10",
+      "serialNo": 138,
+      "sourceFile": "portal/calculationEngine.ts",
+      "kind": "validation",
+      "validationKind": "error",
+      "category": "validation",
+      "whenShown": "before_full_calculate",
+      "blocksCalculate": true,
+      "dllMessage": "Product \"{productName}\": every routing row needs both From operation and To operation filled in (Routing Data).",
+      "userMessage": "(V10) Every routing row needs both From operation and To operation filled in (Routing Data).",
+      "whereToFix": "Routing Data"
+    },
+    {
+      "id": "V11",
+      "serialNo": 139,
+      "sourceFile": "portal/calculationEngine.ts",
+      "kind": "validation",
+      "validationKind": "error",
+      "category": "validation",
+      "whenShown": "before_full_calculate",
+      "blocksCalculate": true,
+      "dllMessage": "Product \"{productName}\": routing must include at least one From step and one To step (Routing Data).",
+      "userMessage": "(V11) Routing must include at least one From step and one To step (Routing Data).",
+      "whereToFix": "Routing Data"
+    },
+    {
+      "id": "V12",
+      "serialNo": 140,
+      "sourceFile": "portal/calculationEngine.ts",
+      "kind": "validation",
+      "validationKind": "error",
+      "category": "validation",
+      "whenShown": "before_full_calculate",
+      "blocksCalculate": true,
+      "dllMessage": "Product \"{productName}\": Lot Size must be ≥ 1 — Product Data.",
+      "userMessage": "(V12) Product lot size must be ≥ 1 — Product Data.",
+      "whereToFix": "Product Data"
+    },
+    {
+      "id": "V13",
+      "serialNo": 141,
+      "sourceFile": "portal/calculationEngine.ts",
+      "kind": "validation",
+      "validationKind": "error",
+      "category": "validation",
+      "whenShown": "before_full_calculate",
+      "blocksCalculate": true,
+      "dllMessage": "Product \"{productName}\": Demand cannot be negative — Product Data.",
+      "userMessage": "(V13) Product demand cannot be negative — Product Data.",
+      "whereToFix": "Product Data"
+    },
+    {
+      "id": "V14",
+      "serialNo": 142,
+      "sourceFile": "portal/calculationEngine.ts",
+      "kind": "validation",
+      "validationKind": "error",
+      "category": "validation",
+      "whenShown": "before_full_calculate",
+      "blocksCalculate": true,
+      "dllMessage": "Equipment \"{equipmentName}\": Count must be ≥ 1 for standard equipment — Equipment Data.",
+      "userMessage": "(V14) Standard equipment count must be ≥ 1 — Equipment Data.",
+      "whereToFix": "Equipment Data"
+    },
+    {
+      "id": "V15",
+      "serialNo": 143,
+      "sourceFile": "portal/calculationEngine.ts",
+      "kind": "validation",
+      "validationKind": "error",
+      "category": "validation",
+      "whenShown": "before_full_calculate",
+      "blocksCalculate": true,
+      "dllMessage": "Labor \"{laborName}\": Count must be ≥ 1 — Labor Data.",
+      "userMessage": "(V15) Labor count must be ≥ 1 — Labor Data.",
+      "whereToFix": "Labor Data"
+    },
+    {
+      "id": "V16",
+      "serialNo": 144,
+      "sourceFile": "portal/calculationEngine.ts",
+      "kind": "validation",
+      "validationKind": "warning",
+      "category": "validation",
+      "whenShown": "before_full_calculate",
+      "blocksCalculate": false,
+      "dllMessage": "No labor groups defined.",
+      "userMessage": "(V16) No labor groups defined.",
+      "whereToFix": "Labor Data"
+    },
+    {
+      "id": "V17",
+      "serialNo": 145,
+      "sourceFile": "portal/calculationEngine.ts",
+      "kind": "validation",
+      "validationKind": "warning",
+      "category": "validation",
+      "whenShown": "before_full_calculate",
+      "blocksCalculate": false,
+      "dllMessage": "No equipment groups defined.",
+      "userMessage": "(V17) No equipment groups defined.",
+      "whereToFix": "Equipment Data"
+    },
+    {
+      "id": "V18",
+      "serialNo": 146,
+      "sourceFile": "portal/calculationEngine.ts",
+      "kind": "validation",
+      "validationKind": "warning",
+      "category": "validation",
+      "whenShown": "before_full_calculate",
+      "blocksCalculate": false,
+      "dllMessage": "Product \"{productName}\": routing from \"{fromOperation}\" sums to {percentTotal}%, not 100%.",
+      "userMessage": "(V18) Routing percentages from an operation do not sum to 100%.",
+      "whereToFix": "Routing Data"
+    },
+    {
+      "id": "R4",
+      "serialNo": 4,
+      "sourceFile": "calc.cpp",
+      "sourceLine": 227,
+      "kind": "success",
+      "dllMessage": "Value Stream Modeling EVALUATION IS COMPLETED\n However the resouce utilization is very high and the Manufacturing Cycle Time numbers are not as accurate.",
+      "userMessage": "Evaluation completed. Resource utilization is very high, so cycle-time and WIP results may be less accurate. Review overloaded resources before using the results."
+    }
+  ],
+  "validations": [
+    {
+      "id": "V1",
+      "serialNo": 129,
+      "sourceFile": "portal/calculationEngine.ts",
+      "kind": "validation",
+      "validationKind": "error",
+      "category": "validation",
+      "whenShown": "before_full_calculate",
+      "blocksCalculate": true,
+      "dllMessage": "No products defined.",
+      "userMessage": "(V1) No products defined.",
+      "whereToFix": "Product Data"
+    },
+    {
+      "id": "V2",
+      "serialNo": 130,
+      "sourceFile": "portal/calculationEngine.ts",
+      "kind": "validation",
+      "validationKind": "error",
+      "category": "validation",
+      "whenShown": "before_full_calculate",
+      "blocksCalculate": true,
+      "dllMessage": "No operations defined for any product.",
+      "userMessage": "(V2) No operations defined for any product.",
+      "whereToFix": "Operations Data"
+    },
+    {
+      "id": "V3",
+      "serialNo": 131,
+      "sourceFile": "portal/calculationEngine.ts",
+      "kind": "validation",
+      "validationKind": "error",
+      "category": "validation",
+      "whenShown": "before_full_calculate",
+      "blocksCalculate": true,
+      "dllMessage": "MCT Conversion (operations per MCT time unit) must be greater than 0 — General Data → Time Settings.",
+      "userMessage": "(V3) MCT Conversion (operations per MCT time unit) must be greater than 0 — General Data → Time Settings.",
+      "whereToFix": "General Data → Time Settings"
+    },
+    {
+      "id": "V4",
+      "serialNo": 132,
+      "sourceFile": "portal/calculationEngine.ts",
+      "kind": "validation",
+      "validationKind": "error",
+      "category": "validation",
+      "whenShown": "before_full_calculate",
+      "blocksCalculate": true,
+      "dllMessage": "Production Period Conversion (MCT units per production period) must be greater than 0 — General Data → Time Settings.",
+      "userMessage": "(V4) Production Period Conversion (MCT units per production period) must be greater than 0 — General Data → Time Settings.",
+      "whereToFix": "General Data → Time Settings"
+    },
+    {
+      "id": "V5",
+      "serialNo": 133,
+      "sourceFile": "portal/calculationEngine.ts",
+      "kind": "validation",
+      "validationKind": "error",
+      "category": "validation",
+      "whenShown": "before_full_calculate",
+      "blocksCalculate": true,
+      "dllMessage": "Equipment \"{equipmentName}\" references a labor group that does not exist — assign a valid group on Equipment Data.",
+      "userMessage": "(V5) Equipment references a labor group that does not exist — assign a valid group on Equipment Data.",
+      "whereToFix": "Equipment Data"
+    },
+    {
+      "id": "V6",
+      "serialNo": 134,
+      "sourceFile": "portal/calculationEngine.ts",
+      "kind": "validation",
+      "validationKind": "error",
+      "category": "validation",
+      "whenShown": "before_full_calculate",
+      "blocksCalculate": true,
+      "dllMessage": "Equipment \"{equipmentName}\": MTTF must be ≥ 1 ({opsTimeUnit}). Use Equipment Data to set mean time to failure.",
+      "userMessage": "(V6) Equipment MTTF must be ≥ 1. Use Equipment Data to set mean time to failure.",
+      "whereToFix": "Equipment Data"
+    },
+    {
+      "id": "V7",
+      "serialNo": 135,
+      "sourceFile": "portal/calculationEngine.ts",
+      "kind": "validation",
+      "validationKind": "error",
+      "category": "validation",
+      "whenShown": "before_full_calculate",
+      "blocksCalculate": true,
+      "dllMessage": "Operation \"{operationName}\" references equipment that does not exist — fix equipment assignment on Operations Data.",
+      "userMessage": "(V7) Operation references equipment that does not exist — fix equipment assignment on Operations Data.",
+      "whereToFix": "Operations Data"
+    },
+    {
+      "id": "V8",
+      "serialNo": 136,
+      "sourceFile": "portal/calculationEngine.ts",
+      "kind": "validation",
+      "validationKind": "error",
+      "category": "validation",
+      "whenShown": "before_full_calculate",
+      "blocksCalculate": true,
+      "dllMessage": "Product \"{productName}\": add at least one operation (Operations Data).",
+      "userMessage": "(V8) Product needs at least one operation (Operations Data).",
+      "whereToFix": "Operations Data"
+    },
+    {
+      "id": "V9",
+      "serialNo": 137,
+      "sourceFile": "portal/calculationEngine.ts",
+      "kind": "validation",
+      "validationKind": "error",
+      "category": "validation",
+      "whenShown": "before_full_calculate",
+      "blocksCalculate": true,
+      "dllMessage": "Product \"{productName}\": add at least one routing row with From and To operations (Routing Data).",
+      "userMessage": "(V9) Product needs at least one routing row with From and To operations (Routing Data).",
+      "whereToFix": "Routing Data"
+    },
+    {
+      "id": "V10",
+      "serialNo": 138,
+      "sourceFile": "portal/calculationEngine.ts",
+      "kind": "validation",
+      "validationKind": "error",
+      "category": "validation",
+      "whenShown": "before_full_calculate",
+      "blocksCalculate": true,
+      "dllMessage": "Product \"{productName}\": every routing row needs both From operation and To operation filled in (Routing Data).",
+      "userMessage": "(V10) Every routing row needs both From operation and To operation filled in (Routing Data).",
+      "whereToFix": "Routing Data"
+    },
+    {
+      "id": "V11",
+      "serialNo": 139,
+      "sourceFile": "portal/calculationEngine.ts",
+      "kind": "validation",
+      "validationKind": "error",
+      "category": "validation",
+      "whenShown": "before_full_calculate",
+      "blocksCalculate": true,
+      "dllMessage": "Product \"{productName}\": routing must include at least one From step and one To step (Routing Data).",
+      "userMessage": "(V11) Routing must include at least one From step and one To step (Routing Data).",
+      "whereToFix": "Routing Data"
+    },
+    {
+      "id": "V12",
+      "serialNo": 140,
+      "sourceFile": "portal/calculationEngine.ts",
+      "kind": "validation",
+      "validationKind": "error",
+      "category": "validation",
+      "whenShown": "before_full_calculate",
+      "blocksCalculate": true,
+      "dllMessage": "Product \"{productName}\": Lot Size must be ≥ 1 — Product Data.",
+      "userMessage": "(V12) Product lot size must be ≥ 1 — Product Data.",
+      "whereToFix": "Product Data"
+    },
+    {
+      "id": "V13",
+      "serialNo": 141,
+      "sourceFile": "portal/calculationEngine.ts",
+      "kind": "validation",
+      "validationKind": "error",
+      "category": "validation",
+      "whenShown": "before_full_calculate",
+      "blocksCalculate": true,
+      "dllMessage": "Product \"{productName}\": Demand cannot be negative — Product Data.",
+      "userMessage": "(V13) Product demand cannot be negative — Product Data.",
+      "whereToFix": "Product Data"
+    },
+    {
+      "id": "V14",
+      "serialNo": 142,
+      "sourceFile": "portal/calculationEngine.ts",
+      "kind": "validation",
+      "validationKind": "error",
+      "category": "validation",
+      "whenShown": "before_full_calculate",
+      "blocksCalculate": true,
+      "dllMessage": "Equipment \"{equipmentName}\": Count must be ≥ 1 for standard equipment — Equipment Data.",
+      "userMessage": "(V14) Standard equipment count must be ≥ 1 — Equipment Data.",
+      "whereToFix": "Equipment Data"
+    },
+    {
+      "id": "V15",
+      "serialNo": 143,
+      "sourceFile": "portal/calculationEngine.ts",
+      "kind": "validation",
+      "validationKind": "error",
+      "category": "validation",
+      "whenShown": "before_full_calculate",
+      "blocksCalculate": true,
+      "dllMessage": "Labor \"{laborName}\": Count must be ≥ 1 — Labor Data.",
+      "userMessage": "(V15) Labor count must be ≥ 1 — Labor Data.",
+      "whereToFix": "Labor Data"
+    },
+    {
+      "id": "V16",
+      "serialNo": 144,
+      "sourceFile": "portal/calculationEngine.ts",
+      "kind": "validation",
+      "validationKind": "warning",
+      "category": "validation",
+      "whenShown": "before_full_calculate",
+      "blocksCalculate": false,
+      "dllMessage": "No labor groups defined.",
+      "userMessage": "(V16) No labor groups defined.",
+      "whereToFix": "Labor Data"
+    },
+    {
+      "id": "V17",
+      "serialNo": 145,
+      "sourceFile": "portal/calculationEngine.ts",
+      "kind": "validation",
+      "validationKind": "warning",
+      "category": "validation",
+      "whenShown": "before_full_calculate",
+      "blocksCalculate": false,
+      "dllMessage": "No equipment groups defined.",
+      "userMessage": "(V17) No equipment groups defined.",
+      "whereToFix": "Equipment Data"
+    },
+    {
+      "id": "V18",
+      "serialNo": 146,
+      "sourceFile": "portal/calculationEngine.ts",
+      "kind": "validation",
+      "validationKind": "warning",
+      "category": "validation",
+      "whenShown": "before_full_calculate",
+      "blocksCalculate": false,
+      "dllMessage": "Product \"{productName}\": routing from \"{fromOperation}\" sums to {percentTotal}%, not 100%.",
+      "userMessage": "(V18) Routing percentages from an operation do not sum to 100%.",
+      "whereToFix": "Routing Data"
+    }
+  ]
+}

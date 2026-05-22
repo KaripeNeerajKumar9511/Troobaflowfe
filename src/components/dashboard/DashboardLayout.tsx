@@ -17,8 +17,8 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
       {/* Sidebar + main content below the topbar; only main scrolls */}
       <div className="flex flex-1 min-h-0 overflow-hidden">
         <DashboardSidebar />
-        <main className="flex-1 min-h-0 flex flex-col overflow-y-auto overflow-x-hidden px-6 py-6">
-          <div className="mx-auto max-w-6xl w-full flex-1 min-h-0 flex flex-col">
+        <main className="flex-1 min-h-0 flex flex-col overflow-y-auto overflow-x-auto px-3 md:px-4 lg:px-6 py-4 md:py-6">
+          <div className="mx-auto max-w-[96rem] w-full flex-1 min-h-0 flex flex-col">
             {children}
           </div>
         </main>

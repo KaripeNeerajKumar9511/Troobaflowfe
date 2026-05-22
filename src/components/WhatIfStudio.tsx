@@ -29,6 +29,8 @@ import {
 } from 'lucide-react';
 import { getScenarioColor } from '@/lib/scenarioColors';
 import { toast } from 'sonner';
+import { NonNegativeNumericInput } from '@/components/NonNegativeNumericInput';
+import { blockSignedNumericKeys, sanitizeNonNegativeDecimalInput } from '@/lib/numericInput';
 
 // ═══════════════════════════════════════════════════════════════════════
 // Main Page
@@ -412,9 +414,12 @@ function FamilyRecordsView({ family, scenarios, activeScenarioId, model, modelId
                       return (
                         <td key={m.id} className={`p-2 text-right font-mono ${activeScenarioId === m.id ? 'bg-amber-500/5' : ''}`}>
                           {editingEnabled && change ? (
-                            <input type="number" defaultValue={change.whatIfValue}
-                              onBlur={e => { const v = Number(e.target.value); if (!isNaN(v)) updateChange(m.id, change.id, v); }}
-                              className="w-full text-right bg-transparent border border-border rounded px-1 py-0.5 font-mono text-xs focus:border-primary focus:outline-none" />
+                            <NonNegativeNumericInput
+                              allowDecimal
+                              className="w-full text-right bg-transparent border border-border rounded px-1 py-0.5 font-mono text-xs h-7"
+                              value={typeof change.whatIfValue === 'number' ? change.whatIfValue : Number(change.whatIfValue) || 0}
+                              onChange={(v) => updateChange(m.id, change.id, v)}
+                            />
                           ) : (
                             <span className={change ? 'font-semibold text-primary' : 'text-muted-foreground'}>
                               {change ? change.whatIfValue : '—'}
@@ -801,10 +806,12 @@ function WhatIfCell({ basecaseValue, whatIfValue, onBlur }: {
   const hasChange = whatIfValue != null && String(whatIfValue) !== String(basecaseValue);
 
   return (
-    <input
-      type="number"
+    <Input
+      type="text"
+      inputMode="decimal"
       value={localVal}
-      onChange={e => setLocalVal(e.target.value)}
+      onChange={e => setLocalVal(sanitizeNonNegativeDecimalInput(e.target.value))}
+      onKeyDown={blockSignedNumericKeys}
       onBlur={() => onBlur(localVal)}
       placeholder={String(basecaseValue)}
       className={`w-full text-right bg-transparent border rounded px-1.5 py-1 font-mono text-xs focus:outline-none focus:ring-1 focus:ring-amber-400 ${hasChange ? 'border-amber-400 bg-amber-500/5' : 'border-border'}`}
@@ -1098,18 +1105,24 @@ function ChangesTab({ scenario, isActive, userLevel, modelId, onPromote }: {
                   <td className="p-2 text-muted-foreground">{c.fieldLabel}</td>
                   <td className={`p-2 text-right font-mono ${directEdits && !isIncluded ? 'bg-red-50/50' : ''}`}>
                     {directEdits && !isIncluded ? (
-                      <input type="number" defaultValue={c.basecaseValue}
-                        onBlur={e => handleBasecaseEdit(c, e.target.value)}
-                        className="w-full text-right bg-transparent border border-destructive/30 rounded px-1 py-0.5 font-mono text-xs focus:border-destructive focus:outline-none" />
+                      <NonNegativeNumericInput
+                        allowDecimal
+                        className="w-full text-right bg-transparent border border-destructive/30 rounded px-1 py-0.5 font-mono text-xs h-7"
+                        value={typeof c.basecaseValue === 'number' ? c.basecaseValue : Number(c.basecaseValue) || 0}
+                        onChange={(v) => handleBasecaseEdit(c, String(v))}
+                      />
                     ) : (
                       <span className="text-muted-foreground">{displayBase}</span>
                     )}
                   </td>
                   <td className="p-2 text-right font-mono">
                     {directEdits && !isIncluded ? (
-                      <input type="number" defaultValue={c.whatIfValue}
-                        onBlur={e => handleWhatIfEdit(c.id, e.target.value)}
-                        className="w-full text-right bg-transparent border border-border rounded px-1 py-0.5 font-mono text-xs focus:border-primary focus:outline-none" />
+                      <NonNegativeNumericInput
+                        allowDecimal
+                        className="w-full text-right bg-transparent border border-border rounded px-1 py-0.5 font-mono text-xs h-7"
+                        value={typeof c.whatIfValue === 'number' ? c.whatIfValue : Number(c.whatIfValue) || 0}
+                        onChange={(v) => handleWhatIfEdit(c.id, String(v))}
+                      />
                     ) : (
                       <span className="font-semibold text-primary">{displayWi}</span>
                     )}

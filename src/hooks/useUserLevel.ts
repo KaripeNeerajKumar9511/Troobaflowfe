@@ -3,10 +3,36 @@ import { apiFetch, resolveApiUrl, AUTH_PROFILE } from '@/lib/api';
 
 export type UserLevel = 'novice' | 'standard' | 'advanced';
 
+const USER_LEVEL_STORAGE_KEY = 'trooba_rmct_user_level';
+
+function readPersistedUserLevel(): UserLevel | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const v = sessionStorage.getItem(USER_LEVEL_STORAGE_KEY);
+    if (v === 'novice' || v === 'standard' || v === 'advanced') return v;
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
+function persistUserLevel(level: UserLevel) {
+  try {
+    sessionStorage.setItem(USER_LEVEL_STORAGE_KEY, level);
+  } catch {
+    /* ignore */
+  }
+}
+
 function levelFromNumber(n: number): UserLevel {
   if (n <= 1) return 'novice';
   if (n >= 4) return 'advanced';
   return 'standard';
+}
+
+/** Map API / profile `user_level` number to app level (same rules as the backend profile). */
+export function userLevelFromApiNumber(n: number): UserLevel {
+  return levelFromNumber(n);
 }
 
 function numberFromLevel(level: UserLevel): number {
@@ -83,13 +109,35 @@ export function canAccess(level: UserLevel, feature: string): boolean {
 interface UserLevelStore {
   userLevel: UserLevel;
   loading: boolean;
+  /** Apply level from auth profile or API without a second network round-trip. */
+  syncFromProfileNumber: (userLevelNum: number | undefined) => void;
+  /** Clear persisted level (call on sign-out or anonymous profile). */
+  clearPersistedUserLevel: () => void;
   fetchUserLevel: () => Promise<void>;
   setUserLevel: (level: UserLevel) => Promise<void>;
 }
 
-export const useUserLevelStore = create<UserLevelStore>((set) => ({
-  userLevel: 'standard',
-  loading: true,
+const initialUserLevel: UserLevel = readPersistedUserLevel() ?? 'standard';
+
+export const useUserLevelStore = create<UserLevelStore>((set, get) => ({
+  userLevel: initialUserLevel,
+  loading: readPersistedUserLevel() == null,
+
+  syncFromProfileNumber: (userLevelNum) => {
+    const n = typeof userLevelNum === 'number' ? userLevelNum : 3;
+    const level = levelFromNumber(n);
+    persistUserLevel(level);
+    set({ userLevel: level, loading: false });
+  },
+
+  clearPersistedUserLevel: () => {
+    try {
+      sessionStorage.removeItem(USER_LEVEL_STORAGE_KEY);
+    } catch {
+      /* ignore */
+    }
+    set({ userLevel: 'standard', loading: true });
+  },
 
   fetchUserLevel: async () => {
     try {
@@ -104,7 +152,7 @@ export const useUserLevelStore = create<UserLevelStore>((set) => ({
         return;
       }
       const n = typeof d.user_level === 'number' ? d.user_level : 3;
-      set({ userLevel: levelFromNumber(n), loading: false });
+      get().syncFromProfileNumber(n);
     } catch {
       set({ loading: false });
     }
@@ -115,6 +163,9 @@ export const useUserLevelStore = create<UserLevelStore>((set) => ({
       method: 'PATCH',
       body: JSON.stringify({ user_level: numberFromLevel(level) }),
     });
-    if (res.ok) set({ userLevel: level });
+    if (res.ok) {
+      persistUserLevel(level);
+      set({ userLevel: level });
+    }
   },
 }));

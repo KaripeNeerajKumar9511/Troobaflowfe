@@ -5,12 +5,15 @@ import Link from "next/link"
 import api, { ensureCsrfCookie } from "@/lib/api"
 import { clearCSRFToken } from "@/lib/csrf"
 import troobaLogoLight from "@/assets/trooba-logo-light.svg"
+import { useRmctDeviceSupported } from "@/hooks/useRmctDeviceSupported"
+import { UnsupportedDeviceScreen } from "@/components/auth/UnsupportedDeviceScreen"
 
 export default function LoginPage() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
+  const supported = useRmctDeviceSupported()
 
   useEffect(() => {
     // Ensure there is no CSRF cookie before login.
@@ -35,6 +38,18 @@ export default function LoginPage() {
     } finally {
       setLoading(false)
     }
+  }
+
+  if (supported === false) {
+    return <UnsupportedDeviceScreen />
+  }
+  if (supported === null) {
+    return (
+      <div
+        className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-4"
+        aria-busy="true"
+      />
+    )
   }
 
   return (

@@ -1,16 +1,18 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useCallback } from 'react';
 import { useModelStore, type Model } from '@/stores/modelStore';
 import { useScenarioStore } from '@/stores/scenarioStore';
 import { useResultsStore } from '@/stores/resultsStore';
-import { type CalcResults, type ProductResult } from '@/lib/calculationEngine';
+import { type CalcResults, type ProductResult, getProductOutOfAreaTime } from '@/lib/calculationEngine';
+import { scheduleIbomNodeTree, schedulePolePath } from '@/lib/ibomSchedule';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/Select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Network, Star, Package } from 'lucide-react';
+import { Network, Star, Package, RotateCcw } from 'lucide-react';
 
 // ── 5-Segment MCT Colours (Section 1) ──
 const MCT_SEGMENTS = [
@@ -30,6 +32,20 @@ interface MCTBreakdown {
   run: number;
   lotWait: number;
   total: number;
+}
+
+function estimateColMinWidthPx(label: string, values: Array<string | number>, minPx = 80, maxPx = 320): number {
+  let maxLen = label.length;
+  for (const v of values) {
+    const len = String(v ?? '').length;
+    if (len > maxLen) maxLen = len;
+  }
+  const px = Math.round(maxLen * 8 + 24);
+  return Math.max(minPx, Math.min(maxPx, px));
+}
+
+function fmt2(v: number): string {
+  return Number.isFinite(v) ? v.toFixed(2) : '0.00';
 }
 
 function getBreakdown(pr: ProductResult | undefined, product: any): MCTBreakdown {
@@ -85,20 +101,6 @@ function IBOMHeader({
       </Select>
       <span className="text-sm font-medium text-primary ml-1">{scenarioLabel}</span>
     </div>
-  );
-}
-
-// ── Zoom Dropdown ──
-function ZoomSelect({ zoom, setZoom }: { zoom: number; setZoom: (z: number) => void }) {
-  return (
-    <Select value={String(zoom)} onValueChange={v => setZoom(Number(v))}>
-      <SelectTrigger className="w-24 h-7 text-xs"><SelectValue /></SelectTrigger>
-      <SelectContent>
-        {[50, 75, 100, 125, 150].map(z => (
-          <SelectItem key={z} value={String(z)}>{z}%</SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
   );
 }
 
@@ -158,9 +160,82 @@ function StackedMCTBar({
   );
 }
 
-// ── Color dot for table headers ──
-function ColorDot({ color }: { color: string }) {
-  return <span className="inline-block w-2 h-2 rounded-full mr-1 shrink-0" style={{ backgroundColor: color }} />;
+function DraggableHead({
+  label,
+  align = 'left',
+  onDragStart,
+  onDragOver,
+  onDrop,
+}: {
+  label: React.ReactNode;
+  align?: 'left' | 'right' | 'center';
+  onDragStart: () => void;
+  onDragOver: (ev: React.DragEvent) => void;
+  onDrop: () => void;
+}) {
+  return (
+    <TableHead
+      className={`font-mono text-xs whitespace-nowrap cursor-move ${align === 'right' ? 'text-right' : align === 'center' ? 'text-center' : 'text-left'}`}
+      draggable
+      onDragStart={onDragStart}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
+    >
+      {label}
+    </TableHead>
+  );
+}
+
+type IbomDetailColKey =
+  | 'product'
+  | 'level'
+  | 'endTime'
+  | 'startTime'
+  | 'criticalPath'
+  | 'waitEquip'
+  | 'waitLabor'
+  | 'setup'
+  | 'run'
+  | 'waitLot'
+  | 'outOfArea';
+
+type TreeTableColKey = IbomDetailColKey;
+
+type PoleTableColKey = 'pole' | IbomDetailColKey;
+
+const TREE_TABLE_DEFAULT_ORDER: TreeTableColKey[] = [
+  'product', 'level', 'endTime', 'startTime', 'criticalPath',
+  'waitEquip', 'waitLabor', 'setup', 'run', 'waitLot', 'outOfArea',
+];
+
+const POLE_TABLE_DEFAULT_ORDER: PoleTableColKey[] = [
+  'pole', 'product', 'level', 'endTime', 'startTime', 'criticalPath',
+  'waitEquip', 'waitLabor', 'setup', 'run', 'waitLot', 'outOfArea',
+];
+
+function ibomTableColumnLabel(colKey: TreeTableColKey | 'pole'): React.ReactNode {
+  switch (colKey) {
+    case 'pole': return 'Pole';
+    case 'product': return 'Product Name';
+    case 'level': return 'Level';
+    case 'endTime': return 'End Time';
+    case 'startTime': return 'Start Time';
+    case 'criticalPath': return 'Manufacturing Critical-path Time';
+    case 'waitEquip': return 'Time Waiting for Equip';
+    case 'waitLabor': return 'Time Waiting for Labor';
+    case 'setup': return 'Time in Setup';
+    case 'run': return 'Time in Run';
+    case 'waitLot': return 'Time Waiting for Rest of Lot';
+    case 'outOfArea': return 'Time Out Of Area';
+  }
+}
+
+function linearStepCriticalPaths(flowTimes: number[]): number[] {
+  const cp = new Array<number>(flowTimes.length);
+  for (let i = flowTimes.length - 1; i >= 0; i--) {
+    cp[i] = flowTimes[i] + (i + 1 < flowTimes.length ? cp[i + 1] : 0);
+  }
+  return cp;
 }
 
 // ── IBOM tree node with breakdown ──
@@ -172,6 +247,10 @@ interface IBOMNodeData {
   unitsPerAssy: number;
   level: number;
   children: IBOMNodeData[];
+  startTime: number;
+  endTime: number;
+  criticalPathTime: number;
+  outOfAreaTime: number;
 }
 
 function buildNodeTree(model: Model, results: CalcResults, rootId: string, level: number, visited: Set<string>): IBOMNodeData {
@@ -188,38 +267,45 @@ function buildNodeTree(model: Model, results: CalcResults, rootId: string, level
       unitsPerAssy: e.units_per_assy,
     }));
 
-  return { productId: rootId, name: product?.name || '?', breakdown, isMTS, unitsPerAssy: 1, level, children };
+  const tree: IBOMNodeData = {
+    productId: rootId,
+    name: product?.name || '?',
+    breakdown,
+    isMTS,
+    unitsPerAssy: 1,
+    level,
+    children,
+    startTime: 0,
+    endTime: 0,
+    criticalPathTime: 0,
+    outOfAreaTime: getProductOutOfAreaTime(pr),
+  };
+  scheduleIbomNodeTree(tree);
+  return tree;
 }
 
 function getMaxMCT(node: IBOMNodeData): number {
   return Math.max(node.breakdown.total, ...node.children.map(c => getMaxMCT(c)));
 }
 
-// Find critical path (longest MCT chain)
-function findCriticalPath(node: IBOMNodeData): Set<string> {
+/** Longest flow-time branch (uses criticalPathTime from backward schedule). */
+function getCriticalPathSet(node: IBOMNodeData): Set<string> {
   const path = new Set<string>();
-  function traverse(n: IBOMNodeData): number {
-    if (n.children.length === 0) {
-      path.add(n.productId);
-      return n.breakdown.total;
-    }
-    let bestChild: IBOMNodeData | null = null;
-    let bestMCT = -1;
-    for (const c of n.children) {
-      const cMCT = getCumulativeMCT(c);
-      if (cMCT > bestMCT) { bestMCT = cMCT; bestChild = c; }
-    }
+  function walk(n: IBOMNodeData): void {
     path.add(n.productId);
-    if (bestChild) traverse(bestChild);
-    return n.breakdown.total + bestMCT;
+    if (n.children.length === 0) return;
+    let bestChild: IBOMNodeData | null = null;
+    let bestCp = -1;
+    for (const c of n.children) {
+      if (c.criticalPathTime > bestCp) {
+        bestCp = c.criticalPathTime;
+        bestChild = c;
+      }
+    }
+    if (bestChild) walk(bestChild);
   }
-  traverse(node);
+  walk(node);
   return path;
-}
-
-function getCumulativeMCT(node: IBOMNodeData): number {
-  if (node.children.length === 0) return node.breakdown.total;
-  return node.breakdown.total + Math.max(...node.children.map(c => getCumulativeMCT(c)));
 }
 
 // Flatten tree depth-first for table
@@ -230,15 +316,57 @@ function flattenTree(node: IBOMNodeData): IBOMNodeData[] {
 }
 
 // Build poles (all root-to-leaf paths)
+interface PolePathStep {
+  productId: string;
+  name: string;
+  breakdown: MCTBreakdown;
+  isMTS: boolean;
+  level: number;
+  startTime: number;
+  endTime: number;
+  criticalPathTime: number;
+  outOfAreaTime: number;
+}
+
 interface Pole {
-  path: { productId: string; name: string; breakdown: MCTBreakdown; isMTS: boolean }[];
+  path: PolePathStep[];
   totalBreakdown: MCTBreakdown;
+  startTime: number;
+  endTime: number;
+  criticalPathTime: number;
+}
+
+interface PoleTableRow extends PolePathStep {
+  poleIndex: number;
+  poleLabel: string;
+  isCriticalPole: boolean;
+}
+
+function flattenPolesForTable(poles: Pole[]): PoleTableRow[] {
+  const rows: PoleTableRow[] = [];
+  poles.forEach((pole, poleIndex) => {
+    pole.path.forEach(step => {
+      rows.push({
+        ...step,
+        poleIndex,
+        poleLabel: `Pole ${poleIndex + 1}`,
+        isCriticalPole: poleIndex === 0,
+      });
+    });
+  });
+  return rows;
 }
 
 function buildPoles(node: IBOMNodeData): Pole[] {
   const poles: Pole[] = [];
-  function traverse(n: IBOMNodeData, currentPath: Pole['path']) {
-    const step = { productId: n.productId, name: n.name, breakdown: n.breakdown, isMTS: n.isMTS };
+  function traverse(n: IBOMNodeData, currentPath: Array<Pick<PolePathStep, 'productId' | 'name' | 'breakdown' | 'isMTS' | 'outOfAreaTime'>>) {
+    const step = {
+      productId: n.productId,
+      name: n.name,
+      breakdown: n.breakdown,
+      isMTS: n.isMTS,
+      outOfAreaTime: n.outOfAreaTime,
+    };
     const newPath = [...currentPath, step];
     if (n.children.length === 0) {
       const totalBreakdown: MCTBreakdown = {
@@ -249,7 +377,27 @@ function buildPoles(node: IBOMNodeData): Pole[] {
         lotWait: newPath.reduce((s, p) => s + p.breakdown.lotWait, 0),
         total: newPath.reduce((s, p) => s + p.breakdown.total, 0),
       };
-      poles.push({ path: newPath, totalBreakdown });
+      const flowSteps = newPath.map(p => ({
+        id: p.productId,
+        flowTime: p.isMTS ? 0 : p.breakdown.total,
+      }));
+      const flowTimes = flowSteps.map(s => s.flowTime);
+      const scheduled = schedulePolePath(flowSteps);
+      const stepCriticalPaths = linearStepCriticalPaths(flowTimes);
+      const enrichedPath: PolePathStep[] = newPath.map((p, idx) => ({
+        ...p,
+        level: idx + 1,
+        startTime: scheduled.stepTimes[idx]?.startTime ?? 0,
+        endTime: scheduled.stepTimes[idx]?.endTime ?? 0,
+        criticalPathTime: stepCriticalPaths[idx] ?? 0,
+      }));
+      poles.push({
+        path: enrichedPath,
+        totalBreakdown,
+        startTime: scheduled.startTime,
+        endTime: scheduled.endTime,
+        criticalPathTime: scheduled.criticalPathTime,
+      });
     } else {
       n.children.forEach(c => traverse(c, newPath));
     }
@@ -261,12 +409,12 @@ function buildPoles(node: IBOMNodeData): Pole[] {
 // ════════════════════════════════════════════════════════════
 //  TREE CHART (Section 2)
 // ════════════════════════════════════════════════════════════
-function TreeChart({ model, results, tree, mctUnit, zoom }: {
-  model: Model; results: CalcResults; tree: IBOMNodeData; mctUnit: string; zoom: number;
+function TreeChart({ model, results, tree, mctUnit }: {
+  model: Model; results: CalcResults; tree: IBOMNodeData; mctUnit: string;
 }) {
   const maxMCT = useMemo(() => getMaxMCT(tree), [tree]);
-  const criticalPath = useMemo(() => findCriticalPath(tree), [tree]);
-  const scale = zoom / 100;
+  const criticalPath = useMemo(() => getCriticalPathSet(tree), [tree]);
+  const scale = 1;
 
   const renderNode = (node: IBOMNodeData, depth: number) => {
     const isCritical = criticalPath.has(node.productId);
@@ -315,48 +463,111 @@ function TreeChart({ model, results, tree, mctUnit, zoom }: {
 function TreeTable({ model, results, tree, mctUnit }: {
   model: Model; results: CalcResults; tree: IBOMNodeData; mctUnit: string;
 }) {
+  const [columnOrder, setColumnOrder] = useState<TreeTableColKey[]>(TREE_TABLE_DEFAULT_ORDER);
+  const dragFromRef = useRef<string | null>(null);
+  const moveColumn = useCallback((fromKey: string, toKey: string) => {
+    const fromIndex = columnOrder.indexOf(fromKey as TreeTableColKey);
+    const toIndex = columnOrder.indexOf(toKey as TreeTableColKey);
+    if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) return;
+    setColumnOrder(prev => {
+      const next = [...prev];
+      const [moved] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, moved);
+      return next;
+    });
+  }, [columnOrder]);
+  const resetColumns = useCallback(() => setColumnOrder(TREE_TABLE_DEFAULT_ORDER), []);
+
   const rows = useMemo(() => flattenTree(tree), [tree]);
-  const criticalPath = useMemo(() => findCriticalPath(tree), [tree]);
+  const minWidthByKey = useMemo((): Record<TreeTableColKey, number> => ({
+    product: estimateColMinWidthPx('Product Name', rows.map(r => r.name), 120, 260),
+    level: estimateColMinWidthPx('Level', rows.map(r => r.level + 1), 70, 90),
+    endTime: estimateColMinWidthPx('End Time', rows.map(r => fmt2(r.endTime)), 95, 130),
+    startTime: estimateColMinWidthPx('Start Time', rows.map(r => fmt2(r.startTime)), 95, 130),
+    criticalPath: estimateColMinWidthPx('Manufacturing Critical-path Time', rows.map(r => fmt2(r.criticalPathTime)), 200, 280),
+    waitEquip: estimateColMinWidthPx('Time Waiting for Equip', rows.map(r => fmt2(r.breakdown.waitEquip)), 150, 200),
+    waitLabor: estimateColMinWidthPx('Time Waiting for Labor', rows.map(r => fmt2(r.breakdown.waitLabor)), 150, 200),
+    setup: estimateColMinWidthPx('Time in Setup', rows.map(r => fmt2(r.breakdown.setup)), 120, 160),
+    run: estimateColMinWidthPx('Time in Run', rows.map(r => fmt2(r.breakdown.run)), 120, 160),
+    waitLot: estimateColMinWidthPx('Time Waiting for Rest of Lot', rows.map(r => fmt2(r.breakdown.lotWait)), 180, 220),
+    outOfArea: estimateColMinWidthPx('Time Out Of Area', rows.map(r => fmt2(r.outOfAreaTime)), 140, 180),
+  }), [rows]);
+
+  const renderTreeCell = (r: IBOMNodeData, colKey: TreeTableColKey) => {
+    const numCell = 'font-mono text-xs text-right whitespace-nowrap tabular-nums';
+    switch (colKey) {
+      case 'product':
+        return (
+          <TableCell key={colKey} className="font-mono text-xs whitespace-nowrap" style={{ paddingLeft: 12 + r.level * 16 }}>
+            <span className={r.level === 0 ? 'font-bold' : ''}>{r.name}</span>
+            {r.unitsPerAssy > 1 && (
+              <span className="text-muted-foreground ml-1">×{r.unitsPerAssy}</span>
+            )}
+          </TableCell>
+        );
+      case 'level':
+        return <TableCell key={colKey} className="font-mono text-xs text-center whitespace-nowrap tabular-nums">{r.level + 1}</TableCell>;
+      case 'endTime':
+        return <TableCell key={colKey} className={numCell}>{fmt2(r.endTime)}</TableCell>;
+      case 'startTime':
+        return <TableCell key={colKey} className={numCell}>{fmt2(r.startTime)}</TableCell>;
+      case 'criticalPath':
+        return <TableCell key={colKey} className={numCell}>{fmt2(r.criticalPathTime)}</TableCell>;
+      case 'waitEquip':
+        return <TableCell key={colKey} className={numCell}>{fmt2(r.breakdown.waitEquip)}</TableCell>;
+      case 'waitLabor':
+        return <TableCell key={colKey} className={numCell}>{fmt2(r.breakdown.waitLabor)}</TableCell>;
+      case 'setup':
+        return <TableCell key={colKey} className={numCell}>{fmt2(r.breakdown.setup)}</TableCell>;
+      case 'run':
+        return <TableCell key={colKey} className={numCell}>{fmt2(r.breakdown.run)}</TableCell>;
+      case 'waitLot':
+        return <TableCell key={colKey} className={numCell}>{fmt2(r.breakdown.lotWait)}</TableCell>;
+      case 'outOfArea':
+        return <TableCell key={colKey} className={numCell}>{fmt2(r.outOfAreaTime)}</TableCell>;
+    }
+  };
 
   return (
     <div className="overflow-x-auto">
-      <Table>
+      <div className="flex justify-end mb-2">
+        <Button variant="outline" size="sm" className="text-xs h-7 gap-1" onClick={resetColumns}>
+          <RotateCcw className="h-3 w-3" />
+          Reset Columns
+        </Button>
+      </div>
+      <Table className="table-auto">
+        <colgroup>
+          {columnOrder.map(colKey => (
+            <col key={colKey} style={{ minWidth: `${minWidthByKey[colKey]}px` }} />
+          ))}
+        </colgroup>
         <TableHeader>
           <TableRow>
-            <TableHead className="font-mono text-xs">Product</TableHead>
-            <TableHead className="font-mono text-xs text-center">Level</TableHead>
-            <TableHead className="font-mono text-xs text-right">Total MCT</TableHead>
-            <TableHead className="font-mono text-xs text-right"><ColorDot color={MCT_SEGMENTS[0].color} />Wait Equip</TableHead>
-            <TableHead className="font-mono text-xs text-right"><ColorDot color={MCT_SEGMENTS[1].color} />Wait Labor</TableHead>
-            <TableHead className="font-mono text-xs text-right"><ColorDot color={MCT_SEGMENTS[2].color} />Setup</TableHead>
-            <TableHead className="font-mono text-xs text-right"><ColorDot color={MCT_SEGMENTS[3].color} />Run</TableHead>
-            <TableHead className="font-mono text-xs text-right"><ColorDot color={MCT_SEGMENTS[4].color} />Wait Lot</TableHead>
-            <TableHead className="font-mono text-xs text-center">MTS</TableHead>
+            {columnOrder.map(colKey => (
+              <DraggableHead
+                key={colKey}
+                label={ibomTableColumnLabel(colKey)}
+                align={
+                  colKey === 'product' ? 'left' :
+                  colKey === 'level' ? 'center' : 'right'
+                }
+                onDragStart={() => { dragFromRef.current = colKey; }}
+                onDragOver={ev => ev.preventDefault()}
+                onDrop={() => {
+                  if (dragFromRef.current) moveColumn(dragFromRef.current, colKey);
+                  dragFromRef.current = null;
+                }}
+              />
+            ))}
           </TableRow>
         </TableHeader>
         <TableBody>
-          {rows.map((r, i) => {
-            const isCrit = criticalPath.has(r.productId);
-            const isMTS = r.isMTS;
-            const muted = isMTS ? 'text-muted-foreground' : '';
-            return (
-              <TableRow key={`${r.productId}-${i}`} className={isCrit ? 'bg-amber-50/30 dark:bg-amber-900/5' : ''}>
-                <TableCell className="font-mono text-xs" style={{ paddingLeft: 12 + r.level * 16 }}>
-                  <span className={r.level === 0 ? 'font-bold' : ''}>{r.name}</span>
-                </TableCell>
-                <TableCell className="font-mono text-xs text-center">{r.level + 1}</TableCell>
-                <TableCell className={`font-mono text-xs text-right ${muted}`}>{r.breakdown.total.toFixed(2)} {mctUnit}</TableCell>
-                <TableCell className={`font-mono text-xs text-right ${muted}`}>{r.breakdown.waitEquip.toFixed(2)}</TableCell>
-                <TableCell className={`font-mono text-xs text-right ${muted}`}>{r.breakdown.waitLabor.toFixed(2)}</TableCell>
-                <TableCell className={`font-mono text-xs text-right ${muted}`}>{r.breakdown.setup.toFixed(2)}</TableCell>
-                <TableCell className={`font-mono text-xs text-right ${muted}`}>{r.breakdown.run.toFixed(2)}</TableCell>
-                <TableCell className={`font-mono text-xs text-right ${muted}`}>{r.breakdown.lotWait.toFixed(2)}</TableCell>
-                <TableCell className="text-center">
-                  {isMTS && <Badge variant="secondary" className="text-[9px] bg-muted">MTS</Badge>}
-                </TableCell>
-              </TableRow>
-            );
-          })}
+          {rows.map((r, i) => (
+            <TableRow key={`${r.productId}-${i}`}>
+              {columnOrder.map(colKey => renderTreeCell(r, colKey))}
+            </TableRow>
+          ))}
         </TableBody>
       </Table>
     </div>
@@ -366,11 +577,11 @@ function TreeTable({ model, results, tree, mctUnit }: {
 // ════════════════════════════════════════════════════════════
 //  POLES CHART (Section 4)
 // ════════════════════════════════════════════════════════════
-function PolesChart({ model, poles, mctUnit, zoom }: {
-  model: Model; poles: Pole[]; mctUnit: string; zoom: number;
+function PolesChart({ model, poles, mctUnit }: {
+  model: Model; poles: Pole[]; mctUnit: string;
 }) {
   const maxMCT = poles[0]?.totalBreakdown.total || 1;
-  const scale = zoom / 100;
+  const scale = 1;
   const barMinWidth = 48 * scale;
 
   if (poles.length === 0) return null;
@@ -442,39 +653,111 @@ function PolesTable({ model, poles, mctUnit }: {
   model: Model; poles: Pole[]; mctUnit: string;
 }) {
   if (poles.length === 0) return null;
+  const [columnOrder, setColumnOrder] = useState<PoleTableColKey[]>(POLE_TABLE_DEFAULT_ORDER);
+  const dragFromRef = useRef<string | null>(null);
+  const moveColumn = useCallback((fromKey: string, toKey: string) => {
+    const fromIndex = columnOrder.indexOf(fromKey as PoleTableColKey);
+    const toIndex = columnOrder.indexOf(toKey as PoleTableColKey);
+    if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) return;
+    setColumnOrder(prev => {
+      const next = [...prev];
+      const [moved] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, moved);
+      return next;
+    });
+  }, [columnOrder]);
+  const resetColumns = useCallback(() => setColumnOrder(POLE_TABLE_DEFAULT_ORDER), []);
+
+  const rows = useMemo(() => flattenPolesForTable(poles), [poles]);
+  const minWidthByKey = useMemo((): Record<PoleTableColKey, number> => ({
+    pole: estimateColMinWidthPx('Pole', rows.map(r => r.poleLabel), 70, 100),
+    product: estimateColMinWidthPx('Product Name', rows.map(r => r.name), 120, 260),
+    level: estimateColMinWidthPx('Level', rows.map(r => r.level), 70, 90),
+    endTime: estimateColMinWidthPx('End Time', rows.map(r => fmt2(r.endTime)), 95, 130),
+    startTime: estimateColMinWidthPx('Start Time', rows.map(r => fmt2(r.startTime)), 95, 130),
+    criticalPath: estimateColMinWidthPx('Manufacturing Critical-path Time', rows.map(r => fmt2(r.criticalPathTime)), 200, 280),
+    waitEquip: estimateColMinWidthPx('Time Waiting for Equip', rows.map(r => fmt2(r.breakdown.waitEquip)), 150, 200),
+    waitLabor: estimateColMinWidthPx('Time Waiting for Labor', rows.map(r => fmt2(r.breakdown.waitLabor)), 150, 200),
+    setup: estimateColMinWidthPx('Time in Setup', rows.map(r => fmt2(r.breakdown.setup)), 120, 160),
+    run: estimateColMinWidthPx('Time in Run', rows.map(r => fmt2(r.breakdown.run)), 120, 160),
+    waitLot: estimateColMinWidthPx('Time Waiting for Rest of Lot', rows.map(r => fmt2(r.breakdown.lotWait)), 180, 220),
+    outOfArea: estimateColMinWidthPx('Time Out Of Area', rows.map(r => fmt2(r.outOfAreaTime)), 140, 180),
+  }), [rows]);
+
+  const renderPoleCell = (r: PoleTableRow, colKey: PoleTableColKey) => {
+    const numCell = 'font-mono text-xs text-right whitespace-nowrap tabular-nums';
+    switch (colKey) {
+      case 'pole':
+        return <TableCell key={colKey} className="font-mono text-xs whitespace-nowrap tabular-nums">{r.poleLabel}</TableCell>;
+      case 'product':
+        return (
+          <TableCell key={colKey} className="font-mono text-xs whitespace-nowrap">
+            <span className={r.level === 1 ? 'font-bold' : ''}>{r.name}</span>
+          </TableCell>
+        );
+      case 'level':
+        return <TableCell key={colKey} className="font-mono text-xs text-center whitespace-nowrap tabular-nums">{r.level}</TableCell>;
+      case 'endTime':
+        return <TableCell key={colKey} className={numCell}>{fmt2(r.endTime)}</TableCell>;
+      case 'startTime':
+        return <TableCell key={colKey} className={numCell}>{fmt2(r.startTime)}</TableCell>;
+      case 'criticalPath':
+        return <TableCell key={colKey} className={numCell}>{fmt2(r.criticalPathTime)}</TableCell>;
+      case 'waitEquip':
+        return <TableCell key={colKey} className={numCell}>{fmt2(r.breakdown.waitEquip)}</TableCell>;
+      case 'waitLabor':
+        return <TableCell key={colKey} className={numCell}>{fmt2(r.breakdown.waitLabor)}</TableCell>;
+      case 'setup':
+        return <TableCell key={colKey} className={numCell}>{fmt2(r.breakdown.setup)}</TableCell>;
+      case 'run':
+        return <TableCell key={colKey} className={numCell}>{fmt2(r.breakdown.run)}</TableCell>;
+      case 'waitLot':
+        return <TableCell key={colKey} className={numCell}>{fmt2(r.breakdown.lotWait)}</TableCell>;
+      case 'outOfArea':
+        return <TableCell key={colKey} className={numCell}>{fmt2(r.outOfAreaTime)}</TableCell>;
+    }
+  };
 
   return (
     <div className="overflow-x-auto">
-      <Table>
+      <div className="flex justify-end mb-2">
+        <Button variant="outline" size="sm" className="text-xs h-7 gap-1" onClick={resetColumns}>
+          <RotateCcw className="h-3 w-3" />
+          Reset Columns
+        </Button>
+      </div>
+      <Table className="table-auto">
+        <colgroup>
+          {columnOrder.map(colKey => (
+            <col key={colKey} style={{ minWidth: `${minWidthByKey[colKey]}px` }} />
+          ))}
+        </colgroup>
         <TableHeader>
           <TableRow>
-            <TableHead className="font-mono text-xs w-12">Rank</TableHead>
-            <TableHead className="font-mono text-xs">Path</TableHead>
-            <TableHead className="font-mono text-xs text-right">Total MCT</TableHead>
-            <TableHead className="font-mono text-xs text-right"><ColorDot color={MCT_SEGMENTS[0].color} />Wait Equip</TableHead>
-            <TableHead className="font-mono text-xs text-right"><ColorDot color={MCT_SEGMENTS[1].color} />Wait Labor</TableHead>
-            <TableHead className="font-mono text-xs text-right"><ColorDot color={MCT_SEGMENTS[2].color} />Setup</TableHead>
-            <TableHead className="font-mono text-xs text-right"><ColorDot color={MCT_SEGMENTS[3].color} />Run</TableHead>
-            <TableHead className="font-mono text-xs text-right"><ColorDot color={MCT_SEGMENTS[4].color} />Wait Lot</TableHead>
+            {columnOrder.map(colKey => (
+              <DraggableHead
+                key={colKey}
+                label={ibomTableColumnLabel(colKey)}
+                align={
+                  colKey === 'product' || colKey === 'pole' ? 'left' :
+                  colKey === 'level' ? 'center' : 'right'
+                }
+                onDragStart={() => { dragFromRef.current = colKey; }}
+                onDragOver={ev => ev.preventDefault()}
+                onDrop={() => {
+                  if (dragFromRef.current) moveColumn(dragFromRef.current, colKey);
+                  dragFromRef.current = null;
+                }}
+              />
+            ))}
           </TableRow>
         </TableHeader>
         <TableBody>
-          {poles.map((pole, i) => {
-            const isCrit = i === 0;
-            const pathDesc = pole.path.map(p => p.name).reverse().join(' → ');
-            return (
-              <TableRow key={i} className={isCrit ? 'font-bold border-l-2 border-amber-400 bg-amber-50/30 dark:bg-amber-900/5' : ''}>
-                <TableCell className="font-mono text-xs">{i + 1}</TableCell>
-                <TableCell className="font-mono text-xs">{pathDesc}</TableCell>
-                <TableCell className="font-mono text-xs text-right">{pole.totalBreakdown.total.toFixed(2)} {mctUnit}</TableCell>
-                <TableCell className="font-mono text-xs text-right">{pole.totalBreakdown.waitEquip.toFixed(2)}</TableCell>
-                <TableCell className="font-mono text-xs text-right">{pole.totalBreakdown.waitLabor.toFixed(2)}</TableCell>
-                <TableCell className="font-mono text-xs text-right">{pole.totalBreakdown.setup.toFixed(2)}</TableCell>
-                <TableCell className="font-mono text-xs text-right">{pole.totalBreakdown.run.toFixed(2)}</TableCell>
-                <TableCell className="font-mono text-xs text-right">{pole.totalBreakdown.lotWait.toFixed(2)}</TableCell>
-              </TableRow>
-            );
-          })}
+          {rows.map((r, i) => (
+            <TableRow key={`${r.poleIndex}-${r.productId}-${i}`}>
+              {columnOrder.map(colKey => renderPoleCell(r, colKey))}
+            </TableRow>
+          ))}
         </TableBody>
       </Table>
       <div className="border-t px-3 py-2 text-xs font-mono">
@@ -486,7 +769,7 @@ function PolesTable({ model, poles, mctUnit }: {
 }
 
 // Export sub-components and utilities for use in RunResults IBOM tab
-export { TreeChart, TreeTable, PolesChart, PolesTable, MCTLegend, ZoomSelect, buildNodeTree, buildPoles, getMaxMCT };
+export { TreeChart, TreeTable, PolesChart, PolesTable, MCTLegend, buildNodeTree, buildPoles, getMaxMCT };
 export type { IBOMNodeData, Pole };
 
 // ════════════════════════════════════════════════════════════
@@ -512,7 +795,6 @@ export default function IBOMOutput({ model, isRunning }: { model: Model; isRunni
   const [selectedProductId, setSelectedProductId] = useState(() => finalAssemblies[0]?.id || '');
   const [scenarioId, setScenarioId] = useState('basecase');
   const [activeTab, setActiveTab] = useState('tree-chart');
-  const [zoom, setZoom] = useState(100);
 
   const results = getResults(scenarioId);
   const scenario = allScenarios.find(s => s.id === scenarioId);
@@ -554,7 +836,7 @@ export default function IBOMOutput({ model, isRunning }: { model: Model; isRunni
               <Skeleton className="h-6 w-48 mx-auto" />
               <Skeleton className="h-4 w-64 mx-auto" />
               <Skeleton className="h-40 w-full max-w-lg mx-auto" />
-            </div>
+            </div> 
           ) : (
             <>
               <Network className="h-8 w-8 mx-auto text-muted-foreground/40 mb-2" />
@@ -589,7 +871,6 @@ export default function IBOMOutput({ model, isRunning }: { model: Model; isRunni
 
   const tree = buildNodeTree(model, results, selectedProductId, 0, new Set());
   const poles = buildPoles(tree);
-  const showZoom = activeTab === 'tree-chart' || activeTab === 'poles-chart';
 
   return (
     <Card>
@@ -609,11 +890,10 @@ export default function IBOMOutput({ model, isRunning }: { model: Model; isRunni
               <TabsTrigger value="poles-chart" className="text-xs">Poles Chart</TabsTrigger>
               <TabsTrigger value="poles-table" className="text-xs">Poles Table</TabsTrigger>
             </TabsList>
-            {showZoom && <ZoomSelect zoom={zoom} setZoom={setZoom} />}
           </div>
 
           <TabsContent value="tree-chart">
-            <TreeChart model={model} results={results} tree={tree} mctUnit={mctUnit} zoom={zoom} />
+            <TreeChart model={model} results={results} tree={tree} mctUnit={mctUnit} />
             <MCTLegend />
           </TabsContent>
 
@@ -622,7 +902,7 @@ export default function IBOMOutput({ model, isRunning }: { model: Model; isRunni
           </TabsContent>
 
           <TabsContent value="poles-chart">
-            <PolesChart model={model} poles={poles} mctUnit={mctUnit} zoom={zoom} />
+            <PolesChart model={model} poles={poles} mctUnit={mctUnit} />
             <MCTLegend />
           </TabsContent>
 

@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from 'react';
-import { useModelStore, type LaborGroup } from '@/stores/modelStore';
+import { useModelStore, displayParamNames, SHOW_PARAM_VARIABLE_FIELDS_IN_UI, type LaborGroup } from '@/stores/modelStore';
 import { useDeleteConfirmation } from '@/hooks/useDeleteConfirmation';
 import { DeleteConfirmInline } from '@/components/DeleteConfirmInline';
 import { useScenarioStore } from '@/stores/scenarioStore';
@@ -18,6 +18,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { useUserLevelStore, isVisible } from '@/hooks/useUserLevel';
 import { NoModelSelected } from '@/components/NoModelSelected';
 import { toast } from 'sonner';
+import { NonNegativeNumericInput } from '@/components/NonNegativeNumericInput';
 
 const FIELD_LABELS: Record<string, string> = {
   count: 'Count', overtime_pct: 'Overtime %', unavail_pct: 'Unavail %',
@@ -65,6 +66,8 @@ export default function LaborData() {
   const applyScenarioChange = useScenarioStore(s => s.applyScenarioChange);
 
   if (!model) return <NoModelSelected />;
+
+  const pn = displayParamNames(model);
 
   const contentCardClass = activeScenarioId
     ? 'border-0 border-l-[3px] border-l-amber-400 bg-white shadow-sm'
@@ -214,10 +217,12 @@ export default function LaborData() {
                     <DataTableHead className="font-mono text-xs">
                       <div className="flex items-center gap-1">Prioritize <InfoTip text="When enabled, MPX shifts labor time toward more heavily utilised equipment groups served by this labor group, reducing wait-for-labor time at bottlenecks." /></div>
                     </DataTableHead>
-                    <DataTableHead className="font-mono text-xs">{model.param_names.lab1_name}</DataTableHead>
-                    <DataTableHead className="font-mono text-xs">{model.param_names.lab2_name}</DataTableHead>
-                    <DataTableHead className="font-mono text-xs">{model.param_names.lab3_name}</DataTableHead>
-                    <DataTableHead className="font-mono text-xs">{model.param_names.lab4_name}</DataTableHead>
+                    {SHOW_PARAM_VARIABLE_FIELDS_IN_UI && <>
+                      <DataTableHead className="font-mono text-xs">{pn.lab1_name}</DataTableHead>
+                      <DataTableHead className="font-mono text-xs">{pn.lab2_name}</DataTableHead>
+                      <DataTableHead className="font-mono text-xs">{pn.lab3_name}</DataTableHead>
+                      <DataTableHead className="font-mono text-xs">{pn.lab4_name}</DataTableHead>
+                    </>}
                   </>}
                   <DataTableHead className="w-10"></DataTableHead>
                 </DataTableRow>
@@ -228,7 +233,7 @@ export default function LaborData() {
                   return (
                   <DataTableRow key={l.id} className={isConfirming ? 'bg-destructive/10' : ''}>
                     {isConfirming ? (
-                      <DataTableCell colSpan={showAdvanced ? 14 : 5}>
+                      <DataTableCell colSpan={showAdvanced ? (SHOW_PARAM_VARIABLE_FIELDS_IN_UI ? 14 : 10) : 5}>
                         <DeleteConfirmInline
                           message={`Delete ${l.name}? This will remove it from any equipment assignments.`}
                           onConfirm={() => confirmDelete(l.id, () => handleDeleteLabor(l.id, l.name))}
@@ -236,26 +241,30 @@ export default function LaborData() {
                         />
                       </DataTableCell>
                     ) : (<>
-                    <DataTableCell className="font-mono font-medium">{l.name}</DataTableCell>
-                    <DataTableCell>
-                      <Input type="number" className="h-8 w-20 font-mono" value={l.count} onChange={(e) => handleCellChange(l.id, 'count', +e.target.value)} />
+                    <DataTableCell className="font-mono font-medium">
+                      {l.name}
                     </DataTableCell>
                     <DataTableCell>
-                      <Input type="number" className="h-8 w-20 font-mono" value={l.overtime_pct} onChange={(e) => handleCellChange(l.id, 'overtime_pct', +e.target.value)} />
+                      <NonNegativeNumericInput value={l.count} onChange={(v) => handleCellChange(l.id, 'count', v)} />
                     </DataTableCell>
                     <DataTableCell>
-                      <Input type="number" className="h-8 w-20 font-mono" value={l.unavail_pct} onChange={(e) => handleCellChange(l.id, 'unavail_pct', +e.target.value)} />
+                      <NonNegativeNumericInput value={l.overtime_pct} onChange={(v) => handleCellChange(l.id, 'overtime_pct', v)} />
+                    </DataTableCell>
+                    <DataTableCell>
+                      <NonNegativeNumericInput value={l.unavail_pct} onChange={(v) => handleCellChange(l.id, 'unavail_pct', v)} />
                     </DataTableCell>
                     {showAdvanced && <>
                       <DataTableCell><Input className="h-8 w-24" value={l.dept_code} onChange={(e) => handleCellChange(l.id, 'dept_code', e.target.value)} /></DataTableCell>
-                      <DataTableCell><Input type="number" className="h-8 w-20 font-mono" value={l.setup_factor} step="0.1" onChange={(e) => handleCellChange(l.id, 'setup_factor', +e.target.value)} /></DataTableCell>
-                      <DataTableCell><Input type="number" className="h-8 w-20 font-mono" value={l.run_factor} step="0.1" onChange={(e) => handleCellChange(l.id, 'run_factor', +e.target.value)} /></DataTableCell>
-                      <DataTableCell><Input type="number" className="h-8 w-20 font-mono" value={l.var_factor} step="0.1" onChange={(e) => handleCellChange(l.id, 'var_factor', +e.target.value)} /></DataTableCell>
+                      <DataTableCell><NonNegativeNumericInput allowDecimal value={l.setup_factor} onChange={(v) => handleCellChange(l.id, 'setup_factor', v)} /></DataTableCell>
+                      <DataTableCell><NonNegativeNumericInput allowDecimal value={l.run_factor} onChange={(v) => handleCellChange(l.id, 'run_factor', v)} /></DataTableCell>
+                      <DataTableCell><NonNegativeNumericInput allowDecimal value={l.var_factor} onChange={(v) => handleCellChange(l.id, 'var_factor', v)} /></DataTableCell>
                       <DataTableCell><Switch checked={l.prioritize_use} onCheckedChange={(v) => handleCellChange(l.id, 'prioritize_use', v)} /></DataTableCell>
-                      <DataTableCell><Input type="number" className="h-8 w-20 font-mono" value={l.lab1} onChange={(e) => handleCellChange(l.id, 'lab1', +e.target.value)} /></DataTableCell>
-                      <DataTableCell><Input type="number" className="h-8 w-20 font-mono" value={l.lab2} onChange={(e) => handleCellChange(l.id, 'lab2', +e.target.value)} /></DataTableCell>
-                      <DataTableCell><Input type="number" className="h-8 w-20 font-mono" value={l.lab3} onChange={(e) => handleCellChange(l.id, 'lab3', +e.target.value)} /></DataTableCell>
-                      <DataTableCell><Input type="number" className="h-8 w-20 font-mono" value={l.lab4} onChange={(e) => handleCellChange(l.id, 'lab4', +e.target.value)} /></DataTableCell>
+                      {SHOW_PARAM_VARIABLE_FIELDS_IN_UI && <>
+                        <DataTableCell><NonNegativeNumericInput value={l.lab1} onChange={(v) => handleCellChange(l.id, 'lab1', v)} /></DataTableCell>
+                        <DataTableCell><NonNegativeNumericInput value={l.lab2} onChange={(v) => handleCellChange(l.id, 'lab2', v)} /></DataTableCell>
+                        <DataTableCell><NonNegativeNumericInput value={l.lab3} onChange={(v) => handleCellChange(l.id, 'lab3', v)} /></DataTableCell>
+                        <DataTableCell><NonNegativeNumericInput value={l.lab4} onChange={(v) => handleCellChange(l.id, 'lab4', v)} /></DataTableCell>
+                      </>}
                     </>}
                     <DataTableCell>
                       <Button variant="ghost" size="icon" className="h-8 w-8 text-red-600 hover:bg-red-50 hover:text-red-700" onClick={() => requestDelete(l.id)}>
@@ -284,9 +293,9 @@ export default function LaborData() {
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="grid grid-cols-2 gap-3">
-                  <div><Label className="text-xs">Count</Label><Input type="number" className="h-8 font-mono" value={l.count} onChange={(e) => handleCellChange(l.id, 'count', +e.target.value)} /></div>
-                  <div><Label className="text-xs">Overtime %</Label><Input type="number" className="h-8 font-mono" value={l.overtime_pct} onChange={(e) => handleCellChange(l.id, 'overtime_pct', +e.target.value)} /></div>
-                  <div><Label className="text-xs">Unavail %</Label><Input type="number" className="h-8 font-mono" value={l.unavail_pct} onChange={(e) => handleCellChange(l.id, 'unavail_pct', +e.target.value)} /></div>
+                  <div><Label className="text-xs">Count</Label><NonNegativeNumericInput value={l.count} onChange={(v) => handleCellChange(l.id, 'count', v)} /></div>
+                  <div><Label className="text-xs">Overtime %</Label><NonNegativeNumericInput value={l.overtime_pct} onChange={(v) => handleCellChange(l.id, 'overtime_pct', v)} /></div>
+                  <div><Label className="text-xs">Unavail %</Label><NonNegativeNumericInput value={l.unavail_pct} onChange={(v) => handleCellChange(l.id, 'unavail_pct', v)} /></div>
                   <div><Label className="text-xs">Dept Code</Label><Input className="h-8" value={l.dept_code} onChange={(e) => handleCellChange(l.id, 'dept_code', e.target.value)} /></div>
                 </div>
                 <div><Label className="text-xs">Comments</Label><Input className="h-8" value={l.comments} onChange={(e) => handleCellChange(l.id, 'comments', e.target.value)} /></div>
@@ -294,11 +303,11 @@ export default function LaborData() {
                   <div className="pt-2 border-t border-border space-y-3">
                     <Label className="text-[10px] text-muted-foreground uppercase tracking-wider">Advanced Parameters</Label>
                     <div className="grid grid-cols-3 gap-3">
-                      <div><Label className="text-xs">Setup Factor</Label><Input type="number" className="h-8 font-mono" value={l.setup_factor} step="0.1" onChange={(e) => handleCellChange(l.id, 'setup_factor', +e.target.value)} /><span className="text-[10px] text-muted-foreground">× {l.setup_factor} = {Math.round(l.setup_factor * 100)}%</span></div>
-                      <div><Label className="text-xs">Run Factor</Label><Input type="number" className="h-8 font-mono" value={l.run_factor} step="0.1" onChange={(e) => handleCellChange(l.id, 'run_factor', +e.target.value)} /><span className="text-[10px] text-muted-foreground">× {l.run_factor} = {Math.round(l.run_factor * 100)}%</span></div>
+                      <div><Label className="text-xs">Setup Factor</Label><NonNegativeNumericInput allowDecimal value={l.setup_factor} onChange={(v) => handleCellChange(l.id, 'setup_factor', v)} /><span className="text-[10px] text-muted-foreground">× {l.setup_factor} = {Math.round(l.setup_factor * 100)}%</span></div>
+                      <div><Label className="text-xs">Run Factor</Label><NonNegativeNumericInput allowDecimal value={l.run_factor} onChange={(v) => handleCellChange(l.id, 'run_factor', v)} /><span className="text-[10px] text-muted-foreground">× {l.run_factor} = {Math.round(l.run_factor * 100)}%</span></div>
                       <div>
                         <Label className="text-xs">Variability</Label>
-                        <Input type="number" className="h-8 font-mono" value={l.var_factor} step="0.1" onChange={(e) => handleCellChange(l.id, 'var_factor', +e.target.value)} />
+                        <NonNegativeNumericInput allowDecimal value={l.var_factor} onChange={(v) => handleCellChange(l.id, 'var_factor', v)} />
                         <span className="text-[10px] text-muted-foreground">Effective: {model.general.var_labor}% × {l.var_factor} = {(model.general.var_labor * l.var_factor).toFixed(1)}%</span>
                       </div>
                     </div>
@@ -316,18 +325,19 @@ export default function LaborData() {
                       </div>
                       <Switch checked={l.prioritize_use} onCheckedChange={(v) => handleCellChange(l.id, 'prioritize_use', v)} />
                     </div>
-                    {/* Lab1-4 parameter variables */}
+                    {SHOW_PARAM_VARIABLE_FIELDS_IN_UI && (
                     <div className="pt-2 border-t border-border">
                       <Label className="text-[10px] text-muted-foreground uppercase tracking-wider flex items-center gap-1">Parameter Variables <InfoTip text="Use Display Name to rename the variable. The new label appears across the app and in the Formula Builder." /></Label>
                       <div className="grid grid-cols-4 gap-3 mt-1.5">
                         {(['lab1', 'lab2', 'lab3', 'lab4'] as const).map(key => (
                           <div key={key}>
-                            <Label className="text-xs">{model.param_names[`${key}_name` as keyof typeof model.param_names]}</Label>
-                            <Input type="number" className="h-8 font-mono" value={l[key]} onChange={(e) => handleCellChange(l.id, key, +e.target.value)} />
+                            <Label className="text-xs">{pn[`${key}_name` as keyof typeof pn]}</Label>
+                            <NonNegativeNumericInput value={l[key]} onChange={(v) => handleCellChange(l.id, key, v)} />
                           </div>
                         ))}
                       </div>
                     </div>
+                    )}
                   </div>
                 )}
               </CardContent>

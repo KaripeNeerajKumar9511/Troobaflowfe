@@ -13,6 +13,10 @@ export default {
       },
     },
     extend: {
+      /** Tablet-only band (icon rail); keeps phone + desktop layouts separate */
+      screens: {
+        tablet: { min: "768px", max: "1023px" },
+      },
       fontFamily: {
         sans: ['DM Sans', 'Aktiv Grotesk', 'Neue Haas Grotesk', 'sans-serif'],
         mono: ['DM Mono', 'Roboto Mono', 'monospace'],

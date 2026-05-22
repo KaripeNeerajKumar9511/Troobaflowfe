@@ -1,6 +1,7 @@
-import { useState, useMemo } from 'react';
+import { useState, useLayoutEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useModelStore, type Product } from '@/stores/modelStore';
+import { useModelStore, displayParamNames, SHOW_PARAM_VARIABLE_FIELDS_IN_UI, type Product, type Model } from '@/stores/modelStore';
+import { db, fetchModelById } from '@/lib/supabaseData';
 import { useDeleteConfirmation } from '@/hooks/useDeleteConfirmation';
 import { DeleteConfirmInline } from '@/components/DeleteConfirmInline';
 import { useScenarioStore } from '@/stores/scenarioStore';
@@ -11,10 +12,60 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Switch } from '@/components/ui/switch';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Plus, Trash2, LayoutGrid, List, Copy, GitBranch, Network, ChevronDown, ChevronUp, Info, FlaskConical, Save, Check } from 'lucide-react';
+import { Plus, Trash2, LayoutGrid, List, Copy, GitBranch, Network, ChevronDown, ChevronUp, Info, FlaskConical, Save, Check, Package } from 'lucide-react';
+import { toast } from 'sonner';
+import { UnsavedChangesGuard } from '@/components/UnsavedChangesGuard';
+import { SavingOverlay } from '@/components/SavingOverlay';
+import { DoubleClickEditableName } from '@/components/DoubleClickEditableName';
+import { DeptCodeSelect } from '@/components/DeptCodeSelect';
+import { ProductTbatchInput } from '@/components/ProductTbatchInput';
+import { NonNegativeNumericInput } from '@/components/NonNegativeNumericInput';
+
+const FIELD_LABELS: Record<string, string> = {
+  name: 'Name', demand: 'End Demand', lot_size: 'Lot Size', tbatch_size: 'TBatch Size',
+  demand_factor: 'Demand Factor', lot_factor: 'Lot Factor', var_factor: 'Var Factor',
+  setup_factor: 'Setup Factor', make_to_stock: 'Make to Stock', gather_tbatches: 'Gather TBatches',
+  dept_code: 'Dept/Area', prod1: 'Prod1', prod2: 'Prod2', prod3: 'Prod3', prod4: 'Prod4', comments: 'Comments',
+};
+
+/** Fields persisted via model_products_update (matches Django `model_products_update`). */
+const PRODUCT_PATCH_KEYS: (keyof Product)[] = [
+  'name', 'demand', 'lot_size', 'tbatch_size', 'demand_factor', 'lot_factor', 'var_factor',
+  'make_to_stock', 'gather_tbatches', 'dept_code', 'prod1', 'prod2', 'prod3', 'prod4', 'comments',
+];
+
+function cloneProductsFromModel(model: Model): Product[] {
+  return (model.products ?? []).map((p) => ({ ...p }));
+}
+
+function buildProductPatch(prev: Product, next: Product): Partial<Product> | null {
+  const patch: Partial<Product> = {};
+  for (const k of PRODUCT_PATCH_KEYS) {
+    if (prev[k] !== next[k]) (patch as Record<string, unknown>)[k] = next[k];
+  }
+  return Object.keys(patch).length > 0 ? patch : null;
+}
+
+async function persistProductsDraft(modelId: string, draft: Product[], baseline: Model): Promise<void> {
+  const server = baseline.products ?? [];
+  const serverById = new Map(server.map((p) => [p.id, p]));
+  const draftIds = new Set(draft.map((p) => p.id));
+
+  for (const p of draft) {
+    if (!serverById.has(p.id)) await db.insertProduct(modelId, p);
+  }
+  for (const p of draft) {
+    const prev = serverById.get(p.id);
+    if (!prev) continue;
+    const patch = buildProductPatch(prev, p);
+    if (patch) await db.updateProduct(modelId, p.id, patch);
+  }
+  for (const s of server) {
+    if (!draftIds.has(s.id)) await db.deleteProduct(modelId, s.id);
+  }
+  await db.updateModel(modelId, { run_status: 'needs_recalc' });
+}
 
 function InfoTip({ text }: { text: string }) {
   return (
@@ -22,24 +73,8 @@ function InfoTip({ text }: { text: string }) {
   );
 }
 
-
-import { useUserLevelStore, isVisible } from '@/hooks/useUserLevel';
-import { toast } from 'sonner';
-import { UnsavedChangesGuard } from '@/components/UnsavedChangesGuard';
-import { DeptCodeSelect } from '@/components/DeptCodeSelect';
-
-const FIELD_LABELS: Record<string, string> = {
-  demand: 'End Demand', lot_size: 'Lot Size', tbatch_size: 'TBatch Size',
-  demand_factor: 'Demand Factor', lot_factor: 'Lot Factor', var_factor: 'Var Factor',
-  setup_factor: 'Setup Factor', make_to_stock: 'Make to Stock', gather_tbatches: 'Gather TBatches',
-  dept_code: 'Dept/Area', prod1: 'Prod1', prod2: 'Prod2', prod3: 'Prod3', prod4: 'Prod4', comments: 'Comments',
-};
-
 export default function ProductData() {
   const model = useModelStore((s) => s.getActiveModel());
-  const addProduct = useModelStore((s) => s.addProduct);
-  const updateProduct = useModelStore((s) => s.updateProduct);
-  const deleteProduct = useModelStore((s) => s.deleteProduct);
   const navigate = useNavigate();
   const [showAdd, setShowAdd] = useState(false);
   const [newName, setNewName] = useState('');
@@ -47,12 +82,119 @@ export default function ProductData() {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
   const [justSaved, setJustSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [draftProducts, setDraftProducts] = useState<Product[]>([]);
+  const [editingNameId, setEditingNameId] = useState<string | null>(null);
+  const lastModelIdRef = useRef<string | null>(null);
   const { pendingDeleteId, requestDelete, cancelDelete, confirmDelete } = useDeleteConfirmation();
-  const { userLevel } = useUserLevelStore();
-  const showAdvancedParams = isVisible('advanced_parameters', userLevel);
   const activeScenarioId = useScenarioStore(s => s.activeScenarioId);
   const activeScenario = useScenarioStore(s => s.scenarios.find(sc => sc.id === s.activeScenarioId));
   const applyScenarioChange = useScenarioStore(s => s.applyScenarioChange);
+
+  useLayoutEffect(() => {
+    if (!model) return;
+    if (lastModelIdRef.current !== model.id) {
+      lastModelIdRef.current = model.id;
+      setDraftProducts(cloneProductsFromModel(model));
+      setIsDirty(false);
+      setEditingNameId(null);
+      return;
+    }
+    if (isDirty) return;
+    setDraftProducts(cloneProductsFromModel(model));
+  }, [model, isDirty, model?.updated_at]);
+
+  const handleDiscardDraft = () => {
+    if (!model) return;
+    setDraftProducts(cloneProductsFromModel(model));
+    setIsDirty(false);
+    setJustSaved(false);
+    setEditingNameId(null);
+  };
+
+  const tryCommitProductName = (id: string, raw: string): boolean => {
+    const next = raw.toUpperCase();
+    const row = draftProducts.find((o) => o.id === id);
+    if (row?.name === next) return true;
+    if (draftProducts.some((o) => o.id !== id && o.name.toLowerCase() === next.toLowerCase())) {
+      toast.error('A product with this name already exists');
+      return false;
+    }
+    handleCellChange(id, 'name', next);
+    return true;
+  };
+
+  const handleAdd = () => {
+    if (!newName.trim()) return;
+    if (draftProducts.some((p) => p.name.toLowerCase() === newName.trim().toLowerCase())) {
+      toast.error('A product with this name already exists');
+      return;
+    }
+    setDraftProducts((prev) => [
+      ...prev,
+      {
+        id: crypto.randomUUID(), name: newName.trim().toUpperCase(), demand: 0, lot_size: 1,
+        tbatch_size: -1, demand_factor: 1, lot_factor: 1, var_factor: 1, setup_factor: 1,
+        make_to_stock: false, gather_tbatches: true, dept_code: '',
+        prod1: 0, prod2: 0, prod3: 0, prod4: 0, comments: '',
+      },
+    ]);
+    setNewName('');
+    setShowAdd(false);
+    setIsDirty(true);
+    setJustSaved(false);
+    toast.success(`Product "${newName.trim().toUpperCase()}" added`);
+  };
+
+  const handleCopy = (p: Product) => {
+    const newP: Product = { ...p, id: crypto.randomUUID(), name: `${p.name}_COPY` };
+    setDraftProducts((prev) => [...prev, newP]);
+    setIsDirty(true);
+    setJustSaved(false);
+    toast.success(`Product "${newP.name}" created as copy`);
+  };
+
+  const handleCellChange = (id: string, field: keyof Product, value: unknown) => {
+    if (model && activeScenarioId && activeScenario) {
+      const prod = draftProducts.find(pr => pr.id === id);
+      const entityName = prod?.name || id;
+      const fieldLabel = FIELD_LABELS[field] || field;
+      applyScenarioChange(activeScenarioId, 'Product', id, entityName, field, fieldLabel, value as string | number);
+    }
+    setDraftProducts((prev) => prev.map((pr) => (pr.id === id ? { ...pr, [field]: value } : pr)));
+    setIsDirty(true);
+    setJustSaved(false);
+  };
+
+  const handleDeleteProduct = (id: string) => {
+    setEditingNameId((cur) => (cur === id ? null : cur));
+    setDraftProducts((prev) => prev.filter((p) => p.id !== id));
+    setIsDirty(true);
+    setJustSaved(false);
+  };
+
+  const handleSave = async () => {
+    if (!model || saving || !isDirty) return;
+    setSaving(true);
+    try {
+      await persistProductsDraft(model.id, draftProducts, model);
+      const fresh = await fetchModelById(model.id);
+      if (!fresh) throw new Error('Could not reload model after save');
+      useModelStore.setState((s) => ({
+        models: s.models.map((m) => (m.id === fresh.id ? fresh : m)),
+      }));
+      setIsDirty(false);
+      setJustSaved(true);
+      toast.success('Saved');
+      setTimeout(() => setJustSaved(false), 2000);
+    } catch (err) {
+      console.error(err);
+      toast.error('Save failed — please try again');
+      throw err;
+    } finally {
+      setSaving(false);
+    }
+  };
 
   if (!model) return (
     <div className="p-6 space-y-4">
@@ -62,59 +204,17 @@ export default function ProductData() {
     </div>
   );
 
-  const handleAdd = () => {
-    if (!newName.trim()) return;
-    if (model.products.some((p) => p.name.toLowerCase() === newName.trim().toLowerCase())) {
-      toast.error('A product with this name already exists');
-      return;
-    }
-    addProduct(model.id, {
-      id: crypto.randomUUID(), name: newName.trim().toUpperCase(), demand: 0, lot_size: 1,
-      tbatch_size: -1, demand_factor: 1, lot_factor: 1, var_factor: 1, setup_factor: 1,
-      make_to_stock: false, gather_tbatches: true, dept_code: '',
-      prod1: 0, prod2: 0, prod3: 0, prod4: 0, comments: '',
-    });
-    setNewName('');
-    setShowAdd(false);
-    toast.success(`Product "${newName.trim().toUpperCase()}" added`);
-  };
-
-  const handleCopy = (p: Product) => {
-    const newP: Product = { ...p, id: crypto.randomUUID(), name: `${p.name}_COPY` };
-    addProduct(model.id, newP);
-    toast.success(`Product "${newP.name}" created as copy`);
-  };
-
-  const handleCellChange = (id: string, field: keyof Product, value: any) => {
-    if (activeScenarioId && activeScenario) {
-      const prod = model.products.find(p => p.id === id);
-      const entityName = prod?.name || id;
-      const fieldLabel = FIELD_LABELS[field] || field;
-      applyScenarioChange(activeScenarioId, 'Product', id, entityName, field, fieldLabel, value as string | number);
-    }
-    updateProduct(model.id, id, { [field]: value });
-    setIsDirty(true);
-    setJustSaved(false);
-  };
-
-  const handleSave = () => {
-    setIsDirty(false);
-    setJustSaved(true);
-    toast.success('Saved');
-    setTimeout(() => setJustSaved(false), 2000);
-  };
-
   const goToOps = (productId: string) => {
     navigate(`/models/${model.id}/operations?product=${productId}`);
   };
 
   const opsCount = (productId: string) => model.operations.filter((o) => o.product_id === productId).length;
-
   const ibomCount = (productId: string) => model.ibom.filter(e => e.parent_product_id === productId).length;
-
+  const pn = displayParamNames(model);
   return (
     <>
-    <UnsavedChangesGuard isDirty={isDirty} onSave={handleSave} />
+    <UnsavedChangesGuard isDirty={isDirty} onSave={handleSave} onDiscard={handleDiscardDraft} />
+    {saving && <SavingOverlay />}
     <div className="p-6 animate-fade-in">
       {activeScenarioId && activeScenario && (
         <div className="mb-4 flex items-center gap-2 p-2.5 bg-amber-50 border border-amber-200 rounded-md">
@@ -127,7 +227,7 @@ export default function ProductData() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-xl font-bold">Products</h1>
-          <p className="text-sm text-muted-foreground">{model.products.length} products defined</p>
+          <p className="text-sm text-muted-foreground">{draftProducts.length} products defined</p>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={() => setShowAdvanced(!showAdvanced)} className="gap-1 text-xs">
@@ -139,14 +239,23 @@ export default function ProductData() {
             <Button variant={viewMode === 'form' ? 'secondary' : 'ghost'} size="icon" className="h-8 w-8 rounded-none" onClick={() => setViewMode('form')}><LayoutGrid className="h-4 w-4" /></Button>
           </div>
           <Button onClick={() => setShowAdd(true)} size="sm" className="gap-1"><Plus className="h-4 w-4" /> Add Product</Button>
-          <Button size="sm" className="gap-1" variant={isDirty ? 'default' : 'outline'} disabled={!isDirty && !justSaved} onClick={handleSave}>
+          <Button size="sm" className="gap-1" variant={isDirty ? 'default' : 'outline'} disabled={saving || (!isDirty && !justSaved)} onClick={() => void handleSave()}>
             {justSaved ? <><Check className="h-4 w-4" /> Saved</> : <><Save className="h-4 w-4" /> Save</>}
           </Button>
         </div>
       </div>
 
-      {model.products.length === 0 ? (
-        <Card><CardContent className="py-12 text-center text-muted-foreground"><p>No products defined.</p><Button className="mt-4" onClick={() => setShowAdd(true)}><Plus className="h-4 w-4 mr-1" /> Add First Product</Button></CardContent></Card>
+      {draftProducts.length === 0 ? (
+        <Card>
+          <CardContent className="py-16 text-center flex flex-col items-center justify-center gap-4">
+          <div className="rounded-full bg-primary p-5">
+            <Package className="h-10 w-10 mx-auto text-foreground" />
+            </div>
+            <p className="text-foreground font-medium mb-1">No products defined</p>
+            <p className="text-sm text-muted-foreground/70 mb-4">Add products to define demand, lot sizes, and IBOM structures.</p>
+            <Button onClick={() => setShowAdd(true)} className="gap-1"><Plus className="h-4 w-4" /> Add First Product</Button>
+          </CardContent>
+        </Card>
       ) : viewMode === 'table' ? (
         <Card className={activeScenarioId ? 'border-l-[3px] border-l-amber-400' : ''}>
           <CardContent className="p-0 overflow-x-auto">
@@ -164,13 +273,15 @@ export default function ProductData() {
                     <TableHead className="font-mono text-xs">Demand Fac</TableHead>
                     <TableHead className="font-mono text-xs">Lot Fac</TableHead>
                     <TableHead className="font-mono text-xs">Var Fac</TableHead>
-                    
+
                     <TableHead className="font-mono text-xs">MTS</TableHead>
                     <TableHead className="font-mono text-xs">Gather</TableHead>
-                    <TableHead className="font-mono text-xs">{model.param_names.prod1_name}</TableHead>
-                    <TableHead className="font-mono text-xs">{model.param_names.prod2_name}</TableHead>
-                    <TableHead className="font-mono text-xs">{model.param_names.prod3_name}</TableHead>
-                    <TableHead className="font-mono text-xs">{model.param_names.prod4_name}</TableHead>
+                    {SHOW_PARAM_VARIABLE_FIELDS_IN_UI && <>
+                      <TableHead className="font-mono text-xs">{pn.prod1_name}</TableHead>
+                      <TableHead className="font-mono text-xs">{pn.prod2_name}</TableHead>
+                      <TableHead className="font-mono text-xs">{pn.prod3_name}</TableHead>
+                      <TableHead className="font-mono text-xs">{pn.prod4_name}</TableHead>
+                    </>}
                   </>}
                   <TableHead className="font-mono text-xs">Ops</TableHead>
                   <TableHead className="font-mono text-xs">IBOM</TableHead>
@@ -179,42 +290,53 @@ export default function ProductData() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {model.products.map((p) => {
+                {draftProducts.map((p) => {
                   const isConfirming = pendingDeleteId === p.id;
                   return (
                   <TableRow key={p.id} className={isConfirming ? 'bg-destructive/10' : ''}>
                     {isConfirming ? (
-                      <TableCell colSpan={showAdvanced ? 18 : 8}>
+                      <TableCell colSpan={showAdvanced ? (SHOW_PARAM_VARIABLE_FIELDS_IN_UI ? 18 : 14) : 8}>
                         <DeleteConfirmInline
                           message={`Delete ${p.name}? This will remove its operations and IBOM data.`}
-                          onConfirm={() => confirmDelete(p.id, () => deleteProduct(model.id, p.id))}
+                          onConfirm={() => confirmDelete(p.id, () => handleDeleteProduct(p.id))}
                           onCancel={cancelDelete}
                         />
                       </TableCell>
                     ) : (<>
-                    <TableCell className="font-mono font-medium">{p.name}</TableCell>
-                    <TableCell><Input type="number" className={`h-8 w-20 font-mono ${p.demand < 0 ? 'border-destructive' : ''}`} value={p.demand} onChange={(e) => handleCellChange(p.id, 'demand', +e.target.value)} /></TableCell>
+                    <TableCell className="font-mono font-medium max-w-[220px]">
+                      <DoubleClickEditableName
+                        value={p.name}
+                        isEditing={editingNameId === p.id}
+                        onRequestEdit={() => setEditingNameId(p.id)}
+                        onCommit={(t) => tryCommitProductName(p.id, t)}
+                        onCancelEdit={() => setEditingNameId(null)}
+                      />
+                    </TableCell>
+                    <TableCell><NonNegativeNumericInput value={p.demand} onChange={(v) => handleCellChange(p.id, 'demand', v)} /></TableCell>
                     <TableCell>
-                      <Input type="number" className={`h-8 w-20 font-mono ${p.lot_size < 1 ? 'border-destructive' : ''}`} value={p.lot_size} onChange={(e) => handleCellChange(p.id, 'lot_size', +e.target.value)} />
+                      <NonNegativeNumericInput value={p.lot_size} onChange={(v) => handleCellChange(p.id, 'lot_size', v)} />
                       {p.lot_size < 1 && <span className="text-[10px] text-destructive">≥ 1</span>}
                     </TableCell>
                     {showAdvanced && <>
                       <TableCell>
-                        <Input type="number" className="h-8 w-20 font-mono" value={p.tbatch_size} onChange={(e) => handleCellChange(p.id, 'tbatch_size', +e.target.value)} />
-                        <span className="text-[9px] text-muted-foreground">-1 = lot size</span>
+                        <ProductTbatchInput
+                          tbatchSize={p.tbatch_size}
+                          className="h-8 w-20 font-mono"
+                          onChange={(v) => handleCellChange(p.id, 'tbatch_size', v)}
+                        />
                       </TableCell>
                       <TableCell>
                         <DeptCodeSelect modelId={model.id} value={p.dept_code} onChange={(v) => handleCellChange(p.id, 'dept_code', v)} section="product" className="h-8 w-28" />
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1">
-                          <Input type="number" className="h-8 w-20 font-mono" value={p.demand_factor} step="0.1" onChange={(e) => handleCellChange(p.id, 'demand_factor', +e.target.value)} />
+                          <NonNegativeNumericInput allowDecimal value={p.demand_factor} onChange={(v) => handleCellChange(p.id, 'demand_factor', v)} />
                           <InfoTip text="Scales the product demand without changing the stored demand value. Set to 0 to effectively exclude this product from calculations while keeping its data." />
                         </div>
                       </TableCell>
-                      <TableCell><Input type="number" className="h-8 w-20 font-mono" value={p.lot_factor} step="0.1" onChange={(e) => handleCellChange(p.id, 'lot_factor', +e.target.value)} /></TableCell>
-                      <TableCell><Input type="number" className="h-8 w-20 font-mono" value={p.var_factor} step="0.1" onChange={(e) => handleCellChange(p.id, 'var_factor', +e.target.value)} /></TableCell>
-                      
+                      <TableCell><NonNegativeNumericInput allowDecimal value={p.lot_factor} onChange={(v) => handleCellChange(p.id, 'lot_factor', v)} /></TableCell>
+                      <TableCell><NonNegativeNumericInput allowDecimal value={p.var_factor} onChange={(v) => handleCellChange(p.id, 'var_factor', v)} /></TableCell>
+
                       <TableCell>
                         <div className="flex items-center gap-1">
                           <Switch checked={p.make_to_stock} onCheckedChange={(v) => handleCellChange(p.id, 'make_to_stock', v)} />
@@ -227,10 +349,12 @@ export default function ProductData() {
                           <InfoTip text="When checked, the first transfer batch waits for the full lot before moving to stock. Uncheck if transfer batches are sent forward immediately as completed." />
                         </div>
                       </TableCell>
-                      <TableCell><Input type="number" className="h-8 w-20 font-mono" value={p.prod1} onChange={(e) => handleCellChange(p.id, 'prod1', +e.target.value)} /></TableCell>
-                      <TableCell><Input type="number" className="h-8 w-20 font-mono" value={p.prod2} onChange={(e) => handleCellChange(p.id, 'prod2', +e.target.value)} /></TableCell>
-                      <TableCell><Input type="number" className="h-8 w-20 font-mono" value={p.prod3} onChange={(e) => handleCellChange(p.id, 'prod3', +e.target.value)} /></TableCell>
-                      <TableCell><Input type="number" className="h-8 w-20 font-mono" value={p.prod4} onChange={(e) => handleCellChange(p.id, 'prod4', +e.target.value)} /></TableCell>
+                      {SHOW_PARAM_VARIABLE_FIELDS_IN_UI && <>
+                        <TableCell><NonNegativeNumericInput value={p.prod1} onChange={(v) => handleCellChange(p.id, 'prod1', v)} /></TableCell>
+                        <TableCell><NonNegativeNumericInput value={p.prod2} onChange={(v) => handleCellChange(p.id, 'prod2', v)} /></TableCell>
+                        <TableCell><NonNegativeNumericInput value={p.prod3} onChange={(v) => handleCellChange(p.id, 'prod3', v)} /></TableCell>
+                        <TableCell><NonNegativeNumericInput value={p.prod4} onChange={(v) => handleCellChange(p.id, 'prod4', v)} /></TableCell>
+                      </>}
                     </>}
                     <TableCell>
                       <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs font-mono" onClick={() => goToOps(p.id)}>
@@ -248,7 +372,7 @@ export default function ProductData() {
                     <TableCell>
                       <div className="flex gap-0.5">
                         <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleCopy(p)} title="Duplicate"><Copy className="h-3.5 w-3.5" /></Button>
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => requestDelete(p.id)} title="Delete"><Trash2 className="h-3.5 w-3.5" /></Button>
+                        <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => { setEditingNameId((cur) => (cur === p.id ? null : cur)); requestDelete(p.id); }} title="Delete"><Trash2 className="h-3.5 w-3.5" /></Button>
                       </div>
                     </TableCell>
                     </>)}
@@ -261,14 +385,24 @@ export default function ProductData() {
         </Card>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {model.products.map((p) => (
+          {draftProducts.map((p) => (
             <Card key={p.id} className={activeScenarioId ? 'border-l-[3px] border-l-amber-400' : ''}>
               <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-base font-mono">{p.name}</CardTitle>
-                  <div className="flex gap-0.5">
+                <div className="flex items-center justify-between gap-2">
+                  <CardTitle className="text-base font-mono min-h-8 flex items-center flex-1 min-w-0">
+                    <DoubleClickEditableName
+                      value={p.name}
+                      isEditing={editingNameId === p.id}
+                      onRequestEdit={() => setEditingNameId(p.id)}
+                      onCommit={(t) => tryCommitProductName(p.id, t)}
+                      onCancelEdit={() => setEditingNameId(null)}
+                      spanClassName="text-base"
+                      inputClassName="h-9 text-base"
+                    />
+                  </CardTitle>
+                  <div className="flex gap-0.5 shrink-0">
                     <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleCopy(p)}><Copy className="h-3.5 w-3.5" /></Button>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => { if (confirm(`Delete ${p.name}? This will remove its operations and IBOM data.`)) deleteProduct(model.id, p.id); }}><Trash2 className="h-3.5 w-3.5" /></Button>
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => { if (confirm(`Delete ${p.name}? This will remove its operations and IBOM data.`)) { setEditingNameId((cur) => (cur === p.id ? null : cur)); handleDeleteProduct(p.id); } }}><Trash2 className="h-3.5 w-3.5" /></Button>
                   </div>
                 </div>
               </CardHeader>
@@ -277,9 +411,9 @@ export default function ProductData() {
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <TooltipProvider delayDuration={400}><Tooltip><TooltipTrigger asChild><Label className="text-xs cursor-help">End Demand</Label></TooltipTrigger><TooltipContent className="max-w-[260px] text-xs">Quantity shipped directly to customers. Set to 0 for components used only within assemblies; their production quantity will be calculated automatically from the IBOM.</TooltipContent></Tooltip></TooltipProvider>
-                      <Input type="number" className="h-8 font-mono" value={p.demand} onChange={(e) => handleCellChange(p.id, 'demand', +e.target.value)} />
+                      <NonNegativeNumericInput value={p.demand} onChange={(v) => handleCellChange(p.id, 'demand', v)} />
                     </div>
-                    <div><Label className="text-xs">Lot Size</Label><Input type="number" className="h-8 font-mono" value={p.lot_size} onChange={(e) => handleCellChange(p.id, 'lot_size', +e.target.value)} /></div>
+                    <div><Label className="text-xs">Lot Size</Label><NonNegativeNumericInput value={p.lot_size} onChange={(v) => handleCellChange(p.id, 'lot_size', v)} /></div>
                   </div>
                   <div><Label className="text-xs">Comments</Label><Input className="h-8" value={p.comments} onChange={(e) => handleCellChange(p.id, 'comments', e.target.value)} /></div>
                   <Button variant="outline" size="sm" className="w-full gap-1 text-xs" onClick={() => goToOps(p.id)}>
@@ -295,20 +429,23 @@ export default function ProductData() {
                       <div className="grid grid-cols-2 gap-3">
                          <div>
                             <Label className="text-xs">Transfer Batch</Label>
-                            <Input type="number" className="h-8 font-mono" value={p.tbatch_size} onChange={(e) => handleCellChange(p.id, 'tbatch_size', +e.target.value)} />
-                            <span className="text-[9px] text-muted-foreground">-1 = same as lot size (default)</span>
+                            <ProductTbatchInput
+                              tbatchSize={p.tbatch_size}
+                              className="h-8 font-mono"
+                              onChange={(v) => handleCellChange(p.id, 'tbatch_size', v)}
+                            />
                           </div>
                         <div>
                           <div className="flex items-center gap-1">
                             <Label className="text-xs">Demand Factor</Label>
                             <InfoTip text="Scales the product demand without changing the stored demand value. Set to 0 to effectively exclude this product from calculations while keeping its data." />
                           </div>
-                          <Input type="number" className="h-8 font-mono" value={p.demand_factor} step="0.1" onChange={(e) => handleCellChange(p.id, 'demand_factor', +e.target.value)} />
+                          <NonNegativeNumericInput allowDecimal value={p.demand_factor} onChange={(v) => handleCellChange(p.id, 'demand_factor', v)} />
                         </div>
-                        <div><Label className="text-xs">Lot Factor</Label><Input type="number" className="h-8 font-mono" value={p.lot_factor} step="0.1" onChange={(e) => handleCellChange(p.id, 'lot_factor', +e.target.value)} /></div>
-                        <div><Label className="text-xs">Var Factor</Label><Input type="number" className="h-8 font-mono" value={p.var_factor} step="0.1" onChange={(e) => handleCellChange(p.id, 'var_factor', +e.target.value)} /></div>
+                        <div><Label className="text-xs">Lot Factor</Label><NonNegativeNumericInput allowDecimal value={p.lot_factor} onChange={(v) => handleCellChange(p.id, 'lot_factor', v)} /></div>
+                        <div><Label className="text-xs">Var Factor</Label><NonNegativeNumericInput allowDecimal value={p.var_factor} onChange={(v) => handleCellChange(p.id, 'var_factor', v)} /></div>
                       </div>
-                      
+
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-1">
                           <Label className="text-xs">Make to Stock</Label>
@@ -330,18 +467,19 @@ export default function ProductData() {
                         </div>
                         <DeptCodeSelect modelId={model.id} value={p.dept_code} onChange={(v) => handleCellChange(p.id, 'dept_code', v)} section="product" className="h-8" />
                       </div>
-                      {/* Prod1-4 parameter variables */}
+                      {SHOW_PARAM_VARIABLE_FIELDS_IN_UI && (
                       <div className="pt-2 border-t border-border">
                         <Label className="text-[10px] text-muted-foreground uppercase tracking-wider flex items-center gap-1">Parameter Variables <InfoTip text="Use Display Name to rename the variable. The new label appears across the app and in the Formula Builder." /></Label>
                         <div className="grid grid-cols-4 gap-3 mt-1.5">
-                          {(['prod1', 'prod2', 'prod3', 'prod4'] as const).map(key => (
+                          {(['prod1', 'prod2', 'prod3', 'prod4'] as const).map((key) => (
                             <div key={key}>
-                              <Label className="text-xs">{model.param_names[`${key}_name` as keyof typeof model.param_names]}</Label>
-                              <Input type="number" className="h-8 font-mono" value={p[key]} onChange={(e) => handleCellChange(p.id, key, +e.target.value)} />
+                              <Label className="text-xs">{pn[`${key}_name` as keyof typeof pn]}</Label>
+                              <NonNegativeNumericInput value={p[key]} onChange={(v) => handleCellChange(p.id, key, v)} />
                             </div>
                           ))}
                         </div>
                       </div>
+                      )}
                     </div>
                   )}
                 </div>

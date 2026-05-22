@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo, useCallback } from 'react';
-import { useModelStore, type Operation } from '@/stores/modelStore';
+import { useModelStore, displayParamNames, SHOW_PARAM_VARIABLE_FIELDS_IN_UI, type Operation } from '@/stores/modelStore';
 import { Card, CardContent } from '../../../components/ui/card';
 import { Input } from '../../../components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/Select';
@@ -11,10 +11,18 @@ import { Button } from '../../../components/ui/button';
 import { Grid3X3, ClipboardPaste, ChevronDown, ChevronUp, Info } from 'lucide-react';
 import { toast } from 'sonner';
 import { NoModelSelected } from '@/components/NoModelSelected';
+import { OperationEquipTimeInput } from '@/components/OperationEquipTimeInput';
+import { canEditOperationEquipField, isPureLaborOperation } from '@/lib/pureLaborOperations';
+import { NonNegativeNumericInput } from '@/components/NonNegativeNumericInput';
 
 export default function AllOperations() {
   const model = useModelStore(s => s.getActiveModel());
   const updateOperation = useModelStore(s => s.updateOperation);
+
+  const patchOp = (op: Operation, field: keyof Operation, value: number) => {
+    if (!model || !canEditOperationEquipField(op, field, model.equipment)) return;
+    updateOperation(model.id, op.id, { [field]: value });
+  };
   const [filter, setFilter] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
 
@@ -71,7 +79,7 @@ export default function AllOperations() {
 
   if (!model) return <NoModelSelected />;
 
-  const pn = model.param_names;
+  const pn = displayParamNames(model);
 
   return (
     <div className="h-full flex flex-col animate-fade-in">
@@ -146,18 +154,21 @@ export default function AllOperations() {
                   <TableHead className="font-mono text-xs">L.Setup/Pc</TableHead>
                   <TableHead className="font-mono text-xs">L.Run/Lot</TableHead>
                   <TableHead className="font-mono text-xs">L.Run/TBatch</TableHead>
-                  <TableHead className="font-mono text-xs">{pn.oper1_name}</TableHead>
-                  <TableHead className="font-mono text-xs">{pn.oper2_name}</TableHead>
-                  <TableHead className="font-mono text-xs">{pn.oper3_name}</TableHead>
-                  <TableHead className="font-mono text-xs">{pn.oper4_name}</TableHead>
+                  {SHOW_PARAM_VARIABLE_FIELDS_IN_UI && <>
+                    <TableHead className="font-mono text-xs">{pn.oper1_name}</TableHead>
+                    <TableHead className="font-mono text-xs">{pn.oper2_name}</TableHead>
+                    <TableHead className="font-mono text-xs">{pn.oper3_name}</TableHead>
+                    <TableHead className="font-mono text-xs">{pn.oper4_name}</TableHead>
+                  </>}
                 </>}
               </TableRow>
             </TableHeader>
             <TableBody>
               {rows.map((r, i) => {
                 const showProductHeader = i === 0 || rows[i - 1].productName !== r.productName;
+                const isPureOp = isPureLaborOperation(r.op, model.equipment);
                 return (
-                  <TableRow key={r.op.id} className={showProductHeader ? 'border-t-2 border-border' : ''}>
+                  <TableRow key={r.op.id} className={`${showProductHeader ? 'border-t-2 border-border' : ''} ${isPureOp ? 'bg-slate-50/80' : ''}`}>
                     <TableCell className="font-mono font-medium sticky left-0 bg-card z-10">
                       {showProductHeader ? (
                         <Badge variant="outline" className="font-mono text-xs">{r.productName}</Badge>
@@ -167,8 +178,7 @@ export default function AllOperations() {
                     </TableCell>
                     <TableCell className="font-mono text-xs font-medium">{r.op.op_name}</TableCell>
                     <TableCell>
-                      <Input type="number" className="h-7 w-16 font-mono text-xs" value={r.op.op_number}
-                        onChange={e => updateOperation(model.id, r.op.id, { op_number: +e.target.value })} />
+                      <NonNegativeNumericInput value={r.op.op_number} onChange={(v) => updateOperation(model.id, r.op.id, { op_number: v })} />
                     </TableCell>
                     <TableCell>
                       <Select value={r.op.equip_id || 'none'}
@@ -181,38 +191,35 @@ export default function AllOperations() {
                       </Select>
                     </TableCell>
                     <TableCell>
-                      <Input type="number" className="h-7 w-16 font-mono text-xs" value={r.op.pct_assigned}
-                        onChange={e => updateOperation(model.id, r.op.id, { pct_assigned: +e.target.value })} />
+                      <NonNegativeNumericInput value={r.op.pct_assigned} onChange={(v) => updateOperation(model.id, r.op.id, { pct_assigned: v })} />
                     </TableCell>
                     <TableCell>
-                      <Input type="number" step="0.1" className="h-7 w-20 font-mono text-xs" value={r.op.equip_setup_lot}
-                        onChange={e => updateOperation(model.id, r.op.id, { equip_setup_lot: +e.target.value })} />
+                      <OperationEquipTimeInput op={r.op} field="equip_setup_lot" equipment={model.equipment} value={r.op.equip_setup_lot} step="0.1" className="h-7 w-20 text-xs" inputClassName="h-7 text-xs" onChange={(v) => patchOp(r.op, 'equip_setup_lot', v)} />
                     </TableCell>
                     <TableCell>
-                      <Input type="number" step="0.01" className="h-7 w-20 font-mono text-xs" value={r.op.equip_run_piece}
-                        onChange={e => updateOperation(model.id, r.op.id, { equip_run_piece: +e.target.value })} />
+                      <OperationEquipTimeInput op={r.op} field="equip_run_piece" equipment={model.equipment} value={r.op.equip_run_piece} step="0.01" className="h-7 w-20 text-xs" inputClassName="h-7 text-xs" onChange={(v) => patchOp(r.op, 'equip_run_piece', v)} />
                     </TableCell>
                     <TableCell>
-                      <Input type="number" step="0.1" className="h-7 w-20 font-mono text-xs" value={r.op.labor_setup_lot}
-                        onChange={e => updateOperation(model.id, r.op.id, { labor_setup_lot: +e.target.value })} />
+                      <NonNegativeNumericInput allowDecimal className="h-7 w-20 font-mono text-xs" value={r.op.labor_setup_lot} onChange={(v) => updateOperation(model.id, r.op.id, { labor_setup_lot: v })} />
                     </TableCell>
                     <TableCell>
-                      <Input type="number" step="0.01" className="h-7 w-20 font-mono text-xs" value={r.op.labor_run_piece}
-                        onChange={e => updateOperation(model.id, r.op.id, { labor_run_piece: +e.target.value })} />
+                      <NonNegativeNumericInput allowDecimal className="h-7 w-20 font-mono text-xs" value={r.op.labor_run_piece} onChange={(v) => updateOperation(model.id, r.op.id, { labor_run_piece: v })} />
                     </TableCell>
                     {showAdvanced && <>
-                      <TableCell><Input type="number" step="0.1" className="h-7 w-20 font-mono text-xs" value={r.op.equip_setup_tbatch} onChange={e => updateOperation(model.id, r.op.id, { equip_setup_tbatch: +e.target.value })} /></TableCell>
-                      <TableCell><Input type="number" step="0.01" className="h-7 w-20 font-mono text-xs" value={r.op.equip_setup_piece} onChange={e => updateOperation(model.id, r.op.id, { equip_setup_piece: +e.target.value })} /></TableCell>
-                      <TableCell><Input type="number" step="0.1" className="h-7 w-20 font-mono text-xs" value={r.op.equip_run_lot} onChange={e => updateOperation(model.id, r.op.id, { equip_run_lot: +e.target.value })} /></TableCell>
-                      <TableCell><Input type="number" step="0.1" className="h-7 w-20 font-mono text-xs" value={r.op.equip_run_tbatch} onChange={e => updateOperation(model.id, r.op.id, { equip_run_tbatch: +e.target.value })} /></TableCell>
-                      <TableCell><Input type="number" step="0.1" className="h-7 w-20 font-mono text-xs" value={r.op.labor_setup_tbatch} onChange={e => updateOperation(model.id, r.op.id, { labor_setup_tbatch: +e.target.value })} /></TableCell>
-                      <TableCell><Input type="number" step="0.01" className="h-7 w-20 font-mono text-xs" value={r.op.labor_setup_piece} onChange={e => updateOperation(model.id, r.op.id, { labor_setup_piece: +e.target.value })} /></TableCell>
-                      <TableCell><Input type="number" step="0.1" className="h-7 w-20 font-mono text-xs" value={r.op.labor_run_lot} onChange={e => updateOperation(model.id, r.op.id, { labor_run_lot: +e.target.value })} /></TableCell>
-                      <TableCell><Input type="number" step="0.1" className="h-7 w-20 font-mono text-xs" value={r.op.labor_run_tbatch} onChange={e => updateOperation(model.id, r.op.id, { labor_run_tbatch: +e.target.value })} /></TableCell>
-                      <TableCell><Input type="number" className="h-7 w-20 font-mono text-xs" value={r.op.oper1} onChange={e => updateOperation(model.id, r.op.id, { oper1: +e.target.value })} /></TableCell>
-                      <TableCell><Input type="number" className="h-7 w-20 font-mono text-xs" value={r.op.oper2} onChange={e => updateOperation(model.id, r.op.id, { oper2: +e.target.value })} /></TableCell>
-                      <TableCell><Input type="number" className="h-7 w-20 font-mono text-xs" value={r.op.oper3} onChange={e => updateOperation(model.id, r.op.id, { oper3: +e.target.value })} /></TableCell>
-                      <TableCell><Input type="number" className="h-7 w-20 font-mono text-xs" value={r.op.oper4} onChange={e => updateOperation(model.id, r.op.id, { oper4: +e.target.value })} /></TableCell>
+                      <TableCell><OperationEquipTimeInput op={r.op} field="equip_setup_tbatch" equipment={model.equipment} value={r.op.equip_setup_tbatch} step="0.1" className="h-7 w-20 text-xs" inputClassName="h-7 text-xs" onChange={(v) => patchOp(r.op, 'equip_setup_tbatch', v)} /></TableCell>
+                      <TableCell><OperationEquipTimeInput op={r.op} field="equip_setup_piece" equipment={model.equipment} value={r.op.equip_setup_piece} step="0.01" className="h-7 w-20 text-xs" inputClassName="h-7 text-xs" onChange={(v) => patchOp(r.op, 'equip_setup_piece', v)} /></TableCell>
+                      <TableCell><OperationEquipTimeInput op={r.op} field="equip_run_lot" equipment={model.equipment} value={r.op.equip_run_lot} step="0.1" className="h-7 w-20 text-xs" inputClassName="h-7 text-xs" onChange={(v) => patchOp(r.op, 'equip_run_lot', v)} /></TableCell>
+                      <TableCell><OperationEquipTimeInput op={r.op} field="equip_run_tbatch" equipment={model.equipment} value={r.op.equip_run_tbatch} step="0.1" className="h-7 w-20 text-xs" inputClassName="h-7 text-xs" onChange={(v) => patchOp(r.op, 'equip_run_tbatch', v)} /></TableCell>
+                      <TableCell><NonNegativeNumericInput allowDecimal className="h-7 w-20 font-mono text-xs" value={r.op.labor_setup_tbatch} onChange={(v) => updateOperation(model.id, r.op.id, { labor_setup_tbatch: v })} /></TableCell>
+                      <TableCell><NonNegativeNumericInput allowDecimal className="h-7 w-20 font-mono text-xs" value={r.op.labor_setup_piece} onChange={(v) => updateOperation(model.id, r.op.id, { labor_setup_piece: v })} /></TableCell>
+                      <TableCell><NonNegativeNumericInput allowDecimal className="h-7 w-20 font-mono text-xs" value={r.op.labor_run_lot} onChange={(v) => updateOperation(model.id, r.op.id, { labor_run_lot: v })} /></TableCell>
+                      <TableCell><NonNegativeNumericInput allowDecimal className="h-7 w-20 font-mono text-xs" value={r.op.labor_run_tbatch} onChange={(v) => updateOperation(model.id, r.op.id, { labor_run_tbatch: v })} /></TableCell>
+                      {SHOW_PARAM_VARIABLE_FIELDS_IN_UI && <>
+                        <TableCell><NonNegativeNumericInput value={r.op.oper1} onChange={(v) => updateOperation(model.id, r.op.id, { oper1: v })} /></TableCell>
+                        <TableCell><NonNegativeNumericInput value={r.op.oper2} onChange={(v) => updateOperation(model.id, r.op.id, { oper2: v })} /></TableCell>
+                        <TableCell><NonNegativeNumericInput value={r.op.oper3} onChange={(v) => updateOperation(model.id, r.op.id, { oper3: v })} /></TableCell>
+                        <TableCell><NonNegativeNumericInput value={r.op.oper4} onChange={(v) => updateOperation(model.id, r.op.id, { oper4: v })} /></TableCell>
+                      </>}
                     </>}
                   </TableRow>
                 );

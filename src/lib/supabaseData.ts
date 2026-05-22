@@ -14,6 +14,7 @@ import type {
   ParamNames,
 } from '@/stores/modelStore';
 import { defaultParamNames } from '@/stores/modelStore';
+import { enrichModelPureLabor, equipmentToApiPayload, PURE_LABOR_MTTF, PURE_LABOR_MTTR } from '@/lib/pureLabor';
 
 function defaultGeneral(name: string): GeneralData {
   return {
@@ -48,7 +49,7 @@ function mergeParamNames(pn: Record<string, string> | null | undefined): ParamNa
 /** Map API JSON (snake_case dates) to store Model */
 function normalizeModel(m: Record<string, unknown>): Model {
   const g = (m.general as GeneralData | undefined) || defaultGeneral(String(m.name || ''));
-  return {
+  const base: Model = {
     id: String(m.id),
     name: String(m.name || ''),
     description: String(m.description || ''),
@@ -69,6 +70,7 @@ function normalizeModel(m: Record<string, unknown>): Model {
     routing: (m.routing as RoutingEntry[]) || [],
     ibom: (m.ibom as IBOMEntry[]) || [],
   };
+  return enrichModelPureLabor(base);
 }
 
 export async function fetchAllModels(): Promise<Model[]> {
@@ -87,19 +89,45 @@ export async function fetchAllModels(): Promise<Model[]> {
   }
 }
 
+/** GET /api/models/:id — single model (same shape as list items). */
+export async function fetchModelById(modelId: string): Promise<Model | null> {
+  try {
+    const res = await apiFetch(`/api/models/${modelId}/`);
+    if (!res.ok) return null;
+    const row = await res.json();
+    if (row == null || typeof row !== 'object') return null;
+    return normalizeModel(row as Record<string, unknown>);
+  } catch (e) {
+    console.error('fetchModelById', e);
+    return null;
+  }
+}
+
 async function postJson(path: string, body: unknown): Promise<void> {
   const res = await apiFetch(path, { method: 'POST', body: JSON.stringify(body) });
-  if (!res.ok) console.error('POST', path, res.status, await res.text());
+  if (!res.ok) {
+    const detail = await res.text();
+    console.error('POST', path, res.status, detail);
+    throw new Error(`POST ${path} failed (${res.status}): ${detail || res.statusText}`);
+  }
 }
 
 async function patchJson(path: string, body: unknown): Promise<void> {
   const res = await apiFetch(path, { method: 'PATCH', body: JSON.stringify(body) });
-  if (!res.ok) console.error('PATCH', path, res.status, await res.text());
+  if (!res.ok) {
+    const detail = await res.text();
+    console.error('PATCH', path, res.status, detail);
+    throw new Error(`PATCH ${path} failed (${res.status}): ${detail || res.statusText}`);
+  }
 }
 
 async function putJson(path: string, body: unknown): Promise<void> {
   const res = await apiFetch(path, { method: 'PUT', body: JSON.stringify(body) });
-  if (!res.ok) console.error('PUT', path, res.status, await res.text());
+  if (!res.ok) {
+    const detail = await res.text();
+    console.error('PUT', path, res.status, detail);
+    throw new Error(`PUT ${path} failed (${res.status}): ${detail || res.statusText}`);
+  }
 }
 
 export async function saveFullModelToDB(model: Model): Promise<void> {
@@ -141,26 +169,27 @@ export async function saveFullModelToDB(model: Model): Promise<void> {
   }
 
   for (const e of model.equipment) {
+    const apiEq = equipmentToApiPayload(e, model.labor);
     await postJson(`/api/models/${model.id}/equipment/`, {
       id: e.id,
-      name: e.name,
-      equip_type: e.equip_type,
-      count: e.count,
-      mttf: e.mttf,
-      mttr: e.mttr,
-      overtime_pct: e.overtime_pct,
-      labor_group_id: e.labor_group_id || null,
-      dept_code: e.dept_code,
-      out_of_area: e.out_of_area,
-      unavail_pct: e.unavail_pct,
-      setup_factor: e.setup_factor,
-      run_factor: e.run_factor,
-      var_factor: e.var_factor,
-      eq1: e.eq1,
-      eq2: e.eq2,
-      eq3: e.eq3,
-      eq4: e.eq4,
-      comments: e.comments,
+      name: apiEq.name,
+      equip_type: apiEq.equip_type,
+      count: apiEq.count,
+      mttf: apiEq.mttf,
+      mttr: apiEq.mttr,
+      overtime_pct: apiEq.overtime_pct,
+      labor_group_id: apiEq.labor_group_id || null,
+      dept_code: apiEq.dept_code,
+      out_of_area: apiEq.out_of_area,
+      unavail_pct: apiEq.unavail_pct,
+      setup_factor: apiEq.setup_factor,
+      run_factor: apiEq.run_factor,
+      var_factor: apiEq.var_factor,
+      eq1: apiEq.eq1,
+      eq2: apiEq.eq2,
+      eq3: apiEq.eq3,
+      eq4: apiEq.eq4,
+      comments: apiEq.comments,
     });
   }
 
@@ -206,6 +235,10 @@ export async function saveFullModelToDB(model: Model): Promise<void> {
       labor_run_piece: o.labor_run_piece,
       labor_run_lot: o.labor_run_lot,
       labor_run_tbatch: o.labor_run_tbatch,
+      oper1: o.oper1,
+      oper2: o.oper2,
+      oper3: o.oper3,
+      oper4: o.oper4,
     });
   }
 
@@ -280,7 +313,7 @@ export const db = {
     });
   },
 
-  async updateLabor(id: string, modelId: string, data: Partial<LaborGroup>) {
+  async updateLabor(modelId: string, id: string, data: Partial<LaborGroup>) {
     await patchJson(`/api/models/${modelId}/labor/${id}/`, data);
   },
 
@@ -289,32 +322,41 @@ export const db = {
     if (!res.ok) console.error('deleteLabor:', res.status);
   },
 
-  async insertEquipment(modelId: string, e: EquipmentGroup) {
+  async insertEquipment(modelId: string, e: EquipmentGroup, labor?: LaborGroup[]) {
+    const apiEq = equipmentToApiPayload(e, labor);
     await postJson(`/api/models/${modelId}/equipment/`, {
       id: e.id,
-      name: e.name,
-      equip_type: e.equip_type,
-      count: e.count,
-      mttf: e.mttf,
-      mttr: e.mttr,
-      overtime_pct: e.overtime_pct,
-      labor_group_id: e.labor_group_id || null,
-      dept_code: e.dept_code,
-      out_of_area: e.out_of_area,
-      unavail_pct: e.unavail_pct,
-      setup_factor: e.setup_factor,
-      run_factor: e.run_factor,
-      var_factor: e.var_factor,
-      eq1: e.eq1,
-      eq2: e.eq2,
-      eq3: e.eq3,
-      eq4: e.eq4,
-      comments: e.comments,
+      name: apiEq.name,
+      equip_type: apiEq.equip_type,
+      count: apiEq.count,
+      mttf: apiEq.mttf,
+      mttr: apiEq.mttr,
+      overtime_pct: apiEq.overtime_pct,
+      labor_group_id: apiEq.labor_group_id || null,
+      dept_code: apiEq.dept_code,
+      out_of_area: apiEq.out_of_area,
+      unavail_pct: apiEq.unavail_pct,
+      setup_factor: apiEq.setup_factor,
+      run_factor: apiEq.run_factor,
+      var_factor: apiEq.var_factor,
+      eq1: apiEq.eq1,
+      eq2: apiEq.eq2,
+      eq3: apiEq.eq3,
+      eq4: apiEq.eq4,
+      comments: apiEq.comments,
     });
   },
 
-  async updateEquipment(id: string, modelId: string, data: Partial<EquipmentGroup>) {
-    await patchJson(`/api/models/${modelId}/equipment/${id}/`, data);
+  async updateEquipment(modelId: string, id: string, data: Partial<EquipmentGroup>) {
+    const patch: Record<string, unknown> = { ...data };
+    if (patch.equip_type === 'pure_labor') {
+      patch.equip_type = 'standard';
+      patch.mttf = PURE_LABOR_MTTF;
+      patch.mttr = PURE_LABOR_MTTR;
+    }
+    delete patch.is_pure_labor;
+    delete patch.pure_labor_labor_id;
+    await patchJson(`/api/models/${modelId}/equipment/${id}/`, patch);
   },
 
   async deleteEquipment(modelId: string, id: string) {
@@ -344,7 +386,7 @@ export const db = {
     });
   },
 
-  async updateProduct(id: string, modelId: string, data: Partial<Product>) {
+  async updateProduct(modelId: string, id: string, data: Partial<Product>) {
     await patchJson(`/api/models/${modelId}/products/${id}/`, data);
   },
 
@@ -373,10 +415,14 @@ export const db = {
       labor_run_piece: o.labor_run_piece,
       labor_run_lot: o.labor_run_lot,
       labor_run_tbatch: o.labor_run_tbatch,
+      oper1: o.oper1,
+      oper2: o.oper2,
+      oper3: o.oper3,
+      oper4: o.oper4,
     });
   },
 
-  async updateOperation(id: string, modelId: string, data: Partial<Operation>) {
+  async updateOperation(modelId: string, id: string, data: Partial<Operation>) {
     await patchJson(`/api/models/${modelId}/operations/${id}/`, data);
   },
 
@@ -394,7 +440,7 @@ export const db = {
     });
   },
 
-  async updateRouting(id: string, modelId: string, data: Partial<RoutingEntry>) {
+  async updateRouting(modelId: string, id: string, data: Partial<RoutingEntry>) {
     await patchJson(`/api/models/${modelId}/routing/${id}/`, data);
   },
 
@@ -423,7 +469,7 @@ export const db = {
     });
   },
 
-  async updateIBOM(id: string, modelId: string, data: Partial<IBOMEntry>) {
+  async updateIBOM(modelId: string, id: string, data: Partial<IBOMEntry>) {
     await patchJson(`/api/models/${modelId}/ibom/entry/${id}/`, data);
   },
 
@@ -435,12 +481,31 @@ export const db = {
   async setIBOMForParent(modelId: string, parentId: string, entries: IBOMEntry[]) {
     await putJson(`/api/models/${modelId}/ibom/${parentId}/`, entries);
   },
+
+  async clearProductOperationsAndRouting(modelId: string, productId: string) {
+    const res = await apiFetch(
+      `/api/models/${modelId}/products/${productId}/operations-and-routing/`,
+      { method: 'DELETE' },
+    );
+    if (!res.ok) console.error('clearProductOperationsAndRouting:', res.status);
+  },
 };
+
+export type ModelVersionKind = 'manual' | 'pre_restore';
 
 export interface ModelVersionRow {
   id: string;
   label: string;
   created_at: string;
+  version_kind?: ModelVersionKind;
+}
+
+export interface RestoreModelResult {
+  model: Model;
+  rollbackVersionId?: string;
+  rollbackLabel?: string;
+  /** True when user restored the auto-saved "Previous state" undo row (it is removed). */
+  consumedUndo?: boolean;
 }
 
 export async function fetchModelVersions(modelId: string): Promise<ModelVersionRow[]> {
@@ -465,6 +530,7 @@ export function buildModelSnapshot(model: Model): Record<string, unknown> {
     routing: model.routing,
     ibom: model.ibom,
     param_names: model.param_names,
+    dept_codes: (model as Model & { dept_codes?: Record<string, string> }).dept_codes ?? {},
   };
 }
 
@@ -493,13 +559,58 @@ export async function deleteModelVersion(versionId: string): Promise<boolean> {
   return res.ok;
 }
 
-export async function restoreModelFromVersion(modelId: string, versionId: string): Promise<Model | null> {
+export async function restoreModelFromVersion(
+  modelId: string,
+  versionId: string,
+): Promise<RestoreModelResult | null> {
   try {
     const res = await apiFetch(`/api/models/${modelId}/versions/${versionId}/restore/`, { method: 'POST' });
     if (!res.ok) return null;
-    const row = await res.json();
-    return normalizeModel(row as Record<string, unknown>);
+    const row = (await res.json()) as Record<string, unknown>;
+    const meta = row.restore_meta as Record<string, unknown> | undefined;
+    delete row.restore_meta;
+    return {
+      model: normalizeModel(row),
+      rollbackVersionId: meta?.rollback_version_id != null ? String(meta.rollback_version_id) : undefined,
+      rollbackLabel: meta?.rollback_label != null ? String(meta.rollback_label) : undefined,
+      consumedUndo: Boolean(meta?.consumed_undo),
+    };
   } catch {
     return null;
   }
+}
+
+/** @deprecated Use restoreModelFromVersion — returns model only. */
+export async function restoreVersionToModel(versionId: string, modelId: string): Promise<Model | null> {
+  const result = await restoreModelFromVersion(modelId, versionId);
+  return result?.model ?? null;
+}
+
+export async function getVersions(modelId: string): Promise<ModelVersionRow[]> {
+  return fetchModelVersions(modelId);
+}
+
+export async function createVersion(modelId: string, label: string, snapshot: Record<string, unknown>): Promise<string> {
+  const ok = await createModelCheckpoint(modelId, label, snapshot);
+  if (!ok) throw new Error('create checkpoint failed');
+  return '';
+}
+
+export async function getVersionSnapshot(versionId: string): Promise<{ snapshot: Record<string, unknown>; created_at: string } | null> {
+  try {
+    const res = await apiFetch(`/api/versions/${versionId}/`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data as { snapshot: Record<string, unknown>; created_at: string };
+  } catch {
+    return null;
+  }
+}
+
+export async function updateVersionLabel(versionId: string, label: string): Promise<void> {
+  await patchModelVersionLabel(versionId, label);
+}
+
+export async function deleteVersion(versionId: string): Promise<void> {
+  await deleteModelVersion(versionId);
 }

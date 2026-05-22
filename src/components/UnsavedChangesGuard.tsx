@@ -13,10 +13,12 @@ import { useState } from 'react';
 
 interface UnsavedChangesGuardProps {
   isDirty: boolean;
-  onSave: () => void;
+  onSave: () => void | Promise<void>;
+  /** Called when user discards unsaved changes (before navigating away, if applicable). */
+  onDiscard?: () => void;
 }
 
-export function UnsavedChangesGuard({ isDirty, onSave }: UnsavedChangesGuardProps) {
+export function UnsavedChangesGuard({ isDirty, onSave, onDiscard }: UnsavedChangesGuardProps) {
   const [showDialog, setShowDialog] = useState(false);
   const [pendingPath, setPendingPath] = useState<string | null>(null);
   const navigate = useNavigate();
@@ -53,23 +55,27 @@ export function UnsavedChangesGuard({ isDirty, onSave }: UnsavedChangesGuardProp
     return () => document.removeEventListener('click', handleClick, true);
   }, [location.pathname]);
 
-  const handleSave = useCallback(() => {
-    onSave();
-    setShowDialog(false);
-    if (pendingPath) {
-      navigate(pendingPath);
-      setPendingPath(null);
+  const handleSave = useCallback(async () => {
+    try {
+      await Promise.resolve(onSave());
+      setShowDialog(false);
+      if (pendingPath) {
+        navigate(pendingPath);
+        setPendingPath(null);
+      }
+    } catch {
+      // Keep dialog open so the user can retry or cancel.
     }
   }, [onSave, navigate, pendingPath]);
 
   const handleDiscard = useCallback(() => {
+    onDiscard?.();
     setShowDialog(false);
     if (pendingPath) {
-      // We need to clear dirty state before navigating
       navigate(pendingPath);
       setPendingPath(null);
     }
-  }, [navigate, pendingPath]);
+  }, [navigate, pendingPath, onDiscard]);
 
   const handleCancel = useCallback(() => {
     setShowDialog(false);
@@ -98,7 +104,7 @@ export function UnsavedChangesGuard({ isDirty, onSave }: UnsavedChangesGuardProp
           >
             Discard &amp; Continue
           </Button>
-          <Button onClick={handleSave}>
+          <Button onClick={() => void handleSave()}>
             Save &amp; Continue
           </Button>
         </AlertDialogFooter>

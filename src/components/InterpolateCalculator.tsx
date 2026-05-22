@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/Select';
 import { Badge } from '@/components/ui/badge';
 import { Plus, Trash2 } from 'lucide-react';
+import { NonNegativeNumericInput } from '@/components/NonNegativeNumericInput';
 
 interface DataPoint {
   x: number;
@@ -102,13 +103,11 @@ export function InterpolateCalculator({ open, onClose, onApply }: InterpolateCal
               {points.map((pt, i) => (
                 <div key={i} className="flex items-center gap-2">
                   <div className="flex-1">
-                    <Input type="number" value={pt.x} onChange={e => updatePoint(i, 'x', +e.target.value)}
-                      className="h-7 font-mono text-xs" placeholder="X" />
+                    <NonNegativeNumericInput className="h-7 font-mono text-xs" placeholder="X" value={pt.x} onChange={(v) => updatePoint(i, 'x', v)} />
                   </div>
                   <span className="text-xs text-muted-foreground">→</span>
                   <div className="flex-1">
-                    <Input type="number" value={pt.y} onChange={e => updatePoint(i, 'y', +e.target.value)}
-                      className="h-7 font-mono text-xs" placeholder="Y" />
+                    <NonNegativeNumericInput className="h-7 font-mono text-xs" placeholder="Y" value={pt.y} onChange={(v) => updatePoint(i, 'y', v)} />
                   </div>
                   <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive shrink-0" onClick={() => removePoint(i)} disabled={points.length <= 2}>
                     <Trash2 className="h-3 w-3" />
@@ -121,8 +120,7 @@ export function InterpolateCalculator({ open, onClose, onApply }: InterpolateCal
           {/* Target */}
           <div>
             <Label className="text-xs">Target X Value</Label>
-            <Input type="number" value={targetX} onChange={e => setTargetX(+e.target.value)}
-              className="h-8 font-mono mt-1" />
+            <NonNegativeNumericInput allowDecimal className="h-8 font-mono mt-1" value={targetX} onChange={(v) => setTargetX(v)} />
           </div>
 
           {/* Result */}

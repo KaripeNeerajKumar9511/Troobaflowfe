@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, useRef, type ReactNode, useCallback } from 'react';
 import { apiFetch, resolveApiUrl, AUTH_PROFILE, AUTH_LOGIN, AUTH_SIGNUP, AUTH_LOGOUT } from '@/lib/api';
+import { useUserLevelStore } from '@/hooks/useUserLevel';
 import { toast } from 'sonner';
 
 export interface AuthUser {
@@ -34,14 +35,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const res = await fetch(resolveApiUrl(AUTH_PROFILE), { credentials: 'include' });
       if (!res.ok) {
         setUser(null);
+        useUserLevelStore.getState().clearPersistedUserLevel();
         return;
       }
       const d = await res.json();
       // Anonymous: { authenticated: false }; logged-in adds email + authenticated true
       if (!d.authenticated || d.error || !d.email) {
         setUser(null);
+        useUserLevelStore.getState().clearPersistedUserLevel();
         return;
       }
+      const userLevelNum = typeof d.user_level === 'number' ? d.user_level : 1;
+      useUserLevelStore.getState().syncFromProfileNumber(userLevelNum);
       setUser({
         id: d.id ?? 0,
         email: d.email,
@@ -49,10 +54,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         organization_id: d.organization_id ?? null,
         organization_name: d.organization_name ?? null,
         role: d.role || 'user',
-        user_level: d.user_level ?? 1,
+        user_level: userLevelNum,
       });
     } catch {
       setUser(null);
+      useUserLevelStore.getState().clearPersistedUserLevel();
     }
   }, []);
 
@@ -104,6 +110,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     hadUser.current = false;
     await apiFetch(AUTH_LOGOUT, { method: 'POST', body: '{}' });
     setUser(null);
+    useUserLevelStore.getState().clearPersistedUserLevel();
   };
 
   const resetPassword = async (_email: string) => {

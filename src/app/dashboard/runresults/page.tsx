@@ -7,7 +7,7 @@ import { useModelStore, type Model } from '@/stores/modelStore';
 import { useScenarioStore } from '@/stores/scenarioStore';
 import { useResultsStore } from '@/stores/resultsStore';
 import { getScenarioColor } from '@/lib/scenarioColors';
-import { type CalcResults, type ProductResult, type EquipmentResult, type LaborResult, calculate } from '@/lib/calculationEngine';
+import { type CalcResults, type ProductResult, type EquipmentResult, type LaborResult, calculate, isUtilOnlyCalcResults } from '@/lib/calculationEngine';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../../../components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '../../../components/ui/button';
@@ -27,18 +27,27 @@ import {
   Play, CheckCircle, AlertTriangle, Shield, XCircle, RotateCcw, Network, Gauge, RefreshCw, Clock,
   TrendingUp, BarChart3, Settings2, Square, ChevronRight, ToggleLeft, Layers,
 } from 'lucide-react';
-import IBOMOutput, { MCT_COLORS, TreeChart, TreeTable, PolesChart, PolesTable, MCTLegend, ZoomSelect, buildNodeTree, buildPoles } from '@/components/IBOMOutput';
+import IBOMOutput, { MCT_COLORS, TreeChart, TreeTable, PolesChart, PolesTable, MCTLegend, buildNodeTree, buildPoles } from '@/components/IBOMOutput';
 import { toast } from 'sonner';
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend,
   ResponsiveContainer, ReferenceLine,
 } from 'recharts';
 import { useRunCalculation, type RunMode } from '@/hooks/useRunCalculation';
+import { useRunIssueBannerDismiss, type RunIssueDismissPersist } from '@/hooks/useRunIssueBannerDismiss';
+import {
+  RunResultsIssueBanners,
+  RunResultsIssuesDialog,
+  hasAnyIssueMessages,
+} from '@/components/run/RunResultsIssueBanners';
+import { ProductGroupSummaryTable } from '@/components/run/ProductGroupSummaryTable';
 import { useUserLevelStore, isVisible } from '@/hooks/useUserLevel';
 import { scenarioDb } from '@/lib/scenarioDb';
 import ScenarioContextBar from '@/components/ScenarioContextBar';
 import ChartScenarioLabel from '@/components/ChartScenarioLabel';
+import { RechartsTooltipWithTotal } from '@/components/charts/RechartsTooltipWithTotal';
 import { NoModelSelected } from '@/components/NoModelSelected';
+import { NonNegativeNumericInput } from '@/components/NonNegativeNumericInput';
 
 // ── Scenario color palettes for grouped charts ──
 const SCENARIO_PALETTES = [
@@ -149,6 +158,14 @@ const asNum = (v: unknown, fallback = 0) => {
   return Number.isFinite(n) ? n : fallback;
 };
 
+const roundHalfUp = (v: unknown, digits: number): number => {
+  const n = asNum(v);
+  const f = 10 ** digits;
+  return Math.round((n + Number.EPSILON) * f) / f;
+};
+
+const fmtRound = (v: unknown, digits: number): string => roundHalfUp(v, digits).toFixed(digits);
+
 /* ─── Sortable Table Header ─── */
 function SortHead({ label, sortKey, current, onSort, align = 'right' }: {
   label: string; sortKey: string; current: { key: string; dir: SortDir };
@@ -175,23 +192,32 @@ function SortHead({ label, sortKey, current, onSort, align = 'right' }: {
 /* ─── Production Chart Data Builder ─── */
 function buildProductionData(results: CalcResults, model: any) {
   return results.products.map(pr => {
-    const usedInAssembly = model.ibom
-      .filter((e: any) => e.component_product_id === pr.id)
-      .reduce((sum: number, e: any) => {
-        const parent = results.products.find((p: any) => p.id === e.parent_product_id);
-        return sum + (parent ? parent.goodMade * (e.units_per_assy || 1) : 0);
-      }, 0);
-    const isComponent = model.ibom.some((e: any) => e.component_product_id === pr.id);
-    const shipped = isComponent ? 0 : pr.goodShipped;
-    const isParent = model.ibom.some((e: any) => e.parent_product_id === pr.id);
-    const shippedInAssembly = isParent ? pr.goodShipped : 0;
-    const scrapInProd = pr.scrap;
-    const total = shipped + usedInAssembly + shippedInAssembly + scrapInProd;
+    // Use DLL/backend result fields only (no frontend IBOM-derived math).
+    const anyPr = pr as any;
+    const totalGoodProd = asNum(anyPr.totalGoodProd ?? anyPr.total_good_prod ?? anyPr.goodMade, asNum(pr.goodMade));
+    const shipped = asNum(
+      anyPr.shippedProduction ?? anyPr.shippedProd ?? anyPr.shipped,
+      asNum(pr.goodShipped),
+    );
+    const scrappedInAssembly = asNum(
+      anyPr.scrappedInAssembly ?? anyPr.scrapInAssembly ?? anyPr.ScrapInAsm ?? anyPr.scrappedInAssy ?? anyPr.scrapInAssy ?? anyPr.ScarpInAsm ?? anyPr.scrapped_in_assembly ?? anyPr.scrap_in_assembly,
+      0,
+    );
+    // Per requirement: Used in Assembly = TotalGoodProd - ScarpInAsm.
+    const usedInAssembly = Math.max(0, totalGoodProd - scrappedInAssembly);
+    const scrapInProd = asNum(
+      anyPr.scrapInProduction ?? anyPr.scrap_in_production,
+      asNum(pr.scrap),
+    );
+    const total = asNum(
+      anyPr.totalProduction ?? anyPr.total_production ?? anyPr.total,
+      shipped + usedInAssembly + scrappedInAssembly + scrapInProd,
+    );
     return {
       name: pr.name,
       shipped: Math.round(shipped),
       usedInAssembly: Math.round(usedInAssembly),
-      shippedInAssembly: Math.round(shippedInAssembly),
+      scrappedInAssembly: Math.round(scrappedInAssembly),
       scrapInProduction: Math.round(scrapInProd),
       total: Math.round(total),
     };
@@ -397,9 +423,8 @@ function buildOperMetrics(model: Model, results: CalcResults): OperMetric[] {
     const pr = results.products.find(p => p.id === op.product_id);
     const er = eq ? results.equipment.find(e => e.id === eq.id) : null;
     const lab = eq ? model.labor.find(l => l.id === eq.labor_group_id) : null;
-    if (!prod || !pr || !eq) return null;
-    const demand = pr.demand;
-    if (demand <= 0) return null;
+    if (!prod || !eq) return null;
+    const demand = pr?.demand ?? prod.demand ?? 0;
 
     const lotSize = Math.max(1, prod.lot_size * (prod.lot_factor || 1));
     const tbatchRaw = prod.tbatch_size === -1 ? lotSize : Math.max(1, prod.tbatch_size);
@@ -416,7 +441,7 @@ function buildOperMetrics(model: Model, results: CalcResults): OperMetric[] {
 
     // Raw time accumulators (for time-unit display only)
     const demand_inflated = demand;
-    const numLots = (demand_inflated / lotSize) * assignFrac;
+    const numLots = demand > 0 ? (demand_inflated / lotSize) * assignFrac : 0;
     const eqSetupTime = numLots * (
       (op.equip_setup_lot || 0)
       + (op.equip_setup_tbatch || 0) * nb
@@ -469,7 +494,7 @@ function buildOperMetrics(model: Model, results: CalcResults): OperMetric[] {
       : (labRunUtilMap[lab?.id || ''] || 0);
 
     const allOpsForProd = model.operations.filter((o: any) => o.product_id === op.product_id);
-    const wipShare = oprResult ? Number(oprResult.qpoper || 0) : (pr.wip / Math.max(1, allOpsForProd.length));
+    const wipShare = oprResult ? Number(oprResult.qpoper || 0) : ((pr?.wip ?? 0) / Math.max(1, allOpsForProd.length));
 
     // MCT at op: use engine flowtime if available, else approximate
     const mctAtOp = oprResult
@@ -534,9 +559,14 @@ export default function RunResults() {
   const { getResults } = useResultsStore();
   const selectedRunScenarioId = useResultsStore(s => s.selectedRunScenarioId);
   const setSelectedRunScenarioId = useResultsStore(s => s.setSelectedRunScenarioId);
-  const { userLevel } = useUserLevelStore();
+  const { userLevel, loading, fetchUserLevel } = useUserLevelStore();
 
-  const { isRunning, runLog, verifyMessages, handleRun } = useRunCalculation();
+  useEffect(() => {
+    if (loading) fetchUserLevel();
+  }, [loading, fetchUserLevel]);
+
+  const { isRunning, runLog, verifyMessages, showIssueBanners, handleRun } = useRunCalculation();
+  const [issuesDialogOpen, setIssuesDialogOpen] = useState(false);
 
   const [extRunMode, setExtRunMode] = useState<ExtendedRunMode>('full');
   const runMode: RunMode = (extRunMode === 'full' || extRunMode === 'verify' || extRunMode === 'util_only') ? extRunMode : 'full';
@@ -588,6 +618,18 @@ export default function RunResults() {
   const basecaseResults = getResults('basecase');
   const hasRun = !!results;
 
+  // Tie dismiss persistence to results.calculatedAt only (not last_run_at — formats differ and
+  // last_run can update without changing saved results). Pending until results hydrate after refresh.
+  const resultsStamp =
+    (results?.calculatedAt || (model ? `pending:${resultKey}` : '')) as string;
+  const issueDismissPersist = useMemo((): RunIssueDismissPersist | null => {
+    if (!model) return null;
+    return { modelId: model.id, resultKey, resultsStamp };
+  }, [model, resultKey, resultsStamp]);
+
+  const { dismissed: dismissedIssueBanners, dismiss: dismissIssueBanner, clearDismiss } =
+    useRunIssueBannerDismiss(runLog, issueDismissPersist);
+
   const chartScenarios: ScenarioEntry[] = useMemo(() => {
     const entries: ScenarioEntry[] = [];
     if (basecaseResults) entries.push({ id: 'basecase', name: 'Basecase', results: basecaseResults });
@@ -630,10 +672,10 @@ export default function RunResults() {
   const [laborSubTab, setLaborSubTab]   = useState('util-chart');
   const [productsSubTab, setProductsSubTab] = useState('mct-chart');
   const [ibomSubTab, setIbomSubTab]     = useState('tree-chart');
-  const [ibomZoom, setIbomZoom]         = useState(100);
 
   const lastRunMode = runLog.length > 0 ? runLog[0].mode : null;
-  const isUtilOnly = lastRunMode === 'util_only';
+  const isUtilOnly = lastRunMode === 'util_only' || isUtilOnlyCalcResults(results);
+  const validationOnlyPanel = lastRunMode === 'verify';
 
   const prevRunLogLenRef = useRef(runLog.length);
   const wasViewingTabRef = useRef(activeTab);
@@ -643,7 +685,6 @@ export default function RunResults() {
       const latest = runLog[0];
       if (latest && latest.mode === 'full' && latest.status !== 'error') {
         if (wasViewingTabRef.current === 'summary') setActiveTab('summary');
-        else toast.success('Results updated', { duration: 2000 });
       }
     }
     prevRunLogLenRef.current = runLog.length;
@@ -659,6 +700,12 @@ export default function RunResults() {
 
   const lastRunText = model.last_run_at ? `Last run: ${new Date(model.last_run_at).toLocaleString()}` : 'Never run';
 
+  const canShowIssueBanners =
+    showIssueBanners &&
+    !isRunning &&
+    !advRunning &&
+    hasAnyIssueMessages(results, verifyMessages, { validationOnly: validationOnlyPanel });
+
   return (
     <div className="h-full flex flex-col overflow-hidden animate-fade-in">
       {/* ── Page Header Row ── */}
@@ -673,22 +720,48 @@ export default function RunResults() {
       </div>
 
       {/* ── Run Control Bar ── */}
-      <div className="h-[52px] shrink-0 flex items-center gap-3 py-2 bg-slate-100/80 border border-slate-200 rounded-lg px-4 mb-6">
-        <Button size="sm" className="h-9 gap-1.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => handleRun('full')} disabled={isRunning || advRunning}>
+      <div className="min-h-[52px] h-auto shrink-0 flex flex-wrap items-center gap-2 md:gap-3 py-2 bg-slate-100/80 border border-slate-200 rounded-lg px-3 md:px-4 mb-6">
+        <Button
+          size="sm"
+          className="h-9 gap-1.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white"
+          onClick={() => {
+            clearDismiss();
+            handleRun('full');
+          }}
+          disabled={isRunning || advRunning}
+        >
           {isRunning || advRunning ? (
             <><span className="animate-spin h-3.5 w-3.5 border-2 border-primary-foreground border-t-transparent rounded-full" /> Running…</>
           ) : (
             <><Play className="h-3.5 w-3.5" /> Full Calculate</>
           )}
         </Button>
-        <Button size="sm" variant="outline" className="h-9 gap-1.5 px-3 border-emerald-200 text-emerald-700 hover:bg-emerald-50" onClick={() => handleRun('verify')} disabled={isRunning || advRunning}>
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-9 gap-1.5 px-3 border-emerald-200 text-emerald-700 hover:bg-emerald-50"
+          onClick={() => {
+            clearDismiss('validations');
+            handleRun('verify');
+          }}
+          disabled={isRunning || advRunning}
+        >
           <CheckCircle className="h-3.5 w-3.5" /> Verify Data
         </Button>
         {isVisible('calculate_util_only', userLevel) && (
           <TooltipProvider>
             <ShadTooltip>
               <TooltipTrigger asChild>
-                <Button size="sm" variant="outline" className="h-9 gap-1.5 px-3" onClick={() => handleRun('util_only')} disabled={isRunning || advRunning}>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-9 gap-1.5 px-3"
+                  onClick={() => {
+                    clearDismiss();
+                    handleRun('util_only');
+                  }}
+                  disabled={isRunning || advRunning}
+                >
                   <Gauge className="h-3.5 w-3.5" /> Calc. Util Only
                 </Button>
               </TooltipTrigger>
@@ -761,6 +834,34 @@ export default function RunResults() {
           </Select>
         </div>
         <div className="flex-1" />
+        <RunResultsIssuesDialog
+          open={issuesDialogOpen}
+          onOpenChange={setIssuesDialogOpen}
+          results={results}
+          validationMessages={verifyMessages}
+          validationOnly={validationOnlyPanel}
+        />
+        {canShowIssueBanners && (
+          <TooltipProvider>
+            <ShadTooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="h-8 w-8 shrink-0 border-amber-300 text-amber-800 bg-amber-50 hover:bg-amber-100"
+                  onClick={() => setIssuesDialogOpen(true)}
+                  aria-label="View errors and warnings"
+                >
+                  <AlertTriangle className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="text-xs">
+                View errors and warnings from the latest run
+              </TooltipContent>
+            </ShadTooltip>
+          </TooltipProvider>
+        )}
         <Badge variant="outline" className={`gap-1.5 text-xs font-medium ${statusChip.color}`}>
           {statusChip.icon}{statusChip.label}
         </Badge>
@@ -781,41 +882,23 @@ export default function RunResults() {
       </div>
 
       {/* ── Content Panel ── */}
-      <div className="flex-1 overflow-y-auto px-6 py-4 bg-white">
-        {results && results.overLimitResources.length > 0 && (
-          <div className="mb-4 p-3 bg-destructive/10 border border-destructive/30 rounded-md">
-            <div className="flex items-center gap-2 mb-2">
-              <AlertTriangle className="h-4 w-4 text-destructive" />
-              <span className="text-sm text-destructive font-semibold">Resources exceed utilization limit ({model.general.util_limit}%)</span>
-            </div>
-            <ul className="text-xs text-destructive/80 space-y-0.5 ml-6 list-disc">
-              {results.overLimitResources.map((r, i) => <li key={i}>{r}</li>)}
-            </ul>
-          </div>
-        )}
-        {results && results.errors.length > 0 && (
-          <div className="mb-4 p-3 bg-destructive/10 border border-destructive/30 rounded-md">
-            <div className="flex items-center gap-2"><XCircle className="h-4 w-4 text-destructive" /><span className="text-sm text-destructive font-semibold">Errors</span></div>
-            <ul className="text-xs text-destructive/80 space-y-0.5 ml-6 list-disc mt-1">
-              {results.errors.map((e, i) => <li key={i}>{e}</li>)}
-            </ul>
-          </div>
-        )}
-        {verifyMessages && (
-          <div className="mb-4 space-y-2">
-            {verifyMessages.errors.map((e, i) => <div key={i} className="flex items-center gap-2 text-xs text-destructive"><XCircle className="h-3.5 w-3.5" /> {e}</div>)}
-            {verifyMessages.warnings.map((w, i) => <div key={i} className="flex items-center gap-2 text-xs text-warning"><AlertTriangle className="h-3.5 w-3.5" /> {w}</div>)}
-            {verifyMessages.errors.length === 0 && verifyMessages.warnings.length === 0 && (
-              <div className="flex items-center gap-2 text-xs text-success"><CheckCircle className="h-3.5 w-3.5" /> No issues found.</div>
-            )}
-          </div>
+      <div className="flex-1 overflow-y-auto overflow-x-auto px-3 md:px-4 lg:px-6 py-4 bg-white">
+        {showIssueBanners && !isRunning && !advRunning && (
+          <RunResultsIssueBanners
+            results={results}
+            validationMessages={verifyMessages}
+            validationOnly={validationOnlyPanel}
+            dismissed={dismissedIssueBanners}
+            onDismiss={dismissIssueBanner}
+          />
         )}
 
         {/* ── Summary Tab ── */}
         {activeTab === 'summary' && (
           <>
             <ScenarioContextBar />
-            <div className="grid grid-cols-4 gap-4 mb-6">
+            {!isUtilOnly && (
+            <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-4 gap-3 md:gap-4 mb-6">
               <QuickStatCard label="Most loaded equipment"
                 value={results ? ([...results.equipment].sort((a,b) => b.totalUtil - a.totalUtil)[0]?.name ?? '—') : '—'}
                 metric={results ? (() => { const top = [...results.equipment].sort((a, b) => b.totalUtil - a.totalUtil)[0]; return top?.totalUtil != null ? top.totalUtil.toFixed(1) + '%' : ''; })() : ''} />
@@ -829,9 +912,16 @@ export default function RunResults() {
                 value={results ? Math.round(results.products.reduce((s,p) => s+p.wip,0)).toLocaleString() : '—'}
                 metric={results ? 'pieces' : ''} />
             </div>
+            )}
             {!hasRun ? <NoResultsPlaceholder /> : (
               <>
-                {results && results.overLimitResources.length === 0 && results.errors.length === 0 && (
+                {isUtilOnly && (
+                  <UtilOnlyBanner message="Utilization-only run: production counts are shown below. MCT and WIP are zero until you run Full Calculate." />
+                )}
+                {!isUtilOnly && results &&
+                  results.overLimitResources.length === 0 &&
+                  results.errors.length === 0 &&
+                  (results.warnings?.length ?? 0) === 0 && (
                   <div className="flex items-center gap-2 p-4 mb-6 bg-emerald-50 border border-emerald-200 rounded-lg">
                     <CheckCircle className="h-5 w-5 text-emerald-500 shrink-0" />
                     <span className="text-sm font-medium text-emerald-600">All production targets can be achieved. Results are current.</span>
@@ -853,8 +943,8 @@ export default function RunResults() {
                   </CardHeader>
                   <CardContent className="p-0 overflow-x-auto">
                     {transposed
-                      ? <TransposedSummary results={results!} model={model} scenarioResults={displayScenarioResults} />
-                      : <NormalSummary results={results!} model={model} scenarioResults={displayScenarioResults} />}
+                      ? <TransposedSummary results={results!} model={model} scenarioResults={displayScenarioResults} isUtilOnly={isUtilOnly} />
+                      : <NormalSummary results={results!} model={model} scenarioResults={displayScenarioResults} isUtilOnly={isUtilOnly} />}
                   </CardContent>
                 </Card>
               </>
@@ -865,7 +955,7 @@ export default function RunResults() {
         {/* ── Equipment Tab ── */}
         {activeTab === 'equipment' && (!hasRun ? <NoResultsPlaceholder /> : (
           <div className="flex flex-col h-full">
-            <div className="flex h-8 items-center gap-0 border-b border-border/50 -mx-6 px-6 mb-6 shrink-0">
+            <div className="flex h-8 items-center gap-0 border-b border-border/50 -mx-3 md:-mx-4 lg:-mx-6 px-3 md:px-4 lg:px-6 mb-6 shrink-0 overflow-x-auto">
               {([
                 { key: 'util-chart', label: 'Util Chart' },
                 { key: 'results-table', label: 'Results Table' },
@@ -894,7 +984,7 @@ export default function RunResults() {
                         <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                         <XAxis dataKey="name" tick={axisStyle} stroke="hsl(var(--muted-foreground))" />
                         <YAxis domain={[0, 100]} tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" label={{ value: '% Utilization', angle: -90, position: 'insideLeft', style: { fontSize: 11 } }} />
-                        <Tooltip contentStyle={tooltipStyle} /><Legend wrapperStyle={{ fontSize: 11 }} />
+                        <Tooltip content={<RechartsTooltipWithTotal />} /><Legend wrapperStyle={{ fontSize: 11 }} />
                         <ReferenceLine y={model.general.util_limit} stroke="hsl(0, 72%, 51%)" strokeDasharray="5 5" label={{ value: `Limit ${model.general.util_limit}%`, position: 'right', style: { fontSize: 10, fill: 'hsl(0, 72%, 51%)' } }} />
                         {groupedEquip.bars.map(b => <Bar key={b.prefix+'setup'} dataKey={b.prefix+'setup'} stackId={b.stackId} fill={b.palette.setup} name={`${b.name} Setup`} />)}
                         {groupedEquip.bars.map(b => <Bar key={b.prefix+'run'} dataKey={b.prefix+'run'} stackId={b.stackId} fill={b.palette.run} name={`${b.name} Run`} />)}
@@ -906,7 +996,7 @@ export default function RunResults() {
                         <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                         <XAxis dataKey="name" tick={axisStyle} stroke="hsl(var(--muted-foreground))" />
                         <YAxis domain={[0, 100]} tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" label={{ value: '% Utilization', angle: -90, position: 'insideLeft', style: { fontSize: 11 } }} />
-                        <Tooltip contentStyle={tooltipStyle} /><Legend wrapperStyle={{ fontSize: 11 }} />
+                        <Tooltip content={<RechartsTooltipWithTotal />} /><Legend wrapperStyle={{ fontSize: 11 }} />
                         <ReferenceLine y={model.general.util_limit} stroke="hsl(0, 72%, 51%)" strokeDasharray="5 5" label={{ value: `Limit ${model.general.util_limit}%`, position: 'right', style: { fontSize: 10, fill: 'hsl(0, 72%, 51%)' } }} />
                         <Bar dataKey="setup" stackId="a" fill={chartColors.setup} name="Setup" />
                         <Bar dataKey="run" stackId="a" fill={chartColors.run} name="Run" />
@@ -929,7 +1019,7 @@ export default function RunResults() {
         {/* ── Labor Tab ── */}
         {activeTab === 'labor' && (!hasRun ? <NoResultsPlaceholder /> : (
           <div className="flex flex-col h-full">
-            <div className="flex h-8 items-center gap-0 border-b border-border/50 -mx-6 px-6 mb-6 shrink-0">
+            <div className="flex h-8 items-center gap-0 border-b border-border/50 -mx-3 md:-mx-4 lg:-mx-6 px-3 md:px-4 lg:px-6 mb-6 shrink-0 overflow-x-auto">
               {([
                 { key: 'util-chart', label: 'Util Chart' },
                 { key: 'results-table', label: 'Results Table' },
@@ -958,7 +1048,7 @@ export default function RunResults() {
                         <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                         <XAxis dataKey="name" tick={axisStyle} stroke="hsl(var(--muted-foreground))" />
                         <YAxis domain={[0, 100]} tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" />
-                        <Tooltip contentStyle={tooltipStyle} /><Legend wrapperStyle={{ fontSize: 11 }} />
+                        <Tooltip content={<RechartsTooltipWithTotal />} /><Legend wrapperStyle={{ fontSize: 11 }} />
                         <ReferenceLine y={model.general.util_limit} stroke="hsl(0, 72%, 51%)" strokeDasharray="5 5" />
                         {groupedLabor.bars.map(b => <Bar key={b.prefix+'setup'} dataKey={b.prefix+'setup'} stackId={b.stackId} fill={b.palette.setup} name={`${b.name} Setup`} />)}
                         {groupedLabor.bars.map(b => <Bar key={b.prefix+'run'} dataKey={b.prefix+'run'} stackId={b.stackId} fill={b.palette.run} name={`${b.name} Run`} />)}
@@ -969,7 +1059,7 @@ export default function RunResults() {
                         <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                         <XAxis dataKey="name" tick={axisStyle} stroke="hsl(var(--muted-foreground))" />
                         <YAxis domain={[0, 100]} tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" />
-                        <Tooltip contentStyle={tooltipStyle} /><Legend wrapperStyle={{ fontSize: 11 }} />
+                        <Tooltip content={<RechartsTooltipWithTotal />} /><Legend wrapperStyle={{ fontSize: 11 }} />
                         <ReferenceLine y={model.general.util_limit} stroke="hsl(0, 72%, 51%)" strokeDasharray="5 5" />
                         <Bar dataKey="setup" stackId="a" fill={chartColors.setup} name="Setup" />
                         <Bar dataKey="run" stackId="a" fill={chartColors.run} name="Run" />
@@ -996,7 +1086,7 @@ export default function RunResults() {
         {/* ── Products Tab ── */}
         {activeTab === 'products' && (!hasRun ? <NoResultsPlaceholder /> : (
           <div className="flex flex-col h-full">
-            <div className="flex h-8 items-center gap-0 border-b border-border/50 -mx-6 px-6 mb-6 shrink-0">
+            <div className="flex h-8 items-center gap-0 border-b border-border/50 -mx-3 md:-mx-4 lg:-mx-6 px-3 md:px-4 lg:px-6 mb-6 shrink-0 overflow-x-auto">
               {([
                 { key: 'mct-chart', label: 'MCT Chart' },
                 { key: 'results-table', label: 'Results Table' },
@@ -1028,7 +1118,7 @@ export default function RunResults() {
                           <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                           <XAxis dataKey="name" tick={axisStyle} stroke="hsl(var(--muted-foreground))" />
                           <YAxis tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" label={{ value: `MCT (${model.general.mct_time_unit})`, angle: -90, position: 'insideLeft', style: { fontSize: 11 } }} />
-                          <Tooltip contentStyle={tooltipStyle} /><Legend wrapperStyle={{ fontSize: 11 }} />
+                          <Tooltip content={<RechartsTooltipWithTotal />} /><Legend wrapperStyle={{ fontSize: 11 }} />
                           {groupedMCT.bars.map(b => <Bar key={b.prefix+'lotWait'}  dataKey={b.prefix+'lotWait'}  stackId={b.stackId} fill={b.palette.lotWait}   name={`${b.name} Lot Wait`} />)}
                           {groupedMCT.bars.map(b => <Bar key={b.prefix+'queue'}    dataKey={b.prefix+'queue'}    stackId={b.stackId} fill={b.palette.queue}     name={`${b.name} Queue`} />)}
                           {groupedMCT.bars.map(b => <Bar key={b.prefix+'waitLabor'} dataKey={b.prefix+'waitLabor'} stackId={b.stackId} fill={b.palette.waitLabor} name={`${b.name} Wait Labor`} />)}
@@ -1040,7 +1130,7 @@ export default function RunResults() {
                           <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                           <XAxis dataKey="name" tick={axisStyle} stroke="hsl(var(--muted-foreground))" />
                           <YAxis tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" label={{ value: `MCT (${model.general.mct_time_unit})`, angle: -90, position: 'insideLeft', style: { fontSize: 11 } }} />
-                          <Tooltip contentStyle={tooltipStyle} /><Legend wrapperStyle={{ fontSize: 11 }} />
+                          <Tooltip content={<RechartsTooltipWithTotal />} /><Legend wrapperStyle={{ fontSize: 11 }} />
                           <Bar dataKey="lotWait" stackId="a" fill={chartColors.lotWait} name="Wait for Lot" />
                           <Bar dataKey="queue" stackId="a" fill={chartColors.queue} name="Wait for Equipment" />
                           <Bar dataKey="waitLabor" stackId="a" fill={chartColors.waitLabor} name="Wait for Labor" />
@@ -1053,7 +1143,14 @@ export default function RunResults() {
                 </Card>
               </>
             )}
-            {productsSubTab === 'results-table' && <ProductResultsTable results={results!} model={model} displayScenarioResults={displayScenarioResults} />}
+            {productsSubTab === 'results-table' && (
+              <>
+                {isUtilOnly && (
+                  <UtilOnlyBanner message="Production counts from Calc. Util Only. MCT and WIP are zero until you run Full Calculate." />
+                )}
+                <ProductResultsTable results={results!} model={model} displayScenarioResults={displayScenarioResults} isUtilOnly={isUtilOnly} />
+              </>
+            )}
             {productsSubTab === 'production-chart' && <ProductionChart results={results!} model={model} isMultiScenario={isMultiScenario} chartScenarios={chartScenarios} />}
             {productsSubTab === 'wip-chart' && (
               <>
@@ -1068,7 +1165,7 @@ export default function RunResults() {
                           <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                           <XAxis dataKey="name" tick={axisStyle} stroke="hsl(var(--muted-foreground))" />
                           <YAxis tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" label={{ value: 'WIP Units', angle: -90, position: 'insideLeft', style: { fontSize: 11 } }} />
-                          <Tooltip contentStyle={tooltipStyle} /><Legend wrapperStyle={{ fontSize: 11 }} />
+                          <Tooltip content={<RechartsTooltipWithTotal />} /><Legend wrapperStyle={{ fontSize: 11 }} />
                           {groupedWIP.bars.map(b => <Bar key={b.prefix+'wip'} dataKey={b.prefix+'wip'} fill={b.palette.single} name={`${b.name} WIP`} radius={[2,2,0,0]} />)}
                         </BarChart>
                       ) : (
@@ -1076,7 +1173,7 @@ export default function RunResults() {
                           <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                           <XAxis dataKey="name" tick={axisStyle} stroke="hsl(var(--muted-foreground))" />
                           <YAxis tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" label={{ value: 'WIP Units', angle: -90, position: 'insideLeft', style: { fontSize: 11 } }} />
-                          <Tooltip contentStyle={tooltipStyle} />
+                          <Tooltip content={<RechartsTooltipWithTotal />} />
                           <Bar dataKey="wip" fill={chartColors.setup} name="WIP" radius={[2,2,0,0]} />
                         </BarChart>
                       )}
@@ -1101,7 +1198,7 @@ export default function RunResults() {
             <IBOMTabContent model={model} results={results!} basecaseResults={basecaseResults}
               isRunning={isRunning} isUtilOnly={isUtilOnly}
               ibomSubTab={ibomSubTab} setIbomSubTab={setIbomSubTab}
-              ibomZoom={ibomZoom} setIbomZoom={setIbomZoom} />
+            />
           </>
         ))}
 
@@ -1179,10 +1276,10 @@ export default function RunResults() {
               </RadioGroup>
               {mtModalMode === 'lot_size_range' && (
                 <div className="ml-6 mt-2 space-y-3 p-3 bg-muted/40 rounded-md border border-border">
-                  <div className="grid grid-cols-3 gap-2">
-                    <div className="space-y-1"><Label className="text-xs">From lot size</Label><Input type="number" min={1} value={mtModalLsFrom} onChange={e => setMtModalLsFrom(Number(e.target.value))} /></div>
-                    <div className="space-y-1"><Label className="text-xs">To lot size</Label><Input type="number" min={1} value={mtModalLsTo} onChange={e => setMtModalLsTo(Number(e.target.value))} /></div>
-                    <div className="space-y-1"><Label className="text-xs">Step size</Label><Input type="number" min={1} value={mtModalLsStep} onChange={e => setMtModalLsStep(Number(e.target.value))} /></div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <div className="space-y-1"><Label className="text-xs">From lot size</Label><NonNegativeNumericInput value={mtModalLsFrom} onChange={(v) => setMtModalLsFrom(v)} /></div>
+                    <div className="space-y-1"><Label className="text-xs">To lot size</Label><NonNegativeNumericInput value={mtModalLsTo} onChange={(v) => setMtModalLsTo(v)} /></div>
+                    <div className="space-y-1"><Label className="text-xs">Step size</Label><NonNegativeNumericInput value={mtModalLsStep} onChange={(v) => setMtModalLsStep(v)} /></div>
                   </div>
                   <p className="text-xs text-muted-foreground">
                     Will run lot sizes: {(() => { const s: number[] = []; for (let x = mtModalLsFrom; x <= mtModalLsTo && s.length < 5; x += mtModalLsStep) s.push(x); return s.join(', ') + (mtModalLsTo > (mtModalLsFrom + mtModalLsStep * 4) ? '…' : '') + ' (one What-if per lot size)'; })()}
@@ -1265,7 +1362,7 @@ export default function RunResults() {
               <Label className="text-sm font-medium">What-if Name</Label>
               <Input value={olName} onChange={e => setOlName(e.target.value)} placeholder="Optimised Lot Sizes" />
             </div>
-            <div className="flex gap-4">
+            <div className="flex flex-col lg:flex-row gap-4">
               <div className="flex-1 border border-border rounded-md overflow-hidden">
                 <Table>
                   <TableHeader><TableRow>
@@ -1278,7 +1375,7 @@ export default function RunResults() {
                     {model?.products.map(p => (
                       <TableRow key={p.id}>
                         <TableCell className="text-sm py-1.5">{p.name}</TableCell>
-                        <TableCell className="py-1.5"><Input type="number" min={0} step={0.01} className="h-7 text-xs text-right w-24 ml-auto" value={olUnitValues[p.id] ?? 1} onChange={e => setOlUnitValues(prev => ({ ...prev, [p.id]: Number(e.target.value) }))} /></TableCell>
+                        <TableCell className="py-1.5"><NonNegativeNumericInput allowDecimal className="h-7 text-xs text-right w-24 ml-auto" value={olUnitValues[p.id] ?? 1} onChange={(v) => setOlUnitValues(prev => ({ ...prev, [p.id]: v }))} /></TableCell>
                         <TableCell className="text-center py-1.5"><Checkbox checked={olOptLot.has(p.id)} onCheckedChange={checked => { setOlOptLot(prev => { const n = new Set(prev); if (checked) n.add(p.id); else n.delete(p.id); return n; }); }} /></TableCell>
                         <TableCell className="text-center py-1.5"><Checkbox checked={olOptTb.has(p.id)} onCheckedChange={checked => { setOlOptTb(prev => { const n = new Set(prev); if (checked) n.add(p.id); else n.delete(p.id); return n; }); }} /></TableCell>
                       </TableRow>
@@ -1286,7 +1383,7 @@ export default function RunResults() {
                   </TableBody>
                 </Table>
               </div>
-              <div className="flex flex-col gap-2 shrink-0 w-44">
+              <div className="flex flex-col gap-2 shrink-0 w-full lg:w-44">
                 <Button size="sm" variant="outline" className="text-xs justify-start" onClick={() => setOlOptLot(new Set(model?.products.map(p => p.id) || []))}>Select All Lot Sizes</Button>
                 <Button size="sm" variant="outline" className="text-xs justify-start" onClick={() => setOlOptLot(new Set())}>Deselect All Lot Sizes</Button>
                 <Button size="sm" variant="outline" className="text-xs justify-start mt-2" onClick={() => setOlOptTb(new Set(model?.products.map(p => p.id) || []))}>Select All Transfer Batches</Button>
@@ -1370,9 +1467,9 @@ function UtilOnlyBanner({ message }: { message?: string }) {
 }
 
 /* ─── IBOM Tab Content ─── */
-function IBOMTabContent({ model, results, basecaseResults, isRunning, isUtilOnly, ibomSubTab, setIbomSubTab, ibomZoom, setIbomZoom }: {
+function IBOMTabContent({ model, results, basecaseResults, isRunning, isUtilOnly, ibomSubTab, setIbomSubTab }: {
   model: Model; results: CalcResults; basecaseResults: CalcResults | undefined; isRunning: boolean; isUtilOnly: boolean;
-  ibomSubTab: string; setIbomSubTab: (t: string) => void; ibomZoom: number; setIbomZoom: (z: number) => void;
+  ibomSubTab: string; setIbomSubTab: (t: string) => void;
 }) {
   const allScenarios = useScenarioStore(s => s.scenarios);
   const modelScenarios = allScenarios.filter(s => s.modelId === model.id);
@@ -1407,11 +1504,10 @@ function IBOMTabContent({ model, results, basecaseResults, isRunning, isUtilOnly
   const hasChildren = model.ibom.some(e => e.parent_product_id === selectedProductId);
   const tree = hasChildren ? buildNodeTree(model, ibomResults, selectedProductId, 0, new Set()) : null;
   const poles = tree ? buildPoles(tree) : [];
-  const showZoom = ibomSubTab === 'tree-chart' || ibomSubTab === 'poles-chart';
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex h-8 items-center gap-0 border-b border-border/50 -mx-6 px-6 mb-0 shrink-0">
+      <div className="flex h-8 items-center gap-0 border-b border-border/50 -mx-3 md:-mx-4 lg:-mx-6 px-3 md:px-4 lg:px-6 mb-0 shrink-0 overflow-x-auto">
         {([{ key: 'tree-chart', label: 'Tree Chart' }, { key: 'tree-table', label: 'Tree Table' }, { key: 'poles-chart', label: 'Poles Chart' }, { key: 'poles-table', label: 'Poles Table' }] as const).map(st => (
           <button key={st.key} onClick={() => setIbomSubTab(st.key)}
             className={`h-8 px-4 text-[13px] relative transition-colors ${ibomSubTab === st.key ? 'text-foreground font-medium' : 'text-muted-foreground hover:text-foreground'}`}>
@@ -1420,14 +1516,14 @@ function IBOMTabContent({ model, results, basecaseResults, isRunning, isUtilOnly
           </button>
         ))}
       </div>
-      <div className="flex items-center gap-3 py-3 -mx-6 px-6 border-b border-border/30 mb-4">
+      <div className="flex flex-wrap items-center gap-2 md:gap-3 py-3 -mx-3 md:-mx-4 lg:-mx-6 px-3 md:px-4 lg:px-6 border-b border-border/30 mb-4">
         <Select value={selectedProductId} onValueChange={setSelectedProductId}>
-          <SelectTrigger className="w-48 h-8 text-xs"><SelectValue placeholder="Select assembly..." /></SelectTrigger>
+          <SelectTrigger className="w-full sm:w-56 md:w-48 h-8 text-xs"><SelectValue placeholder="Select assembly..." /></SelectTrigger>
           <SelectContent>{finalAssemblies.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
         </Select>
         <div className="flex-1" />
         <Select value={scenarioId} onValueChange={setScenarioId}>
-          <SelectTrigger className="w-44 h-8 text-xs"><SelectValue /></SelectTrigger>
+          <SelectTrigger className="w-full sm:w-48 md:w-44 h-8 text-xs"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="basecase">Basecase</SelectItem>
             {runScenarios.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
@@ -1435,16 +1531,15 @@ function IBOMTabContent({ model, results, basecaseResults, isRunning, isUtilOnly
         </Select>
         <div className="flex-1" />
         <span className="text-sm font-medium text-primary whitespace-nowrap">{scenarioLabel}</span>
-        {showZoom && <ZoomSelect zoom={ibomZoom} setZoom={setIbomZoom} />}
       </div>
       {isUtilOnly && <UtilOnlyBanner message="IBOM MCT results require Full Calculate." />}
       {!tree ? (
         <div className="py-12 text-center"><p className="text-sm text-muted-foreground">This product has no components. Select a product with sub-assemblies to view the IBOM tree.</p></div>
       ) : (
         <>
-          {ibomSubTab === 'tree-chart'  && (<><TreeChart  model={model} results={ibomResults} tree={tree} mctUnit={mctUnit} zoom={ibomZoom} /><MCTLegend /></>)}
+          {ibomSubTab === 'tree-chart'  && (<><TreeChart  model={model} results={ibomResults} tree={tree} mctUnit={mctUnit} /><MCTLegend /></>)}
           {ibomSubTab === 'tree-table'  && <TreeTable  model={model} results={ibomResults} tree={tree} mctUnit={mctUnit} />}
-          {ibomSubTab === 'poles-chart' && (<><PolesChart model={model} poles={poles} mctUnit={mctUnit} zoom={ibomZoom} /><MCTLegend /></>)}
+          {ibomSubTab === 'poles-chart' && (<><PolesChart model={model} poles={poles} mctUnit={mctUnit} /><MCTLegend /></>)}
           {ibomSubTab === 'poles-table' && <PolesTable model={model} poles={poles} mctUnit={mctUnit} />}
         </>
       )}
@@ -1453,13 +1548,13 @@ function IBOMTabContent({ model, results, basecaseResults, isRunning, isUtilOnly
 }
 
 /* ─── Product Results Table ─── */
-function ProductResultsTable({ results, model, displayScenarioResults }: {
+function ProductResultsTable({ results, model, displayScenarioResults, isUtilOnly = false }: {
   results: CalcResults; model: any;
   displayScenarioResults: { id: string; scenario: any; results: CalcResults }[];
+  isUtilOnly?: boolean;
 }) {
   const { sorted, sort, handleSort } = useSortableTable(results.products, 'mct', 'desc');
   const hasScenarios = displayScenarioResults.length > 0;
-  console.log("hi");
   return (
     <Card>
       <CardHeader><CardTitle className="text-base">Product Results Table</CardTitle></CardHeader>
@@ -1490,15 +1585,15 @@ function ProductResultsTable({ results, model, displayScenarioResults }: {
                 <TableCell className="font-mono text-right">{row.goodShipped.toLocaleString()}</TableCell>
                 <TableCell className="font-mono text-right">{row.started.toLocaleString()}</TableCell>
                 <TableCell className="font-mono text-right">{row.scrap > 0 ? row.scrap.toLocaleString() : '—'}</TableCell>
-                <TableCell className="font-mono text-right">{row.wip}</TableCell>
-                <TableCell className="font-mono text-right font-medium">{row.mct.toFixed(4)}</TableCell>
+                <TableCell className="font-mono text-right">{fmtRound(isUtilOnly ? 0 : row.wip, 3)}</TableCell>
+                <TableCell className="font-mono text-right font-medium">{fmtRound(isUtilOnly ? 0 : row.mct, 3)}</TableCell>
                 {hasScenarios && displayScenarioResults.map(sr => {
                   const sp = sr.results.products.find((p: any) => p.id === row.id);
                   return (
                     <React.Fragment key={sr.id}>
-                      <TableCell className="font-mono text-right text-xs">{sp?.wip ?? '—'}</TableCell>
-                      <TableCell className={`font-mono text-right text-xs ${sp && sp.mct < row.mct ? 'text-success' : sp && sp.mct > row.mct ? 'text-destructive' : ''}`}>
-                        {sp?.mct.toFixed(4) || '—'}
+                      <TableCell className="font-mono text-right text-xs">{sp ? fmtRound(isUtilOnly ? 0 : sp.wip, 3) : '—'}</TableCell>
+                      <TableCell className={`font-mono text-right text-xs ${!isUtilOnly && sp && sp.mct < row.mct ? 'text-success' : !isUtilOnly && sp && sp.mct > row.mct ? 'text-destructive' : ''}`}>
+                        {sp ? fmtRound(isUtilOnly ? 0 : sp.mct, 3) : '—'}
                       </TableCell>
                     </React.Fragment>
                   );
@@ -1521,7 +1616,7 @@ function ProductOperDetails({ model, results }: { model: Model; results: CalcRes
   // BUG-E/F/D FIX: use shared corrected metrics builder
   const allMetrics = useMemo(() => buildOperMetrics(model, results), [model, results]);
 
-  const fmtVal = (pct: number, time: number) => showTimeUnits ? time.toFixed(3) : pct.toString();
+  const fmtVal = (pct: number, time: number) => showTimeUnits ? fmtRound(time, 2) : fmtRound(pct, 2);
   const unitSuffix = showTimeUnits ? ` (${g.ops_time_unit})` : ' %';
 
   const prodOps = useMemo(() => allMetrics.filter((m: any) => m.productId === selectedId), [allMetrics, selectedId]);
@@ -1534,7 +1629,7 @@ function ProductOperDetails({ model, results }: { model: Model; results: CalcRes
       <CardContent>
         <div className="flex items-center gap-3 mb-4">
           <Select value={selectedId} onValueChange={setSelectedId}>
-            <SelectTrigger className="w-56 h-8 text-xs"><SelectValue placeholder="Select product…" /></SelectTrigger>
+            <SelectTrigger className="w-full sm:w-64 md:w-56 h-8 text-xs"><SelectValue placeholder="Select product…" /></SelectTrigger>
             <SelectContent>{model.products.map((p: any) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
           </Select>
           <Button variant={showTimeUnits ? 'secondary' : 'outline'} size="sm" className="text-xs gap-1 h-7" onClick={() => setShowTimeUnits(!showTimeUnits)}>
@@ -1554,7 +1649,6 @@ function ProductOperDetails({ model, results }: { model: Model; results: CalcRes
                 <SortHead label={`Eq Setup${unitSuffix}`}   sortKey="eqSetupUtil"  current={prodSort.sort} onSort={prodSort.handleSort} />
                 <SortHead label={`Eq Run${unitSuffix}`}     sortKey="eqRunUtil"    current={prodSort.sort} onSort={prodSort.handleSort} />
                 <SortHead label={`Repair${unitSuffix}`}     sortKey="repairUtil"   current={prodSort.sort} onSort={prodSort.handleSort} />
-                <SortHead label={`Wait Labor${unitSuffix}`} sortKey="waitLaborUtil" current={prodSort.sort} onSort={prodSort.handleSort} />
                 <SortHead label={`Lab Setup${unitSuffix}`}  sortKey="labSetupUtil" current={prodSort.sort} onSort={prodSort.handleSort} />
                 <SortHead label={`Lab Run${unitSuffix}`}    sortKey="labRunUtil"   current={prodSort.sort} onSort={prodSort.handleSort} />
                 <SortHead label="Time waiting for equipment" sortKey="timeWaitingEquipment" current={prodSort.sort} onSort={prodSort.handleSort} />
@@ -1574,23 +1668,22 @@ function ProductOperDetails({ model, results }: { model: Model; results: CalcRes
                     <TableCell className="font-mono text-xs font-medium">{m.opName}</TableCell>
                     <TableCell className="font-mono text-xs">{m.equipName}</TableCell>
                     <TableCell className="font-mono text-xs">{m.laborName}</TableCell>
-                    <TableCell className="font-mono text-xs text-right">{m.pctAssigned}</TableCell>
+                    <TableCell className="font-mono text-xs text-right">{fmtRound(m.pctAssigned, 2)}</TableCell>
                     <TableCell className="font-mono text-xs text-right">{fmtVal(m.eqSetupUtil,  m.eqSetupTime)}</TableCell>
                     <TableCell className="font-mono text-xs text-right">{fmtVal(m.eqRunUtil,    m.eqRunTime)}</TableCell>
-                    <TableCell className="font-mono text-xs text-right">{m.repairUtil}</TableCell>
-                    <TableCell className="font-mono text-xs text-right">{m.waitLaborUtil}</TableCell>
+                    <TableCell className="font-mono text-xs text-right">{fmtRound(m.repairUtil, 2)}</TableCell>
                     <TableCell className="font-mono text-xs text-right">{fmtVal(m.labSetupUtil, m.labSetupTime)}</TableCell>
                     <TableCell className="font-mono text-xs text-right">{fmtVal(m.labRunUtil,   m.labRunTime)}</TableCell>
-                    <TableCell className="font-mono text-xs text-right">{m.timeWaitingEquipment.toFixed(4)}</TableCell>
-                    <TableCell className="font-mono text-xs text-right">{m.timeWaitingLabor.toFixed(4)}</TableCell>
-                    <TableCell className="font-mono text-xs text-right">{m.timeInSetup.toFixed(4)}</TableCell>
-                    <TableCell className="font-mono text-xs text-right">{m.timeInRun.toFixed(4)}</TableCell>
-                    <TableCell className="font-mono text-xs text-right">{m.timeWaitingRestOfLot.toFixed(4)}</TableCell>
-                    <TableCell className="font-mono text-xs text-right">{m.visitsPerGoodPiece.toFixed(4)}</TableCell>
-                    <TableCell className="font-mono text-xs text-right">{m.noOfSetups.toFixed(4)}</TableCell>
-                    <TableCell className="font-mono text-xs text-right">{m.avgLotSize.toFixed(4)}</TableCell>
-                    <TableCell className="font-mono text-xs text-right">{m.wip}</TableCell>
-                    <TableCell className="font-mono text-xs text-right">{m.mctAtOp.toFixed(4)}</TableCell>
+                    <TableCell className="font-mono text-xs text-right">{fmtRound(m.timeWaitingEquipment, 2)}</TableCell>
+                    <TableCell className="font-mono text-xs text-right">{fmtRound(m.timeWaitingLabor, 2)}</TableCell>
+                    <TableCell className="font-mono text-xs text-right">{fmtRound(m.timeInSetup, 2)}</TableCell>
+                    <TableCell className="font-mono text-xs text-right">{fmtRound(m.timeInRun, 2)}</TableCell>
+                    <TableCell className="font-mono text-xs text-right">{fmtRound(m.timeWaitingRestOfLot, 2)}</TableCell>
+                    <TableCell className="font-mono text-xs text-right">{fmtRound(m.visitsPerGoodPiece, 2)}</TableCell>
+                    <TableCell className="font-mono text-xs text-right">{fmtRound(m.noOfSetups, 2)}</TableCell>
+                    <TableCell className="font-mono text-xs text-right">{fmtRound(m.avgLotSize, 2)}</TableCell>
+                    <TableCell className="font-mono text-xs text-right">{fmtRound(m.wip, 2)}</TableCell>
+                    <TableCell className="font-mono text-xs text-right">{fmtRound(m.mctAtOp, 2)}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -1603,15 +1696,25 @@ function ProductOperDetails({ model, results }: { model: Model; results: CalcRes
 }
 
 /* ─── Equipment Oper Details ─── */
+function useRunDescriptionLabel(): string {
+  const selectedRunScenarioId = useResultsStore((s) => s.selectedRunScenarioId);
+  const scenarios = useScenarioStore((s) => s.scenarios);
+  return useMemo(() => {
+    if (!selectedRunScenarioId || selectedRunScenarioId === 'basecase') return 'Basecase';
+    return scenarios.find((s) => s.id === selectedRunScenarioId)?.name ?? 'Basecase';
+  }, [selectedRunScenarioId, scenarios]);
+}
+
 function EquipOperDetails({ model, results }: { model: Model; results: CalcResults }) {
   const [selectedId, setSelectedId] = useState('');
   const [showTimeUnits, setShowTimeUnits] = useState(false);
   const g = model.general;
+  const runDescription = useRunDescriptionLabel();
 
   // BUG-E/F/D FIX: use shared corrected metrics builder
   const allMetrics = useMemo(() => buildOperMetrics(model, results), [model, results]);
 
-  const fmtVal = (pct: number, time: number) => showTimeUnits ? time.toFixed(3) : pct.toString();
+  const fmtVal = (pct: number, time: number) => showTimeUnits ? fmtRound(time, 2) : fmtRound(pct, 2);
   const unitSuffix = showTimeUnits ? ` (${g.ops_time_unit})` : ' %';
 
   const eqOps = useMemo(() => allMetrics.filter((m: any) => m.equipId === selectedId), [allMetrics, selectedId]);
@@ -1624,7 +1727,7 @@ function EquipOperDetails({ model, results }: { model: Model; results: CalcResul
       <CardContent>
         <div className="flex items-center gap-3 mb-4">
           <Select value={selectedId} onValueChange={setSelectedId}>
-            <SelectTrigger className="w-56 h-8 text-xs"><SelectValue placeholder="Select equipment group…" /></SelectTrigger>
+            <SelectTrigger className="w-full sm:w-64 md:w-56 h-8 text-xs"><SelectValue placeholder="Select equipment group…" /></SelectTrigger>
             <SelectContent>{model.equipment.map(e => <SelectItem key={e.id} value={e.id}>{e.name}</SelectItem>)}</SelectContent>
           </Select>
           <Button variant={showTimeUnits ? 'secondary' : 'outline'} size="sm" className="text-xs gap-1 h-7" onClick={() => setShowTimeUnits(!showTimeUnits)}>
@@ -1634,6 +1737,7 @@ function EquipOperDetails({ model, results }: { model: Model; results: CalcResul
         {!eq ? (
           <p className="text-sm text-muted-foreground text-center py-8">Select an equipment group to view operation details.</p>
         ) : (
+          <>
           <div className="overflow-x-auto">
             <Table>
               <TableHeader><TableRow>
@@ -1643,8 +1747,6 @@ function EquipOperDetails({ model, results }: { model: Model; results: CalcResul
                 <SortHead label="% Assign"        sortKey="pctAssigned" current={eqSort.sort} onSort={eqSort.handleSort} />
                 <SortHead label={`Eq Setup${unitSuffix}`}   sortKey="eqSetupUtil"   current={eqSort.sort} onSort={eqSort.handleSort} />
                 <SortHead label={`Eq Run${unitSuffix}`}     sortKey="eqRunUtil"     current={eqSort.sort} onSort={eqSort.handleSort} />
-                <SortHead label={`Repair${unitSuffix}`}     sortKey="repairUtil"    current={eqSort.sort} onSort={eqSort.handleSort} />
-                <SortHead label={`Wait Labor${unitSuffix}`} sortKey="waitLaborUtil" current={eqSort.sort} onSort={eqSort.handleSort} />
                 <SortHead label={`Lab Setup${unitSuffix}`}  sortKey="labSetupUtil"  current={eqSort.sort} onSort={eqSort.handleSort} />
                 <SortHead label={`Lab Run${unitSuffix}`}    sortKey="labRunUtil"    current={eqSort.sort} onSort={eqSort.handleSort} />
                 <SortHead label="Time waiting for equipment" sortKey="timeWaitingEquipment" current={eqSort.sort} onSort={eqSort.handleSort} />
@@ -1665,29 +1767,35 @@ function EquipOperDetails({ model, results }: { model: Model; results: CalcResul
                     <TableCell className="font-mono text-xs">{m.productName}</TableCell>
                     <TableCell className="font-mono text-xs font-medium">{m.opName}</TableCell>
                     <TableCell className="font-mono text-xs text-right">{m.opNumber}</TableCell>
-                    <TableCell className="font-mono text-xs text-right">{m.pctAssigned}</TableCell>
+                    <TableCell className="font-mono text-xs text-right">{fmtRound(m.pctAssigned, 2)}</TableCell>
                     <TableCell className="font-mono text-xs text-right">{fmtVal(m.eqSetupUtil,  m.eqSetupTime)}</TableCell>
                     <TableCell className="font-mono text-xs text-right">{fmtVal(m.eqRunUtil,    m.eqRunTime)}</TableCell>
-                    <TableCell className="font-mono text-xs text-right">{m.repairUtil}</TableCell>
-                    <TableCell className="font-mono text-xs text-right">{m.waitLaborUtil}</TableCell>
                     <TableCell className="font-mono text-xs text-right">{fmtVal(m.labSetupUtil, m.labSetupTime)}</TableCell>
                     <TableCell className="font-mono text-xs text-right">{fmtVal(m.labRunUtil,   m.labRunTime)}</TableCell>
-                    <TableCell className="font-mono text-xs text-right">{m.timeWaitingEquipment.toFixed(4)}</TableCell>
-                    <TableCell className="font-mono text-xs text-right">{m.timeWaitingLabor.toFixed(4)}</TableCell>
-                    <TableCell className="font-mono text-xs text-right">{m.timeInSetup.toFixed(4)}</TableCell>
-                    <TableCell className="font-mono text-xs text-right">{m.timeInRun.toFixed(4)}</TableCell>
-                    <TableCell className="font-mono text-xs text-right">{m.timeWaitingRestOfLot.toFixed(4)}</TableCell>
-                    <TableCell className="font-mono text-xs text-right">{m.visitsPerGoodPiece.toFixed(4)}</TableCell>
-                    <TableCell className="font-mono text-xs text-right">{m.noOfSetups.toFixed(4)}</TableCell>
-                    <TableCell className="font-mono text-xs text-right">{m.avgLotSize.toFixed(4)}</TableCell>
-                    <TableCell className="font-mono text-xs text-right">{m.wip}</TableCell>
-                    <TableCell className="font-mono text-xs text-right">{m.mctAtOp.toFixed(4)}</TableCell>
-                    <TableCell className="font-mono text-xs text-right">{m.visits}</TableCell>
+                    <TableCell className="font-mono text-xs text-right">{fmtRound(m.timeWaitingEquipment, 2)}</TableCell>
+                    <TableCell className="font-mono text-xs text-right">{fmtRound(m.timeWaitingLabor, 2)}</TableCell>
+                    <TableCell className="font-mono text-xs text-right">{fmtRound(m.timeInSetup, 2)}</TableCell>
+                    <TableCell className="font-mono text-xs text-right">{fmtRound(m.timeInRun, 2)}</TableCell>
+                    <TableCell className="font-mono text-xs text-right">{fmtRound(m.timeWaitingRestOfLot, 2)}</TableCell>
+                    <TableCell className="font-mono text-xs text-right">{fmtRound(m.visitsPerGoodPiece, 2)}</TableCell>
+                    <TableCell className="font-mono text-xs text-right">{fmtRound(m.noOfSetups, 2)}</TableCell>
+                    <TableCell className="font-mono text-xs text-right">{fmtRound(m.avgLotSize, 2)}</TableCell>
+                    <TableCell className="font-mono text-xs text-right">{fmtRound(m.wip, 2)}</TableCell>
+                    <TableCell className="font-mono text-xs text-right">{fmtRound(m.mctAtOp, 2)}</TableCell>
+                    <TableCell className="font-mono text-xs text-right">{fmtRound(m.visits, 2)}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
           </div>
+          <ProductGroupSummaryTable
+            metrics={eqOps}
+            model={model}
+            description={runDescription}
+            showTimeUnits={showTimeUnits}
+            timeUnitLabel={g.ops_time_unit}
+          />
+          </>
         )}
       </CardContent>
     </Card>
@@ -1699,11 +1807,12 @@ function LaborOperDetails({ model, results }: { model: Model; results: CalcResul
   const [selectedId, setSelectedId] = useState('');
   const [showTimeUnits, setShowTimeUnits] = useState(false);
   const g = model.general;
+  const runDescription = useRunDescriptionLabel();
 
   // BUG-E/F/D FIX: use shared corrected metrics builder
   const allMetrics = useMemo(() => buildOperMetrics(model, results), [model, results]);
 
-  const fmtVal = (pct: number, time: number) => showTimeUnits ? time.toFixed(3) : pct.toString();
+  const fmtVal = (pct: number, time: number) => showTimeUnits ? fmtRound(time, 2) : fmtRound(pct, 2);
   const unitSuffix = showTimeUnits ? ` (${g.ops_time_unit})` : ' %';
 
   const labOps = useMemo(() => allMetrics.filter((m: any) => m.laborId === selectedId), [allMetrics, selectedId]);
@@ -1716,7 +1825,7 @@ function LaborOperDetails({ model, results }: { model: Model; results: CalcResul
       <CardContent>
         <div className="flex items-center gap-3 mb-4">
           <Select value={selectedId} onValueChange={setSelectedId}>
-            <SelectTrigger className="w-56 h-8 text-xs"><SelectValue placeholder="Select labor group…" /></SelectTrigger>
+            <SelectTrigger className="w-full sm:w-64 md:w-56 h-8 text-xs"><SelectValue placeholder="Select labor group…" /></SelectTrigger>
             <SelectContent>{model.labor.map(l => <SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>)}</SelectContent>
           </Select>
           <Button variant={showTimeUnits ? 'secondary' : 'outline'} size="sm" className="text-xs gap-1 h-7" onClick={() => setShowTimeUnits(!showTimeUnits)}>
@@ -1726,6 +1835,7 @@ function LaborOperDetails({ model, results }: { model: Model; results: CalcResul
         {!lab ? (
           <p className="text-sm text-muted-foreground text-center py-8">Select a labor group to view operation details.</p>
         ) : (
+          <>
           <div className="overflow-x-auto">
             <Table>
               <TableHeader><TableRow>
@@ -1755,27 +1865,35 @@ function LaborOperDetails({ model, results }: { model: Model; results: CalcResul
                     <TableCell className="font-mono text-xs">{m.productName}</TableCell>
                     <TableCell className="font-mono text-xs font-medium">{m.opName}</TableCell>
                     <TableCell className="font-mono text-xs">{m.equipName}</TableCell>
-                    <TableCell className="font-mono text-xs text-right">{m.pctAssigned}</TableCell>
+                    <TableCell className="font-mono text-xs text-right">{fmtRound(m.pctAssigned, 2)}</TableCell>
                     <TableCell className="font-mono text-xs text-right">{fmtVal(m.labSetupUtil, m.labSetupTime)}</TableCell>
                     <TableCell className="font-mono text-xs text-right">{fmtVal(m.labRunUtil,   m.labRunTime)}</TableCell>
                     <TableCell className="font-mono text-xs text-right">{fmtVal(m.eqSetupUtil,  m.eqSetupTime)}</TableCell>
                     <TableCell className="font-mono text-xs text-right">{fmtVal(m.eqRunUtil,    m.eqRunTime)}</TableCell>
-                    <TableCell className="font-mono text-xs text-right">{m.waitLaborUtil}</TableCell>
-                    <TableCell className="font-mono text-xs text-right">{m.timeWaitingEquipment.toFixed(4)}</TableCell>
-                    <TableCell className="font-mono text-xs text-right">{m.timeWaitingLabor.toFixed(4)}</TableCell>
-                    <TableCell className="font-mono text-xs text-right">{m.timeInSetup.toFixed(4)}</TableCell>
-                    <TableCell className="font-mono text-xs text-right">{m.timeInRun.toFixed(4)}</TableCell>
-                    <TableCell className="font-mono text-xs text-right">{m.timeWaitingRestOfLot.toFixed(4)}</TableCell>
-                    <TableCell className="font-mono text-xs text-right">{m.visitsPerGoodPiece.toFixed(4)}</TableCell>
-                    <TableCell className="font-mono text-xs text-right">{m.noOfSetups.toFixed(4)}</TableCell>
-                    <TableCell className="font-mono text-xs text-right">{m.avgLotSize.toFixed(4)}</TableCell>
-                    <TableCell className="font-mono text-xs text-right">{m.wip}</TableCell>
-                    <TableCell className="font-mono text-xs text-right">{m.mctAtOp.toFixed(4)}</TableCell>
+                    <TableCell className="font-mono text-xs text-right">{fmtRound(m.waitLaborUtil, 2)}</TableCell>
+                    <TableCell className="font-mono text-xs text-right">{fmtRound(m.timeWaitingEquipment, 2)}</TableCell>
+                    <TableCell className="font-mono text-xs text-right">{fmtRound(m.timeWaitingLabor, 2)}</TableCell>
+                    <TableCell className="font-mono text-xs text-right">{fmtRound(m.timeInSetup, 2)}</TableCell>
+                    <TableCell className="font-mono text-xs text-right">{fmtRound(m.timeInRun, 2)}</TableCell>
+                    <TableCell className="font-mono text-xs text-right">{fmtRound(m.timeWaitingRestOfLot, 2)}</TableCell>
+                    <TableCell className="font-mono text-xs text-right">{fmtRound(m.visitsPerGoodPiece, 2)}</TableCell>
+                    <TableCell className="font-mono text-xs text-right">{fmtRound(m.noOfSetups, 2)}</TableCell>
+                    <TableCell className="font-mono text-xs text-right">{fmtRound(m.avgLotSize, 2)}</TableCell>
+                    <TableCell className="font-mono text-xs text-right">{fmtRound(m.wip, 2)}</TableCell>
+                    <TableCell className="font-mono text-xs text-right">{fmtRound(m.mctAtOp, 2)}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
           </div>
+          <ProductGroupSummaryTable
+            metrics={labOps}
+            model={model}
+            description={runDescription}
+            showTimeUnits={showTimeUnits}
+            timeUnitLabel={g.ops_time_unit}
+          />
+          </>
         )}
       </CardContent>
     </Card>
@@ -1795,19 +1913,30 @@ function NoResultsPlaceholder() {
 
 function QuickStatCard({ label, value, metric }: { label: string; value: string; metric: string }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-      <p className="text-xl font-bold text-slate-900 leading-tight">{value}</p>
-      {metric && <p className="text-sm text-slate-600 mt-1">{metric}</p>}
-      <p className="text-xs text-slate-500 mt-2">{label}</p>
+    <div className="rounded-lg border border-slate-200 bg-white p-4 md:p-5 shadow-sm min-w-0">
+      <p className="text-lg lg:text-xl font-bold text-slate-900 leading-tight truncate" title={value}>
+        {value}
+      </p>
+      {metric && (
+        <p className="text-sm text-slate-600 mt-1 truncate" title={metric}>
+          {metric}
+        </p>
+      )}
+      <p className="text-xs text-slate-500 mt-2 truncate" title={label}>
+        {label}
+      </p>
     </div>
   );
 }
 
-function NormalSummary({ results, model, scenarioResults }: {
+function NormalSummary({ results, model, scenarioResults, isUtilOnly = false }: {
   results: CalcResults; model: any;
   scenarioResults: { id: string; scenario: any; results: CalcResults }[];
+  isUtilOnly?: boolean;
 }) {
   const hasScenarios = scenarioResults.length > 0;
+  const showWip = (wip: number) => fmtRound(isUtilOnly ? 0 : wip, 2);
+  const showMct = (mct: number) => fmtRound(isUtilOnly ? 0 : mct, 2);
   const groups = useMemo(() => {
     const map = new Map<string, ProductResult[]>();
     results.products.forEach(pr => {
@@ -1827,16 +1956,17 @@ function NormalSummary({ results, model, scenarioResults }: {
       <TableCell className="font-mono text-right">{row.goodShipped.toLocaleString()}</TableCell>
       <TableCell className="font-mono text-right">{row.started.toLocaleString()}</TableCell>
       <TableCell className="font-mono text-right">{row.scrap > 0 ? row.scrap.toLocaleString() : '—'}</TableCell>
-      <TableCell className="font-mono text-right">{row.wip}</TableCell>
-      <TableCell className="font-mono text-right font-medium">{row.mct.toFixed(4)}</TableCell>
+      <TableCell className="font-mono text-right">{showWip(row.wip)}</TableCell>
+      <TableCell className="font-mono text-right font-medium">{showMct(row.mct)}</TableCell>
       {hasScenarios && scenarioResults.map(sr => {
         const sp = sr.results.products.find(p => p.id === row.id);
+        const baseMct = isUtilOnly ? 0 : row.mct;
         return (
           <React.Fragment key={sr.id}>
-            <TableCell className="font-mono text-right text-xs">{sp?.wip ?? '—'}</TableCell>
-            <TableCell className={`font-mono text-right text-xs ${sp && sp.mct < row.mct ? 'text-success' : sp && sp.mct > row.mct ? 'text-destructive' : ''}`}>
-              {sp?.mct.toFixed(4) || '—'}
-              {sp && sp.mct !== row.mct && <span className="ml-1 text-[10px]">({(sp.mct - row.mct) > 0 ? '+' : ''}{(sp.mct - row.mct).toFixed(4)})</span>}
+            <TableCell className="font-mono text-right text-xs">{sp ? showWip(sp.wip) : '—'}</TableCell>
+            <TableCell className={`font-mono text-right text-xs ${!isUtilOnly && sp && sp.mct < baseMct ? 'text-success' : !isUtilOnly && sp && sp.mct > baseMct ? 'text-destructive' : ''}`}>
+              {sp ? showMct(sp.mct) : '—'}
+              {!isUtilOnly && sp && sp.mct !== baseMct && <span className="ml-1 text-[10px]">({(sp.mct - baseMct) > 0 ? '+' : ''}{fmtRound(sp.mct - baseMct, 2)})</span>}
             </TableCell>
           </React.Fragment>
         );
@@ -1845,14 +1975,14 @@ function NormalSummary({ results, model, scenarioResults }: {
   );
 
   const renderSubtotal = (label: string, products: ProductResult[]) => (
-    <TableRow key={`sub-${label}`} className="bg-muted/50 font-medium">
+    <TableRow key={`sub-${label}`} className="bg-[#EAEFEF] font-medium">
       <TableCell className="font-mono text-xs">{label} subtotal</TableCell>
       <TableCell className="font-mono text-right text-xs">{products.reduce((s,r) => s+r.goodMade,0).toLocaleString()}</TableCell>
       <TableCell className="font-mono text-right text-xs">{products.reduce((s,r) => s+r.goodShipped,0).toLocaleString()}</TableCell>
       <TableCell className="font-mono text-right text-xs">{products.reduce((s,r) => s+r.started,0).toLocaleString()}</TableCell>
       <TableCell className="font-mono text-right text-xs">{products.reduce((s,r) => s+r.scrap,0).toLocaleString()}</TableCell>
-      <TableCell className="font-mono text-right text-xs">{products.reduce((s,r) => s+r.wip,0).toFixed(1)}</TableCell>
-      <TableCell className="font-mono text-right text-xs">{Math.min(...products.map(p => p.mct)).toFixed(4)}–{Math.max(...products.map(p => p.mct)).toFixed(4)}</TableCell>
+      <TableCell className="font-mono text-right text-xs">{isUtilOnly ? '0.00' : fmtRound(products.reduce((s, r) => s + r.wip, 0), 2)}</TableCell>
+      <TableCell className="font-mono text-right text-xs">{isUtilOnly ? '0.00' : `${fmtRound(Math.min(...products.map(p => p.mct)), 2)}–${fmtRound(Math.max(...products.map(p => p.mct)), 2)}`}</TableCell>
       {hasScenarios && scenarioResults.map(sr => <React.Fragment key={sr.id}><TableCell /><TableCell /></React.Fragment>)}
     </TableRow>
   );
@@ -1886,8 +2016,8 @@ function NormalSummary({ results, model, scenarioResults }: {
           <TableCell className="font-mono text-right">{results.products.reduce((s,r) => s+r.goodShipped,0).toLocaleString()}</TableCell>
           <TableCell className="font-mono text-right">{results.products.reduce((s,r) => s+r.started,0).toLocaleString()}</TableCell>
           <TableCell className="font-mono text-right">{results.products.reduce((s,r) => s+r.scrap,0).toLocaleString()}</TableCell>
-          <TableCell className="font-mono text-right">{results.products.reduce((s,r) => s+r.wip,0).toFixed(1)}</TableCell>
-          <TableCell className="font-mono text-right">—</TableCell>
+          <TableCell className="font-mono text-right">{isUtilOnly ? '0.00' : fmtRound(results.products.reduce((s, r) => s + r.wip, 0), 2)}</TableCell>
+          <TableCell className="font-mono text-right">{isUtilOnly ? '0.00' : '—'}</TableCell>
           {hasScenarios && scenarioResults.map(sr => <React.Fragment key={sr.id}><TableCell /><TableCell /></React.Fragment>)}
         </TableRow>
       </TableBody>
@@ -1895,9 +2025,10 @@ function NormalSummary({ results, model, scenarioResults }: {
   );
 }
 
-function TransposedSummary({ results, model, scenarioResults }: {
+function TransposedSummary({ results, model, scenarioResults, isUtilOnly = false }: {
   results: CalcResults; model: any;
   scenarioResults: { id: string; scenario: any; results: CalcResults }[];
+  isUtilOnly?: boolean;
 }) {
   const fields = [
     { key: 'demand',      label: 'Demand',                fmt: (v: number) => v.toLocaleString() },
@@ -1905,8 +2036,8 @@ function TransposedSummary({ results, model, scenarioResults }: {
     { key: 'goodMade',    label: 'Good Made',              fmt: (v: number) => v.toLocaleString() },
     { key: 'started',     label: 'Started',                fmt: (v: number) => v.toLocaleString() },
     { key: 'scrap',       label: 'Scrap',                  fmt: (v: number) => v > 0 ? v.toLocaleString() : '—' },
-    { key: 'wip',         label: 'WIP',                    fmt: (v: number) => v.toString() },
-    { key: 'mct',         label: `MCT (${model.general.mct_time_unit})`, fmt: (v: number) => v.toFixed(4) },
+    { key: 'wip',         label: 'WIP',                    fmt: (v: number) => fmtRound(isUtilOnly ? 0 : v, 2) },
+    { key: 'mct',         label: `MCT (${model.general.mct_time_unit})`, fmt: (v: number) => fmtRound(isUtilOnly ? 0 : v, 2) },
   ];
   return (
     <Table>
@@ -1960,7 +2091,7 @@ function EquipmentWIPChart({ results, model, isMultiScenario, chartScenarios }: 
             <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
             <XAxis dataKey="name" tick={axisStyle} stroke="hsl(var(--muted-foreground))" />
             <YAxis tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" label={{ value: 'WIP (units)', angle: -90, position: 'insideLeft', style: { fontSize: 11 } }} />
-            <Tooltip contentStyle={tooltipStyle} /><Legend wrapperStyle={{ fontSize: 11 }} />
+            <Tooltip content={<RechartsTooltipWithTotal />} /><Legend wrapperStyle={{ fontSize: 11 }} />
             <Bar dataKey="inProcess" fill="hsl(270, 50%, 60%)" name="In Process" />
             <Bar dataKey="waiting" fill="hsl(38, 92%, 50%)" name="Waiting" />
           </BarChart>
@@ -2014,7 +2145,7 @@ function LaborWaitChart({ results, model }: { results: CalcResults; model: Model
             <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
             <XAxis dataKey="name" tick={axisStyle} stroke="hsl(var(--muted-foreground))" />
             <YAxis tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" label={{ value: 'Machines', angle: -90, position: 'insideLeft', style: { fontSize: 11 } }} />
-            <Tooltip contentStyle={tooltipStyle} /><Legend wrapperStyle={{ fontSize: 11 }} />
+            <Tooltip content={<RechartsTooltipWithTotal />} /><Legend wrapperStyle={{ fontSize: 11 }} />
             <Bar dataKey="tended" fill="hsl(142, 71%, 45%)" name="Avg Machines Tended" />
             <Bar dataKey="waiting" fill="hsl(0, 72%, 51%)" name="Avg Machines Waiting" />
           </BarChart>
@@ -2047,12 +2178,12 @@ function EquipmentResultsTable({ equipment, utilLimit }: { equipment: EquipmentR
               <TableRow key={eq.id}>
                 <TableCell className="font-mono font-medium">{eq.name}</TableCell>
                 <TableCell className="font-mono text-right">{eq.count}</TableCell>
-                <TableCell className="font-mono text-right">{eq.setupUtil}</TableCell>
-                <TableCell className="font-mono text-right">{eq.runUtil}</TableCell>
-                <TableCell className="font-mono text-right">{eq.repairUtil}</TableCell>
-                <TableCell className="font-mono text-right">{eq.waitLaborUtil}</TableCell>
-                <TableCell className={`font-mono text-right font-medium ${eq.totalUtil > utilLimit ? 'text-destructive' : ''}`}>{eq.totalUtil}</TableCell>
-                <TableCell className="font-mono text-right text-muted-foreground">{eq.idle}</TableCell>
+                <TableCell className="font-mono text-right">{fmtRound(eq.setupUtil, 1)}</TableCell>
+                <TableCell className="font-mono text-right">{fmtRound(eq.runUtil, 1)}</TableCell>
+                <TableCell className="font-mono text-right">{fmtRound(eq.repairUtil, 1)}</TableCell>
+                <TableCell className="font-mono text-right">{fmtRound(eq.waitLaborUtil, 1)}</TableCell>
+                <TableCell className={`font-mono text-right font-medium ${eq.totalUtil > utilLimit ? 'text-destructive' : ''}`}>{fmtRound(eq.totalUtil, 1)}</TableCell>
+                <TableCell className="font-mono text-right text-muted-foreground">{fmtRound(eq.idle, 1)}</TableCell>
                 <TableCell className="font-mono text-xs text-muted-foreground">{eq.laborGroup}</TableCell>
               </TableRow>
             ))}
@@ -2084,11 +2215,11 @@ function LaborResultsTable({ labor, utilLimit }: { labor: LaborResult[]; utilLim
               <TableRow key={l.id}>
                 <TableCell className="font-mono font-medium">{l.name}</TableCell>
                 <TableCell className="font-mono text-right">{l.count}</TableCell>
-                <TableCell className="font-mono text-right">{l.setupUtil}</TableCell>
-                <TableCell className="font-mono text-right">{l.runUtil}</TableCell>
-                <TableCell className="font-mono text-right">{l.unavailPct}</TableCell>
-                <TableCell className={`font-mono text-right font-medium ${l.totalUtil > utilLimit ? 'text-destructive' : ''}`}>{l.totalUtil}</TableCell>
-                <TableCell className="font-mono text-right text-muted-foreground">{l.idle}</TableCell>
+                <TableCell className="font-mono text-right">{fmtRound(l.setupUtil, 1)}</TableCell>
+                <TableCell className="font-mono text-right">{fmtRound(l.runUtil, 1)}</TableCell>
+                <TableCell className="font-mono text-right">{fmtRound(l.unavailPct, 1)}</TableCell>
+                <TableCell className={`font-mono text-right font-medium ${l.totalUtil > utilLimit ? 'text-destructive' : ''}`}>{fmtRound(l.totalUtil, 1)}</TableCell>
+                <TableCell className="font-mono text-right text-muted-foreground">{fmtRound(l.idle, 1)}</TableCell>
               </TableRow>
             ))}
           </TableBody>
@@ -2101,7 +2232,7 @@ function LaborResultsTable({ labor, utilLimit }: { labor: LaborResult[]; utilLim
 /* ─── Production Chart ─── */
 const prodChartColors = {
   shipped: 'hsl(217, 91%, 60%)', usedInAssembly: 'hsl(142, 71%, 45%)',
-  shippedInAssembly: 'hsl(38, 92%, 50%)', scrapInProduction: 'hsl(0, 72%, 51%)',
+  scrappedInAssembly: 'hsl(38, 92%, 50%)', scrapInProduction: 'hsl(0, 72%, 51%)',
 };
 
 function ProductionChart({ results, model, isMultiScenario, chartScenarios }: {
@@ -2130,7 +2261,7 @@ function ProductionChart({ results, model, isMultiScenario, chartScenarios }: {
               <SortHead label="Product"          sortKey="name"               current={sort} onSort={handleSort} align="left" />
               <SortHead label="Shipped"          sortKey="shipped"            current={sort} onSort={handleSort} />
               <SortHead label="Used in Assy"     sortKey="usedInAssembly"     current={sort} onSort={handleSort} />
-              <SortHead label="Shipped in Assy"  sortKey="shippedInAssembly"  current={sort} onSort={handleSort} />
+              <SortHead label="Scrapped in Assy" sortKey="scrappedInAssembly" current={sort} onSort={handleSort} />
               <SortHead label="Scrap"            sortKey="scrapInProduction"  current={sort} onSort={handleSort} />
               <SortHead label="Total"            sortKey="total"              current={sort} onSort={handleSort} />
             </TableRow></TableHeader>
@@ -2140,7 +2271,7 @@ function ProductionChart({ results, model, isMultiScenario, chartScenarios }: {
                   <TableCell className="font-mono font-medium">{d.name}</TableCell>
                   <TableCell className="font-mono text-right">{d.shipped.toLocaleString()}</TableCell>
                   <TableCell className="font-mono text-right">{d.usedInAssembly.toLocaleString()}</TableCell>
-                  <TableCell className="font-mono text-right">{d.shippedInAssembly.toLocaleString()}</TableCell>
+                  <TableCell className="font-mono text-right">{d.scrappedInAssembly.toLocaleString()}</TableCell>
                   <TableCell className="font-mono text-right">{d.scrapInProduction.toLocaleString()}</TableCell>
                   <TableCell className="font-mono text-right font-medium">{d.total.toLocaleString()}</TableCell>
                 </TableRow>
@@ -2156,7 +2287,7 @@ function ProductionChart({ results, model, isMultiScenario, chartScenarios }: {
               <Tooltip contentStyle={tooltipStyle} /><Legend wrapperStyle={{ fontSize: 11 }} />
               <Bar dataKey="shipped"            stackId="a" fill={prodChartColors.shipped}           name="Shipped Production" />
               <Bar dataKey="usedInAssembly"     stackId="a" fill={prodChartColors.usedInAssembly}    name="Used in Assembly" />
-              <Bar dataKey="shippedInAssembly"  stackId="a" fill={prodChartColors.shippedInAssembly} name="Shipped in Assembly" />
+              <Bar dataKey="scrappedInAssembly" stackId="a" fill={prodChartColors.scrappedInAssembly} name="Scrapped in Assembly" />
               <Bar dataKey="scrapInProduction"  stackId="a" fill={prodChartColors.scrapInProduction} name="Scrap in Production" radius={[2,2,0,0]} />
             </BarChart>
           </ResponsiveContainer>

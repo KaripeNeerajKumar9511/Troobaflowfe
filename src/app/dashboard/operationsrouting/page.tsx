@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo, useRef, useEffect, Suspense } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { useModelStore, type Operation, type RoutingEntry } from '@/stores/modelStore';
+import { useModelStore, displayParamNames, SHOW_PARAM_VARIABLE_FIELDS_IN_UI, type Operation, type RoutingEntry } from '@/stores/modelStore';
 import { db, saveFullModelToDB } from '@/lib/supabaseData';
 import { useDeleteConfirmation } from '@/hooks/useDeleteConfirmation';
 import { DeleteConfirmInline } from '@/components/DeleteConfirmInline';
@@ -25,6 +25,10 @@ import { ProductSelectorBar } from '@/components/ProductSelectorBar';
 import { OperationsEmptyState } from '@/components/OperationsEmptyState';
 
 import { InlineRoutingEditor } from '@/components/InlineRoutingEditor';
+import { OperationEquipTimeInput } from '@/components/OperationEquipTimeInput';
+import { NonNegativeNumericInput } from '@/components/NonNegativeNumericInput';
+import { PureLaborNaField } from '@/components/PureLaborNaField';
+import { canEditOperationEquipField, isPureLaborOperation, resolvePureLaborOperation } from '@/lib/pureLaborOperations';
 
 const SYSTEM_OPS = ['DOCK', 'STOCK', 'SCRAP'];
 
@@ -213,6 +217,7 @@ function OperationsRoutingContent() {
     if (!model) return null;
     const eq = model.equipment.find(e => e.id === op.equip_id);
     const prod = model.products.find(p => p.id === op.product_id);
+    const resolved = resolvePureLaborOperation(op, model.equipment);
     const eqSetupF = eq?.setup_factor ?? 1;
     const eqRunF = eq?.run_factor ?? 1;
     const labGroup = eq ? model.labor.find(l => l.id === eq.labor_group_id) : null;
@@ -220,8 +225,8 @@ function OperationsRoutingContent() {
     const labRunF = labGroup?.run_factor ?? 1;
     const prodSetupF = prod?.setup_factor ?? 1;
     return {
-      equip_setup_lot: Math.round(op.equip_setup_lot * eqSetupF * prodSetupF * 1000) / 1000,
-      equip_run_piece: Math.round(op.equip_run_piece * eqRunF * 1000) / 1000,
+      equip_setup_lot: Math.round(resolved.equip_setup_lot * eqSetupF * prodSetupF * 1000) / 1000,
+      equip_run_piece: Math.round(resolved.equip_run_piece * eqRunF * 1000) / 1000,
       labor_setup_lot: Math.round(op.labor_setup_lot * labSetupF * prodSetupF * 1000) / 1000,
       labor_run_piece: Math.round(op.labor_run_piece * labRunF * 1000) / 1000,
     };
@@ -380,6 +385,7 @@ function OperationsRoutingContent() {
   };
 
   const handleOpFieldChange = (op: Operation, field: string, value: number) => {
+    if (!canEditOperationEquipField(op, field, model.equipment)) return;
     if (activeScenarioId && activeScenario) {
       const productName = model.products.find(p => p.id === op.product_id)?.name || '';
       const entityName = `${productName}: ${op.op_name}`;
@@ -416,7 +422,7 @@ function OperationsRoutingContent() {
     toast.success(`Formula applied: ${formulaTarget.label} = ${value}`);
   };
 
-  const pn = model.param_names;
+  const pn = displayParamNames(model);
 
   const timeFields = [
     { field: 'equip_setup_lot', label: 'E.Setup/Lot' },
@@ -427,7 +433,9 @@ function OperationsRoutingContent() {
 
   // Calculate total columns for inline editor colSpan
   const baseColCount = 10; // lock/# + op# + name + equip + %assign + 4 times + routing
-  const advancedColCount = showAdvancedTimes ? 12 : 0;
+  const operParamColCount = SHOW_PARAM_VARIABLE_FIELDS_IN_UI ? 4 : 0;
+  const advancedTimeColCount = 8;
+  const advancedColCount = showAdvancedTimes ? advancedTimeColCount + operParamColCount : 0;
   const formulaColCount = showFormulaBuilder && !showAdvancedTimes ? 1 : (showFormulaBuilder && showAdvancedTimes ? 1 : 0);
   const deleteColCount = 1;
   const totalCols = baseColCount + advancedColCount + formulaColCount + deleteColCount;
@@ -686,10 +694,12 @@ function OperationsRoutingContent() {
                         <TableHead className="font-mono text-xs">L.Setup/TB</TableHead>
                         <TableHead className="font-mono text-xs">L.Run/Lot</TableHead>
                         <TableHead className="font-mono text-xs">L.Run/TB</TableHead>
-                        <TableHead className="font-mono text-xs">{pn.oper1_name}</TableHead>
-                        <TableHead className="font-mono text-xs">{pn.oper2_name}</TableHead>
-                        <TableHead className="font-mono text-xs">{pn.oper3_name}</TableHead>
-                        <TableHead className="font-mono text-xs">{pn.oper4_name}</TableHead>
+                        {SHOW_PARAM_VARIABLE_FIELDS_IN_UI && <>
+                          <TableHead className="font-mono text-xs">{pn.oper1_name}</TableHead>
+                          <TableHead className="font-mono text-xs">{pn.oper2_name}</TableHead>
+                          <TableHead className="font-mono text-xs">{pn.oper3_name}</TableHead>
+                          <TableHead className="font-mono text-xs">{pn.oper4_name}</TableHead>
+                        </>}
                       </>
                     )}
                     <TableHead className="font-mono text-xs">Routing</TableHead>
@@ -701,13 +711,14 @@ function OperationsRoutingContent() {
                   {productOps.map((op) => {
                     const actual = viewActualTimes ? getActualTimes(op) : null;
                     const isDock = op.op_name === 'DOCK';
+                    const isPureOp = !isDock && isPureLaborOperation(op, model.equipment);
                     const opRoutes = getRoutesForOp(op.op_name);
                     const isExpanded = expandedRoutingOp === op.op_name;
                     const isConfirming = !isDock && pendingDeleteId === op.id;
 
                     return (
                       <React.Fragment key={op.id}>
-                        <TableRow className={isConfirming ? 'bg-destructive/10' : ''}>
+                        <TableRow className={isConfirming ? 'bg-destructive/10' : isPureOp ? 'bg-slate-50/80' : ''}>
                           {isConfirming ? (
                             <TableCell colSpan={totalCols}>
                               <DeleteConfirmInline
@@ -726,7 +737,7 @@ function OperationsRoutingContent() {
                             {isDock ? (
                               <span className="font-mono text-xs text-muted-foreground">0</span>
                             ) : (
-                              <Input type="number" className="h-8 w-16 font-mono" value={op.op_number} onChange={(e) => handleOpFieldChange(op, 'op_number', +e.target.value)} />
+                              <NonNegativeNumericInput value={op.op_number} onChange={(v) => handleOpFieldChange(op, 'op_number', v)} />
                             )}
                           </TableCell>
                           {/* Op Name */}
@@ -752,7 +763,7 @@ function OperationsRoutingContent() {
                             {isDock ? (
                               <span className="font-mono text-xs text-muted-foreground">—</span>
                             ) : (
-                              <Input type="number" className={`h-8 w-16 font-mono ${op.pct_assigned > 100 ? 'border-red-500 focus-visible:ring-red-500' : ''}`} value={op.pct_assigned} onChange={(e) => handleOpFieldChange(op, 'pct_assigned', +e.target.value)} />
+                              <NonNegativeNumericInput value={op.pct_assigned} onChange={(v) => handleOpFieldChange(op, 'pct_assigned', v)} />
                             )}
                           </TableCell>
 
@@ -766,17 +777,26 @@ function OperationsRoutingContent() {
                             </>
                           ) : viewActualTimes && actual ? (
                             <>
-                              <TableCell className="font-mono text-xs text-muted-foreground bg-muted/30">{actual.equip_setup_lot}</TableCell>
-                              <TableCell className="font-mono text-xs text-muted-foreground bg-muted/30">{actual.equip_run_piece}</TableCell>
+                              {isPureOp ? (
+                                <>
+                                  <TableCell><PureLaborNaField className="h-8 w-20 bg-muted/30" /></TableCell>
+                                  <TableCell><PureLaborNaField className="h-8 w-20 bg-muted/30" /></TableCell>
+                                </>
+                              ) : (
+                                <>
+                                  <TableCell className="font-mono text-xs text-muted-foreground bg-muted/30">{actual.equip_setup_lot}</TableCell>
+                                  <TableCell className="font-mono text-xs text-muted-foreground bg-muted/30">{actual.equip_run_piece}</TableCell>
+                                </>
+                              )}
                               <TableCell className="font-mono text-xs text-muted-foreground bg-muted/30">{actual.labor_setup_lot}</TableCell>
                               <TableCell className="font-mono text-xs text-muted-foreground bg-muted/30">{actual.labor_run_piece}</TableCell>
                             </>
                           ) : (
                             <>
-                              <TableCell><Input type="number" className="h-8 w-20 font-mono" value={op.equip_setup_lot} step=" 1" onChange={(e) => handleOpFieldChange(op, 'equip_setup_lot', +e.target.value)} /></TableCell>
-                              <TableCell><Input type="number" className="h-8 w-20 font-mono" value={op.equip_run_piece} step="1" onChange={(e) => handleOpFieldChange(op, 'equip_run_piece', +e.target.value)} /></TableCell>
-                              <TableCell><Input type="number" className="h-8 w-20 font-mono" value={op.labor_setup_lot} step="1" onChange={(e) => handleOpFieldChange(op, 'labor_setup_lot', +e.target.value)} /></TableCell>
-                              <TableCell><Input type="number" className="h-8 w-20 font-mono" value={op.labor_run_piece} step="1" onChange={(e) => handleOpFieldChange(op, 'labor_run_piece', +e.target.value)} /></TableCell>
+                              <TableCell><OperationEquipTimeInput op={op} field="equip_setup_lot" equipment={model.equipment} value={op.equip_setup_lot} step="1" onChange={(v) => handleOpFieldChange(op, 'equip_setup_lot', v)} /></TableCell>
+                              <TableCell><OperationEquipTimeInput op={op} field="equip_run_piece" equipment={model.equipment} value={op.equip_run_piece} step="1" onChange={(v) => handleOpFieldChange(op, 'equip_run_piece', v)} /></TableCell>
+                              <TableCell><NonNegativeNumericInput allowDecimal value={op.labor_setup_lot} onChange={(v) => handleOpFieldChange(op, 'labor_setup_lot', v)} /></TableCell>
+                              <TableCell><NonNegativeNumericInput allowDecimal value={op.labor_run_piece} onChange={(v) => handleOpFieldChange(op, 'labor_run_piece', v)} /></TableCell>
                             </>
                           )}
 
@@ -784,24 +804,26 @@ function OperationsRoutingContent() {
                           {showAdvancedTimes && (
                             isDock ? (
                               <>
-                                {Array.from({ length: 12 }).map((_, i) => (
+                                {Array.from({ length: advancedTimeColCount + operParamColCount }).map((_, i) => (
                                   <TableCell key={i} className="font-mono text-xs text-muted-foreground">—</TableCell>
                                 ))}
                               </>
                             ) : (
                               <>
-                                <TableCell><Input type="number" className="h-8 w-20 font-mono" value={op.equip_setup_piece} step="1" onChange={(e) => handleOpFieldChange(op, 'equip_setup_piece', +e.target.value)} /></TableCell>
-                                <TableCell><Input type="number" className="h-8 w-20 font-mono" value={op.equip_setup_tbatch} step="1" onChange={(e) => handleOpFieldChange(op, 'equip_setup_tbatch', +e.target.value)} /></TableCell>
-                                <TableCell><Input type="number" className="h-8 w-20 font-mono" value={op.equip_run_lot} step="1" onChange={(e) => handleOpFieldChange(op, 'equip_run_lot', +e.target.value)} /></TableCell>
-                                <TableCell><Input type="number" className="h-8 w-20 font-mono" value={op.equip_run_tbatch} step="1" onChange={(e) => handleOpFieldChange(op, 'equip_run_tbatch', +e.target.value)} /></TableCell>
-                                <TableCell><Input type="number" className="h-8 w-20 font-mono" value={op.labor_setup_piece} step="1" onChange={(e) => handleOpFieldChange(op, 'labor_setup_piece', +e.target.value)} /></TableCell>
-                                <TableCell><Input type="number" className="h-8 w-20 font-mono" value={op.labor_setup_tbatch} step="1" onChange={(e) => handleOpFieldChange(op, 'labor_setup_tbatch', +e.target.value)} /></TableCell>
-                                <TableCell><Input type="number" className="h-8 w-20 font-mono" value={op.labor_run_lot} step="1" onChange={(e) => handleOpFieldChange(op, 'labor_run_lot', +e.target.value)} /></TableCell>
-                                <TableCell><Input type="number" className="h-8 w-20 font-mono" value={op.labor_run_tbatch} step="1" onChange={(e) => handleOpFieldChange(op, 'labor_run_tbatch', +e.target.value)} /></TableCell>
-                                <TableCell><Input type="number" className="h-8 w-20 font-mono" value={op.oper1} step="1" onChange={(e) => handleOpFieldChange(op, 'oper1', +e.target.value)} /></TableCell>
-                                <TableCell><Input type="number" className="h-8 w-20 font-mono" value={op.oper2} step="1" onChange={(e) => handleOpFieldChange(op, 'oper2', +e.target.value)} /></TableCell>
-                                <TableCell><Input type="number" className="h-8 w-20 font-mono" value={op.oper3} step="1" onChange={(e) => handleOpFieldChange(op, 'oper3', +e.target.value)} /></TableCell>
-                                <TableCell><Input type="number" className="h-8 w-20 font-mono" value={op.oper4} step="1" onChange={(e) => handleOpFieldChange(op, 'oper4', +e.target.value)} /></TableCell>
+                                <TableCell><OperationEquipTimeInput op={op} field="equip_setup_piece" equipment={model.equipment} value={op.equip_setup_piece} step="1" onChange={(v) => handleOpFieldChange(op, 'equip_setup_piece', v)} /></TableCell>
+                                <TableCell><OperationEquipTimeInput op={op} field="equip_setup_tbatch" equipment={model.equipment} value={op.equip_setup_tbatch} step="1" onChange={(v) => handleOpFieldChange(op, 'equip_setup_tbatch', v)} /></TableCell>
+                                <TableCell><OperationEquipTimeInput op={op} field="equip_run_lot" equipment={model.equipment} value={op.equip_run_lot} step="1" onChange={(v) => handleOpFieldChange(op, 'equip_run_lot', v)} /></TableCell>
+                                <TableCell><OperationEquipTimeInput op={op} field="equip_run_tbatch" equipment={model.equipment} value={op.equip_run_tbatch} step="1" onChange={(v) => handleOpFieldChange(op, 'equip_run_tbatch', v)} /></TableCell>
+                                <TableCell><NonNegativeNumericInput allowDecimal value={op.labor_setup_piece} onChange={(v) => handleOpFieldChange(op, 'labor_setup_piece', v)} /></TableCell>
+                                <TableCell><NonNegativeNumericInput allowDecimal value={op.labor_setup_tbatch} onChange={(v) => handleOpFieldChange(op, 'labor_setup_tbatch', v)} /></TableCell>
+                                <TableCell><NonNegativeNumericInput allowDecimal value={op.labor_run_lot} onChange={(v) => handleOpFieldChange(op, 'labor_run_lot', v)} /></TableCell>
+                                <TableCell><NonNegativeNumericInput allowDecimal value={op.labor_run_tbatch} onChange={(v) => handleOpFieldChange(op, 'labor_run_tbatch', v)} /></TableCell>
+                                {SHOW_PARAM_VARIABLE_FIELDS_IN_UI && <>
+                                  <TableCell><NonNegativeNumericInput allowDecimal value={op.oper1} onChange={(v) => handleOpFieldChange(op, 'oper1', v)} /></TableCell>
+                                  <TableCell><NonNegativeNumericInput allowDecimal value={op.oper2} onChange={(v) => handleOpFieldChange(op, 'oper2', v)} /></TableCell>
+                                  <TableCell><NonNegativeNumericInput allowDecimal value={op.oper3} onChange={(v) => handleOpFieldChange(op, 'oper3', v)} /></TableCell>
+                                  <TableCell><NonNegativeNumericInput allowDecimal value={op.oper4} onChange={(v) => handleOpFieldChange(op, 'oper4', v)} /></TableCell>
+                                </>}
                               </>
                             )
                           )}
@@ -880,7 +902,9 @@ function OperationsRoutingContent() {
                                     <FunctionSquare className="h-3.5 w-3.5 text-muted-foreground" />
                                   </SelectTrigger>
                                   <SelectContent>
-                                    {timeFields.map(f => (
+                                    {timeFields
+                                      .filter((f) => canEditOperationEquipField(op, f.field, model.equipment))
+                                      .map(f => (
                                       <SelectItem key={f.field} value={f.field} className="text-xs">{f.label}</SelectItem>
                                     ))}
                                   </SelectContent>
@@ -945,7 +969,7 @@ function OperationsRoutingContent() {
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div><Label>Operation Name</Label><Input ref={newOpNameRef} value={newOpName} onChange={(e) => setNewOpName(e.target.value)} placeholder="e.g., RFTURN" autoFocus onKeyDown={(e) => e.key === 'Enter' && handleAddOp()} /></div>
-              <div><Label>Op Number</Label><Input type="number" value={newOpNumber} onChange={(e) => setNewOpNumber(+e.target.value)} /></div>
+              <div><Label>Op Number</Label><NonNegativeNumericInput value={newOpNumber} onChange={(v) => setNewOpNumber(v)} /></div>
             </div>
             <div>
               <Label>Equipment Group</Label>

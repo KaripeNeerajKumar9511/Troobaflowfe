@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import type { Model, Operation } from '@/stores/modelStore';
+import { displayParamNames } from '@/stores/modelStore';
 
 interface FormulaBuilderProps {
   open: boolean;
@@ -92,15 +93,15 @@ const VARIABLE_GROUPS = [
 
 export function FormulaBuilder({ open, onClose, model, operation, field, fieldLabel, currentValue, onApply }: FormulaBuilderProps) {
   const [formula, setFormula] = useState('');
-  const pn = model.param_names;
+  const pnDisplay = displayParamNames(model);
 
   const nameMap: Record<string, string> = useMemo(() => ({
-    Gen1: pn.gen1_name, Gen2: pn.gen2_name, Gen3: pn.gen3_name, Gen4: pn.gen4_name,
-    Eq1: pn.eq1_name, Eq2: pn.eq2_name, Eq3: pn.eq3_name, Eq4: pn.eq4_name,
-    Prod1: pn.prod1_name, Prod2: pn.prod2_name, Prod3: pn.prod3_name, Prod4: pn.prod4_name,
-    Oper1: pn.oper1_name, Oper2: pn.oper2_name, Oper3: pn.oper3_name, Oper4: pn.oper4_name,
+    Gen1: pnDisplay.gen1_name, Gen2: pnDisplay.gen2_name, Gen3: pnDisplay.gen3_name, Gen4: pnDisplay.gen4_name,
+    Eq1: pnDisplay.eq1_name, Eq2: pnDisplay.eq2_name, Eq3: pnDisplay.eq3_name, Eq4: pnDisplay.eq4_name,
+    Prod1: pnDisplay.prod1_name, Prod2: pnDisplay.prod2_name, Prod3: pnDisplay.prod3_name, Prod4: pnDisplay.prod4_name,
+    Oper1: pnDisplay.oper1_name, Oper2: pnDisplay.oper2_name, Oper3: pnDisplay.oper3_name, Oper4: pnDisplay.oper4_name,
     LotSize: 'LotSize', Demand: 'Demand',
-  }), [pn]);
+  }), [pnDisplay]);
 
   const evaluation = useMemo(() => {
     if (!formula.trim()) return { result: null, error: null };

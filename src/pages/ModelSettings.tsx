@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { Separator } from '@/components/ui/separator';
+import { flushSync } from 'react-dom';
+import { ModelTransferOverlay, yieldForOverlayPaint } from '@/components/ModelTransferOverlay';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { useModelStore, type ParamNames, defaultParamNames } from '@/stores/modelStore';
+import { useModelStore } from '@/stores/modelStore';
 import { useResultsStore } from '@/stores/resultsStore';
 import {
   db,
@@ -11,6 +12,7 @@ import {
   patchModelVersionLabel,
   deleteModelVersion,
   restoreModelFromVersion,
+  type ModelVersionRow,
 } from '@/lib/supabaseData';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -31,15 +33,11 @@ import { toast } from 'sonner';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useDeptCodes } from '@/hooks/useDeptCodes';
 
-interface Version {
-  id: string;
-  label: string;
-  created_at: string;
-}
 
 export default function ModelSettings() {
   const [searchParams] = useSearchParams();
-  const initialTab = searchParams.get('tab') || 'general';
+  const rawTab = searchParams.get('tab') || 'general';
+  const initialTab = rawTab === 'params' ? 'general' : rawTab;
   const model = useModelStore(s => s.getActiveModel());
   const renameModel = useModelStore(s => s.renameModel);
   const archiveModel = useModelStore(s => s.archiveModel);
@@ -51,8 +49,7 @@ export default function ModelSettings() {
   const [description, setDescription] = useState('');
   const [tags, setTags] = useState<string[]>([]);
   const [newTag, setNewTag] = useState('');
-  const [paramNames, setParamNames] = useState<ParamNames>(defaultParamNames);
-  const [versions, setVersions] = useState<Version[]>([]);
+  const [versions, setVersions] = useState<ModelVersionRow[]>([]);
   const [showDelete, setShowDelete] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState('');
   const [restoreVersionId, setRestoreVersionId] = useState<string | null>(null);
@@ -61,6 +58,7 @@ export default function ModelSettings() {
   const [editingVersionName, setEditingVersionName] = useState('');
   const [deleteVersionId, setDeleteVersionId] = useState<string | null>(null);
   const [visibleCount, setVisibleCount] = useState(10);
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     if (!model) return;
@@ -68,14 +66,13 @@ export default function ModelSettings() {
     setTitle(model.general.model_title);
     setDescription(model.description);
     setTags(model.tags);
-    setParamNames({ ...defaultParamNames, ...model.param_names });
     void loadVersions();
   }, [model?.id]);
 
   const loadVersions = async () => {
     if (!model) return;
     const rows = await fetchModelVersions(model.id);
-    setVersions(rows as Version[]);
+    setVersions(rows);
   };
 
   const handleRenameVersion = async (versionId: string) => {
@@ -136,11 +133,6 @@ export default function ModelSettings() {
     }));
   };
 
-  const handleSaveParamNames = () => {
-    useModelStore.getState().updateParamNames(model.id, paramNames);
-    toast.success('Parameter names saved');
-  };
-
   const handleSaveCheckpoint = async () => {
     const snapshot = buildModelSnapshot(model);
     const ok = await createModelCheckpoint(model.id, 'Manual Checkpoint', snapshot);
@@ -155,15 +147,21 @@ export default function ModelSettings() {
   const handleRestore = async (versionId: string) => {
     setIsRestoring(true);
     try {
-      const restored = await restoreModelFromVersion(model.id, versionId);
-      if (!restored) {
+      const result = await restoreModelFromVersion(model.id, versionId);
+      if (!result) {
         toast.error('Failed to restore checkpoint');
         return;
       }
       useResultsStore.getState().clearAllForModel();
       await useModelStore.getState().loadModels(true);
       useModelStore.getState().setActiveModel(model.id);
-      toast.success('Model restored to checkpoint');
+      toast.success(
+        result.consumedUndo
+          ? 'Model restored from undo checkpoint. That undo slot is cleared — restore another checkpoint to create a new auto-save.'
+          : `Model restored. Previous data saved as "${result.rollbackLabel || 'Previous state (auto-saved)'}".`,
+        { duration: 6000 },
+      );
+      loadVersions();
       navigate(`/models/${model.id}/general`);
     } catch (err) {
       console.error('Restore error:', err);
@@ -174,28 +172,35 @@ export default function ModelSettings() {
     }
   };
 
-  const handleExport = () => {
-    const exportData = {
-      name: model.name,
-      description: model.description,
-      tags: model.tags,
-      general: model.general,
-      labor: model.labor,
-      equipment: model.equipment,
-      products: model.products,
-      operations: model.operations,
-      routing: model.routing,
-      ibom: model.ibom,
-      param_names: model.param_names,
-    };
-    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${model.name.replace(/\s+/g, '_')}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-    toast.success('Model exported');
+  const handleExport = async () => {
+    if (!model || exporting) return;
+    flushSync(() => setExporting(true));
+    await yieldForOverlayPaint();
+    try {
+      const exportData = {
+        name: model.name,
+        description: model.description,
+        tags: model.tags,
+        general: model.general,
+        labor: model.labor,
+        equipment: model.equipment,
+        products: model.products,
+        operations: model.operations,
+        routing: model.routing,
+        ibom: model.ibom,
+        param_names: model.param_names,
+      };
+      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${model.name.replace(/\s+/g, '_')}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success('Model exported');
+    } finally {
+      setExporting(false);
+    }
   };
 
   const handleDelete = () => {
@@ -206,26 +211,16 @@ export default function ModelSettings() {
     window.location.href = '/library';
   };
 
-  const paramField = (key: keyof ParamNames, label: string) => (
-    <div key={key}>
-      <Label className="text-xs text-muted-foreground">{label}</Label>
-      <Input
-        className="h-8 font-mono text-sm"
-        value={paramNames[key]}
-        onChange={e => setParamNames(p => ({ ...p, [key]: e.target.value }))}
-      />
-    </div>
-  );
-
   return (
+    <>
+      {exporting && <ModelTransferOverlay mode="export" />}
     <div className="p-6 max-w-3xl animate-fade-in">
       <h1 className="text-xl font-bold mb-1">Model Settings</h1>
-      <p className="text-sm text-muted-foreground mb-6">Configure model metadata, parameter labels, and manage versions.</p>
+      <p className="text-sm text-muted-foreground mb-6">Configure model metadata and manage versions.</p>
 
       <Tabs defaultValue={initialTab}>
         <TabsList>
           <TabsTrigger value="general">General</TabsTrigger>
-          <TabsTrigger value="params">Parameter Names</TabsTrigger>
           <TabsTrigger value="deptcodes">Group/Dept/Area</TabsTrigger>
           <TabsTrigger value="versions">Version History</TabsTrigger>
           <TabsTrigger value="danger">Danger Zone</TabsTrigger>
@@ -293,71 +288,18 @@ export default function ModelSettings() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="params" className="mt-4 space-y-4">
+        <TabsContent value="deptcodes" className="mt-4 space-y-4">
           <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Custom Parameter Names</CardTitle>
-              <CardDescription>Rename Gen1–4, Lab1–4, Eq1–4, Prod1–4, Oper1–4 labels for this model.</CardDescription>
+            <CardHeader className="pb-3">
+              {/* <CardTitle className="text-base">Product Group / Dept / Area</CardTitle>
+              <CardDescription>
+                Define grouping labels for products. These appear in the Dept/Area column on the Products page and drive MCT summary subtotals by group.
+              </CardDescription> */}
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <h4 className="text-xs font-semibold text-muted-foreground uppercase mb-2">General Parameters</h4>
-                <div className="grid grid-cols-4 gap-2">
-                  {paramField('gen1_name', 'Gen1')}
-                  {paramField('gen2_name', 'Gen2')}
-                  {paramField('gen3_name', 'Gen3')}
-                  {paramField('gen4_name', 'Gen4')}
-                </div>
-              </div>
-              <div>
-                <h4 className="text-xs font-semibold text-muted-foreground uppercase mb-2">Labor Parameters</h4>
-                <div className="grid grid-cols-4 gap-2">
-                  {paramField('lab1_name', 'Lab1')}
-                  {paramField('lab2_name', 'Lab2')}
-                  {paramField('lab3_name', 'Lab3')}
-                  {paramField('lab4_name', 'Lab4')}
-                </div>
-              </div>
-              <div>
-                <h4 className="text-xs font-semibold text-muted-foreground uppercase mb-2">Equipment Parameters</h4>
-                <div className="grid grid-cols-4 gap-2">
-                  {paramField('eq1_name', 'Eq1')}
-                  {paramField('eq2_name', 'Eq2')}
-                  {paramField('eq3_name', 'Eq3')}
-                  {paramField('eq4_name', 'Eq4')}
-                </div>
-              </div>
-              <div>
-                <h4 className="text-xs font-semibold text-muted-foreground uppercase mb-2">Product Parameters</h4>
-                <div className="grid grid-cols-4 gap-2">
-                  {paramField('prod1_name', 'Prod1')}
-                  {paramField('prod2_name', 'Prod2')}
-                  {paramField('prod3_name', 'Prod3')}
-                  {paramField('prod4_name', 'Prod4')}
-                </div>
-              </div>
-              <div>
-                <h4 className="text-xs font-semibold text-muted-foreground uppercase mb-2">Operation Parameters</h4>
-                <div className="grid grid-cols-4 gap-2">
-                  {paramField('oper1_name', 'Oper1')}
-                  {paramField('oper2_name', 'Oper2')}
-                  {paramField('oper3_name', 'Oper3')}
-                  {paramField('oper4_name', 'Oper4')}
-                </div>
-              </div>
-              <Button onClick={handleSaveParamNames}>
-                <Save className="h-3.5 w-3.5 mr-1" /> Save Parameter Names
-              </Button>
+            <CardContent>
+              <DeptCodesSection modelId={model.id} section="product" title="Products" />
             </CardContent>
           </Card>
-        </TabsContent>
-
-        <TabsContent value="deptcodes" className="mt-4 space-y-6">
-          <DeptCodesSection modelId={model.id} section="labor" title="Labor" />
-          <Separator />
-          <DeptCodesSection modelId={model.id} section="equipment" title="Equipment" />
-          <Separator />
-          <DeptCodesSection modelId={model.id} section="product" title="Products" />
         </TabsContent>
 
         <TabsContent value="versions" className="mt-4 space-y-4">
@@ -398,11 +340,16 @@ export default function ModelSettings() {
                             </div>
                           ) : (
                             <>
-                              <span className={`text-sm font-semibold ${!v.label ? 'italic text-muted-foreground' : ''}`}>
+                              <span className={`text-sm font-semibold flex items-center gap-1.5 ${!v.label ? 'italic text-muted-foreground' : ''}`}>
+                                {v.version_kind === 'pre_restore' && (
+                                  <Badge variant="secondary" className="text-[9px] px-1 py-0 h-4">Undo</Badge>
+                                )}
                                 {v.label || 'Unnamed Checkpoint'}
                               </span>
                               <p className="text-[11px] text-muted-foreground">
-                                {new Date(v.created_at).toLocaleString()}
+                                {v.version_kind === 'pre_restore'
+                                  ? 'Restore to return to data before your last restore'
+                                  : new Date(v.created_at).toLocaleString()}
                               </p>
                             </>
                           )}
@@ -410,6 +357,7 @@ export default function ModelSettings() {
                       </div>
                       {editingVersionId !== v.id && (
                         <div className="flex items-center gap-1 shrink-0">
+                          {v.version_kind !== 'pre_restore' && (
                           <Button
                             size="sm" variant="ghost"
                             className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
@@ -417,6 +365,7 @@ export default function ModelSettings() {
                           >
                             <Pencil className="h-3 w-3" />
                           </Button>
+                          )}
                           <Button
                             size="sm" variant="ghost"
                             className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100 transition-opacity text-destructive hover:text-destructive"
@@ -462,8 +411,8 @@ export default function ModelSettings() {
                   <p className="text-sm font-medium">Export Model</p>
                   <p className="text-xs text-muted-foreground">Download full model data as JSON.</p>
                 </div>
-                <Button variant="outline" size="sm" onClick={handleExport}>
-                  <Download className="h-3.5 w-3.5 mr-1" /> Export
+                <Button variant="outline" size="sm" onClick={handleExport} disabled={exporting}>
+                  <Download className="h-3.5 w-3.5 mr-1" /> {exporting ? 'Exporting…' : 'Export'}
                 </Button>
               </div>
               <div className="flex items-center justify-between p-3 rounded-md border border-destructive/30 bg-destructive/5">
@@ -516,7 +465,7 @@ export default function ModelSettings() {
                     Restore to checkpoint: <strong>"{rv.label || 'Unnamed'}"</strong> — saved on{' '}
                     <strong>{new Date(rv.created_at).toLocaleString()}</strong>?
                     <br /><br />
-                    This will replace all current model data. This cannot be undone.
+                    This will replace all current model data. Your current data will be saved automatically as &quot;Previous state (auto-saved)&quot; so you can undo from the checkpoint list.
                   </>
                 ) : 'Loading…';
               })()}
@@ -560,11 +509,12 @@ export default function ModelSettings() {
         </AlertDialogContent>
       </AlertDialog>
     </div>
+    </>
   );
 }
 
-function DeptCodesSection({ modelId, section, title }: { modelId: string; section: 'labor' | 'equipment' | 'product'; title: string }) {
-  const { deptCodes, addDeptCode, updateDeptCode, deleteDeptCode } = useDeptCodes(modelId, section);
+function DeptCodesSection({ modelId, section, title }: { modelId: string; section: 'product'; title: string }) {
+  const { deptCodes, loading, addDeptCode, updateDeptCode, deleteDeptCode } = useDeptCodes(modelId, section);
   const [newValue, setNewValue] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingValue, setEditingValue] = useState('');
@@ -576,7 +526,7 @@ function DeptCodesSection({ modelId, section, title }: { modelId: string; sectio
       return;
     }
     const result = await addDeptCode(newValue.trim());
-    if (result?.error) toast.error('Failed to add value');
+    if (result?.error) toast.error(result.error === 'Duplicate' ? 'This value already exists' : 'Failed to add value');
     else { toast.success('Value added'); setNewValue(''); }
   };
 
@@ -596,6 +546,10 @@ function DeptCodesSection({ modelId, section, title }: { modelId: string; sectio
     if (result?.error) toast.error('Failed to delete');
     else toast.success('Deleted');
   };
+
+  if (loading) {
+    return <p className="text-xs text-muted-foreground">Loading groups…</p>;
+  }
 
   return (
     <div>

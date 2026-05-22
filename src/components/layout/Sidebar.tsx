@@ -14,8 +14,6 @@ import {
   Grid3X3,
   Network,
   Play,
-  FlaskConical,
-  FileText,
   Wrench,
 } from "lucide-react";
 
@@ -29,9 +27,9 @@ const NAV_ITEMS = [
   { href: "/dashboard/alloperations", label: "All Operations", icon: Grid3X3 },
   { href: "/dashboard/ibomscreens", label: "IBOM", icon: Network },
   { href: "/dashboard/runresults", label: "Run & Results", icon: Play },
-  { href: "/dashboard/whatif", label: "What-If Studio", icon: FlaskConical },
-  { href: "/dashboard/reports", label: "Reports", icon: FileText },
-  { href: "/dashboard/parameternames", label: "Model Settings", icon: Wrench },
+  // { href: "/dashboard/whatif", label: "What-If Studio", icon: FlaskConical },
+  // { href: "/dashboard/reports", label: "Reports", icon: FileText },
+  { href: "/dashboard/modelsettings", label: "Model Settings", icon: Wrench },
 ] as const;
 
 export function Sidebar() {

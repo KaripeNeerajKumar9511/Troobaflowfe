@@ -3,6 +3,8 @@
 import { useState, useEffect } from "react"
 import Link from "next/link"
 import api, { ensureCsrfCookie } from "@/lib/api"
+import { useRmctDeviceSupported } from "@/hooks/useRmctDeviceSupported"
+import { UnsupportedDeviceScreen } from "@/components/auth/UnsupportedDeviceScreen"
 
 export default function SignupPage() {
   const [name, setName] = useState("")
@@ -12,6 +14,7 @@ export default function SignupPage() {
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
   const [csrfReady, setCsrfReady] = useState(false)
+  const supported = useRmctDeviceSupported()
 
   useEffect(() => {
     ensureCsrfCookie().then(() => setCsrfReady(true)).catch(() => setError("Could not reach server"))
@@ -45,6 +48,18 @@ export default function SignupPage() {
     } finally {
       setLoading(false)
     }
+  }
+
+  if (supported === false) {
+    return <UnsupportedDeviceScreen />
+  }
+  if (supported === null) {
+    return (
+      <div
+        className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-4"
+        aria-busy="true"
+      />
+    )
   }
 
   return (

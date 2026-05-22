@@ -1,5 +1,6 @@
 import { create } from 'zustand';
-import { fetchAllModels, saveFullModelToDB, db } from '@/lib/supabaseData';
+import { fetchAllModels, fetchModelById, saveFullModelToDB, db } from '@/lib/supabaseData';
+import type { MctTimeUnit, OpsTimeUnit, ProdPeriodUnit } from '@/lib/timeUnits';
 
 export interface LaborGroup {
   id: string;
@@ -22,7 +23,7 @@ export interface LaborGroup {
 export interface EquipmentGroup {
   id: string;
   name: string;
-  equip_type: 'standard' | 'delay';
+  equip_type: 'standard' | 'delay' | 'pure_labor';
   count: number;
   mttf: number;
   mttr: number;
@@ -39,6 +40,9 @@ export interface EquipmentGroup {
   eq3: number;
   eq4: number;
   comments: string;
+  /** Legacy load only; migrated to equip_type pure_labor. */
+  is_pure_labor?: boolean;
+  pure_labor_labor_id?: string;
 }
 
 export interface Product {
@@ -103,9 +107,9 @@ export interface IBOMEntry {
 
 export interface GeneralData {
   model_title: string;
-  ops_time_unit: 'MIN' | 'HR' | 'SEC';
-  mct_time_unit: 'MIN' | 'HR' | 'DAY' | 'WEEK';
-  prod_period_unit: 'DAY' | 'WEEK' | 'MONTH' | 'YEAR';
+  ops_time_unit: OpsTimeUnit;
+  mct_time_unit: MctTimeUnit;
+  prod_period_unit: ProdPeriodUnit;
   conv1: number;
   conv2: number;
   util_limit: number;
@@ -158,8 +162,8 @@ interface ModelStore {
   setActiveModel: (id: string | null) => void;
   getActiveModel: () => Model | undefined;
   loadModels: (force?: boolean) => Promise<void>;
-  createModel: (name: string, description?: string) => string;
-  duplicateModel: (id: string) => string;
+  createModel: (name: string, description?: string) => Promise<string>;
+  duplicateModel: (id: string) => Promise<string>;
   renameModel: (id: string, name: string) => void;
   deleteModel: (id: string) => void;
   toggleStar: (id: string) => void;
@@ -186,7 +190,7 @@ interface ModelStore {
   addIBOM: (modelId: string, entry: IBOMEntry) => void;
   updateIBOM: (modelId: string, entryId: string, data: Partial<IBOMEntry>) => void;
   deleteIBOM: (modelId: string, entryId: string) => void;
-  setIBOMForParent: (modelId: string, parentId: string, entries: IBOMEntry[]) => void;
+  setIBOMForParent: (modelId: string, parentId: string, entries: IBOMEntry[]) => Promise<void>;
 }
 
 const uid = () => crypto.randomUUID();
@@ -200,6 +204,25 @@ export const defaultParamNames: ParamNames = {
   prod1_name: 'Prod1', prod2_name: 'Prod2', prod3_name: 'Prod3', prod4_name: 'Prod4',
   oper1_name: 'Oper1', oper2_name: 'Oper2', oper3_name: 'Oper3', oper4_name: 'Oper4',
 };
+
+/**
+ * When false, forms show built-in Gen1/Lab1/… labels only; API-stored custom names are hidden (backend unchanged).
+ * Set true to re-enable Model Settings → Parameter Names and custom labels everywhere.
+ */
+export const USE_CUSTOM_PARAM_LABELS_IN_UI = false;
+
+/**
+ * When false, Lab1–4 / Eq1–4 / Prod1–4 / Oper1–4 inputs are hidden in data forms (values retained in model).
+ * Set true to re-enable in a future version.
+ */
+export const SHOW_PARAM_VARIABLE_FIELDS_IN_UI = false;
+
+/** Column/field labels for Gen/Lab/Eq/Prod/Oper — respects {@link USE_CUSTOM_PARAM_LABELS_IN_UI}. */
+export function displayParamNames(model: Model | undefined): ParamNames {
+  if (!USE_CUSTOM_PARAM_LABELS_IN_UI) return { ...defaultParamNames };
+  if (!model) return { ...defaultParamNames };
+  return { ...model.param_names };
+}
 
 const defaultParamVals = { lab1: 0, lab2: 0, lab3: 0, lab4: 0 };
 const defaultEqParams = { eq1: 0, eq2: 0, eq3: 0, eq4: 0 };
@@ -256,13 +279,13 @@ export function createDemoModel(): Model {
       { id: laborIds.REPAIR, name: 'REPAIR', count: 3, overtime_pct: 0, unavail_pct: 10, dept_code: '', prioritize_use: false, setup_factor: 1, run_factor: 1, var_factor: 1, ...defaultParamVals, comments: 'Repair workers' },
     ],
     equipment: [
-      { id: equipIds.BENCH, name: 'BENCH', equip_type: 'standard', count: 4, mttf: 0, mttr: 0, overtime_pct: 0, labor_group_id: laborIds.PREP, dept_code: '', out_of_area: false, unavail_pct: 0, setup_factor: 1, run_factor: 1, var_factor: 1, ...defaultEqParams, comments: 'Prep bench' },
+      { id: equipIds.BENCH, name: 'BENCH', equip_type: 'standard', count: 4, mttf: 1, mttr: 0, overtime_pct: 0, labor_group_id: laborIds.PREP, dept_code: '', out_of_area: false, unavail_pct: 0, setup_factor: 1, run_factor: 1, var_factor: 1, ...defaultEqParams, comments: 'Prep bench' },
       { id: equipIds.VT_LATHE, name: 'VT_LATHE', equip_type: 'standard', count: 7, mttf: 600, mttr: 60, overtime_pct: 0, labor_group_id: laborIds.MACHINST, dept_code: '', out_of_area: false, unavail_pct: 0, setup_factor: 1, run_factor: 1, var_factor: 1, ...defaultEqParams, comments: 'Vertical lathes' },
-      { id: equipIds.DEBURR, name: 'DEBURR', equip_type: 'standard', count: 3, mttf: 0, mttr: 0, overtime_pct: 0, labor_group_id: laborIds.REPAIR, dept_code: '', out_of_area: false, unavail_pct: 0, setup_factor: 1, run_factor: 1, var_factor: 1, ...defaultEqParams, comments: 'Deburr stations' },
-      { id: equipIds.INSPECT, name: 'INSPECT', equip_type: 'standard', count: 3, mttf: 0, mttr: 0, overtime_pct: 0, labor_group_id: laborIds.INSPECTR, dept_code: '', out_of_area: false, unavail_pct: 0, setup_factor: 1, run_factor: 1, var_factor: 1, ...defaultEqParams, comments: 'Inspection stations' },
-      { id: equipIds.REWORK, name: 'REWORK', equip_type: 'standard', count: 2, mttf: 0, mttr: 0, overtime_pct: 0, labor_group_id: laborIds.REPAIR, dept_code: '', out_of_area: false, unavail_pct: 0, setup_factor: 1, run_factor: 1, var_factor: 1, ...defaultEqParams, comments: 'Rework area' },
+      { id: equipIds.DEBURR, name: 'DEBURR', equip_type: 'standard', count: 3, mttf: 1, mttr: 0, overtime_pct: 0, labor_group_id: laborIds.REPAIR, dept_code: '', out_of_area: false, unavail_pct: 0, setup_factor: 1, run_factor: 1, var_factor: 1, ...defaultEqParams, comments: 'Deburr stations' },
+      { id: equipIds.INSPECT, name: 'INSPECT', equip_type: 'standard', count: 3, mttf: 1, mttr: 0, overtime_pct: 0, labor_group_id: laborIds.INSPECTR, dept_code: '', out_of_area: false, unavail_pct: 0, setup_factor: 1, run_factor: 1, var_factor: 1, ...defaultEqParams, comments: 'Inspection stations' },
+      { id: equipIds.REWORK, name: 'REWORK', equip_type: 'standard', count: 2, mttf: 1, mttr: 0, overtime_pct: 0, labor_group_id: laborIds.REPAIR, dept_code: '', out_of_area: false, unavail_pct: 0, setup_factor: 1, run_factor: 1, var_factor: 1, ...defaultEqParams, comments: 'Rework area' },
       { id: equipIds.MILL, name: 'MILL', equip_type: 'standard', count: 3, mttf: 480, mttr: 30, overtime_pct: 0, labor_group_id: laborIds.MACHINST, dept_code: '', out_of_area: false, unavail_pct: 0, setup_factor: 1, run_factor: 1, var_factor: 1, ...defaultEqParams, comments: 'Milling machines' },
-      { id: equipIds.DRILL, name: 'DRILL', equip_type: 'standard', count: 8, mttf: 0, mttr: 0, overtime_pct: 0, labor_group_id: laborIds.MACHINST, dept_code: '', out_of_area: false, unavail_pct: 0, setup_factor: 1, run_factor: 1, var_factor: 1, ...defaultEqParams, comments: 'Drill presses' },
+      { id: equipIds.DRILL, name: 'DRILL', equip_type: 'standard', count: 8, mttf: 1, mttr: 0, overtime_pct: 0, labor_group_id: laborIds.MACHINST, dept_code: '', out_of_area: false, unavail_pct: 0, setup_factor: 1, run_factor: 1, var_factor: 1, ...defaultEqParams, comments: 'Drill presses' },
     ],
     products: [
       { id: prodIds.HUB1, name: 'HUB1', demand: 5000, lot_size: 40, tbatch_size: -1, demand_factor: 1, lot_factor: 1, var_factor: 1, setup_factor: 1, make_to_stock: false, gather_tbatches: true, dept_code: 'Hubs', ...defaultProdParams, comments: 'Hub variant 1' },
@@ -353,7 +376,7 @@ export function createDemoModel(): Model {
   };
 }
 
-const defaultGeneral: GeneralData = {
+export const defaultGeneral: GeneralData = {
   model_title: '', ops_time_unit: 'MIN', mct_time_unit: 'DAY', prod_period_unit: 'YEAR',
   conv1: 480, conv2: 210, util_limit: 95, var_equip: 30, var_labor: 30, var_prod: 30,
   gen1: 0, gen2: 0, gen3: 0, gen4: 0,
@@ -386,7 +409,7 @@ export const useModelStore = create<ModelStore>((set, get) => ({
     return models.find((m) => m.id === activeModelId);
   },
 
-  createModel: (name, description = '') => {
+  createModel: async (name, description = '') => {
     const id = uid();
     const model: Model = {
       id, name, description, tags: [],
@@ -397,13 +420,19 @@ export const useModelStore = create<ModelStore>((set, get) => ({
       param_names: { ...defaultParamNames },
       labor: [], equipment: [], products: [], operations: [], routing: [], ibom: [],
     };
-    set((s) => ({ models: [model, ...s.models] }));
-    // Write to Supabase
-    saveFullModelToDB(model).catch(err => console.error('createModel DB error:', err));
+    await saveFullModelToDB(model);
+    await get().loadModels(true);
+    let fromServer = get().models.find((m) => m.id === id) ?? (await fetchModelById(id));
+    if (!fromServer) {
+      throw new Error(
+        'The model was saved but could not be loaded from the server. Check that you are signed in and the API is reachable.',
+      );
+    }
+    set((s) => ({ models: [fromServer!, ...s.models.filter((m) => m.id !== id)] }));
     return id;
   },
 
-  duplicateModel: (id) => {
+  duplicateModel: async (id) => {
     const source = get().models.find((m) => m.id === id);
     if (!source) return '';
     const newId = uid();
@@ -435,8 +464,15 @@ export const useModelStore = create<ModelStore>((set, get) => ({
       i.parent_product_id = idMap[i.parent_product_id] || i.parent_product_id;
       i.component_product_id = idMap[i.component_product_id] || i.component_product_id;
     });
-    set((s) => ({ models: [dup, ...s.models] }));
-    saveFullModelToDB(dup).catch(err => console.error('duplicateModel DB error:', err));
+    await saveFullModelToDB(dup);
+    await get().loadModels(true);
+    let fromServer = get().models.find((m) => m.id === newId) ?? (await fetchModelById(newId));
+    if (!fromServer) {
+      throw new Error(
+        'The duplicated model was saved but could not be loaded from the server. Check that the API is reachable.',
+      );
+    }
+    set((s) => ({ models: [fromServer!, ...s.models.filter((m) => m.id !== newId)] }));
     return newId;
   },
 
@@ -495,29 +531,36 @@ export const useModelStore = create<ModelStore>((set, get) => ({
   },
   updateLabor: (modelId, laborId, data) => {
     set((s) => ({
-      models: s.models.map((m) => m.id === modelId ? { ...m, labor: m.labor.map((l) => l.id === laborId ? { ...l, ...data } : l), updated_at: new Date().toISOString(), run_status: 'needs_recalc' as const } : m),
+      models: s.models.map((m) => {
+        if (m.id !== modelId) return m;
+        const labor = m.labor.map((l) => (l.id === laborId ? { ...l, ...data } : l));
+        return { ...m, labor, updated_at: new Date().toISOString(), run_status: 'needs_recalc' as const };
+      }),
     }));
     db.updateLabor(modelId, laborId, data);
     db.updateModel(modelId, { run_status: 'needs_recalc' });
   },
   deleteLabor: (modelId, laborId) => {
     set((s) => ({
-      models: s.models.map((m) => m.id === modelId ? {
-        ...m,
-        labor: m.labor.filter((l) => l.id !== laborId),
-        equipment: m.equipment.map((e) => e.labor_group_id === laborId ? { ...e, labor_group_id: '' } : e),
-        updated_at: new Date().toISOString(), run_status: 'needs_recalc' as const,
-      } : m),
+      models: s.models.map((m) => {
+        if (m.id !== modelId) return m;
+        const labor = m.labor.filter((l) => l.id !== laborId);
+        const equipment = m.equipment.map((e) =>
+          e.labor_group_id === laborId ? { ...e, labor_group_id: '' } : e,
+        );
+        return { ...m, labor, equipment, updated_at: new Date().toISOString(), run_status: 'needs_recalc' as const };
+      }),
     }));
     db.deleteLabor(modelId, laborId);
     db.updateModel(modelId, { run_status: 'needs_recalc' });
   },
 
   addEquipment: (modelId, eq) => {
+    const labor = get().models.find((m) => m.id === modelId)?.labor;
     set((s) => ({
       models: s.models.map((m) => m.id === modelId ? { ...m, equipment: [...m.equipment, eq], updated_at: new Date().toISOString(), run_status: 'needs_recalc' as const } : m),
     }));
-    db.insertEquipment(modelId, eq);
+    db.insertEquipment(modelId, eq, labor);
     db.updateModel(modelId, { run_status: 'needs_recalc' });
   },
   updateEquipment: (modelId, eqId, data) => {
@@ -660,7 +703,7 @@ export const useModelStore = create<ModelStore>((set, get) => ({
     db.deleteIBOM(modelId, entryId);
     db.updateModel(modelId, { run_status: 'needs_recalc' });
   },
-  setIBOMForParent: (modelId, parentId, entries) => {
+  setIBOMForParent: async (modelId, parentId, entries) => {
     set((s) => ({
       models: s.models.map((m) => m.id === modelId ? {
         ...m,
@@ -668,7 +711,7 @@ export const useModelStore = create<ModelStore>((set, get) => ({
         updated_at: new Date().toISOString(), run_status: 'needs_recalc' as const,
       } : m),
     }));
-    db.setIBOMForParent(modelId, parentId, entries);
-    db.updateModel(modelId, { run_status: 'needs_recalc' });
+    await db.setIBOMForParent(modelId, parentId, entries);
+    await db.updateModel(modelId, { run_status: 'needs_recalc' });
   },
 }));

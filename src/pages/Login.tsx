@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Link, Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import { useRmctDeviceSupported } from '@/hooks/useRmctDeviceSupported';
+import { UnsupportedDeviceScreen } from '@/components/auth/UnsupportedDeviceScreen';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -14,11 +16,16 @@ export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const supported = useRmctDeviceSupported();
 
   useEffect(() => { document.title = 'Trooba Flow — Sign In'; return () => { document.title = 'Trooba Flow'; }; }, []);
 
   const from = (location.state as any)?.from || '/library';
 
+  if (supported === false) return <UnsupportedDeviceScreen />;
+  if (supported === null) {
+    return <div className="min-h-screen bg-sidebar flex items-center justify-center p-4" aria-busy="true" />;
+  }
   if (loading) return null;
   if (user) return <Navigate to={from} replace />;
 
@@ -28,6 +35,7 @@ export default function Login() {
     const { error } = await signIn(email, password);
     setSubmitting(false);
     if (error) {
+      console.log(error);
       toast.error('Invalid email or password');
       return;
     }

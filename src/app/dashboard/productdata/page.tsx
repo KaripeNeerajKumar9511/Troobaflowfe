@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { useModelStore, type Product } from '@/stores/modelStore';
+import { useModelStore, displayParamNames, SHOW_PARAM_VARIABLE_FIELDS_IN_UI, type Product } from '@/stores/modelStore';
 import { useDeleteConfirmation } from '@/hooks/useDeleteConfirmation';
 import { DeleteConfirmInline } from '@/components/DeleteConfirmInline';
 import { useScenarioStore } from '@/stores/scenarioStore';
@@ -17,6 +17,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Plus, Trash2, LayoutGrid, List, Copy, GitBranch, Network, ChevronDown, ChevronUp, CircleHelp, FlaskConical } from 'lucide-react';
+import { ProductTbatchInput } from '@/components/ProductTbatchInput';
 
 function InfoTip({ text }: { text: string }) {
   return (
@@ -42,6 +43,7 @@ function InfoTip({ text }: { text: string }) {
 import { useUserLevelStore, isVisible } from '@/hooks/useUserLevel';
 import { NoModelSelected } from '@/components/NoModelSelected';
 import { toast } from 'sonner';
+import { NonNegativeNumericInput } from '@/components/NonNegativeNumericInput';
 
 const FIELD_LABELS: Record<string, string> = {
   demand: 'End Demand', lot_size: 'Lot Size', tbatch_size: 'TBatch Size',
@@ -68,6 +70,8 @@ export default function ProductData() {
   const applyScenarioChange = useScenarioStore(s => s.applyScenarioChange);
 
   if (!model) return <NoModelSelected />;
+
+  const pn = displayParamNames(model);
 
   const contentCardClass = activeScenarioId
     ? 'border-0 border-l-[3px] border-l-amber-400 bg-white shadow-sm'
@@ -217,10 +221,12 @@ export default function ProductData() {
                     
                     <DataTableHead className="font-mono text-xs">MTS</DataTableHead>
                     <DataTableHead className="font-mono text-xs">Gather</DataTableHead>
-                    <DataTableHead className="font-mono text-xs">{model.param_names.prod1_name}</DataTableHead>
-                    <DataTableHead className="font-mono text-xs">{model.param_names.prod2_name}</DataTableHead>
-                    <DataTableHead className="font-mono text-xs">{model.param_names.prod3_name}</DataTableHead>
-                    <DataTableHead className="font-mono text-xs">{model.param_names.prod4_name}</DataTableHead>
+                    {SHOW_PARAM_VARIABLE_FIELDS_IN_UI && <>
+                      <DataTableHead className="font-mono text-xs">{pn.prod1_name}</DataTableHead>
+                      <DataTableHead className="font-mono text-xs">{pn.prod2_name}</DataTableHead>
+                      <DataTableHead className="font-mono text-xs">{pn.prod3_name}</DataTableHead>
+                      <DataTableHead className="font-mono text-xs">{pn.prod4_name}</DataTableHead>
+                    </>}
                   </>}
                   <DataTableHead className="font-mono text-xs">Ops</DataTableHead>
                   <DataTableHead className="font-mono text-xs">IBOM</DataTableHead>
@@ -234,7 +240,7 @@ export default function ProductData() {
                   return (
                   <DataTableRow key={p.id} className={isConfirming ? 'bg-destructive/10' : ''}>
                     {isConfirming ? (
-                      <DataTableCell colSpan={showAdvanced ? 18 : 8}>
+                      <DataTableCell colSpan={showAdvanced ? (SHOW_PARAM_VARIABLE_FIELDS_IN_UI ? 18 : 14) : 8}>
                         <DeleteConfirmInline
                           message={`Delete ${p.name}? This will remove its operations and IBOM data.`}
                           onConfirm={() => confirmDelete(p.id, () => deleteProduct(model.id, p.id))}
@@ -243,25 +249,28 @@ export default function ProductData() {
                       </DataTableCell>
                     ) : (<>
                     <DataTableCell className="font-mono font-medium">{p.name}</DataTableCell>
-                    <DataTableCell><Input type="number" className={`h-8 w-20 font-mono ${p.demand < 0 ? 'border-destructive' : ''}`} value={p.demand} onChange={(e) => handleCellChange(p.id, 'demand', +e.target.value)} /></DataTableCell>
+                    <DataTableCell><NonNegativeNumericInput value={p.demand} onChange={(v) => handleCellChange(p.id, 'demand', v)} /></DataTableCell>
                     <DataTableCell>
-                      <Input type="number" className={`h-8 w-20 font-mono ${p.lot_size < 1 ? 'border-destructive' : ''}`} value={p.lot_size} onChange={(e) => handleCellChange(p.id, 'lot_size', +e.target.value)} />
+                      <NonNegativeNumericInput value={p.lot_size} onChange={(v) => handleCellChange(p.id, 'lot_size', v)} />
                       {p.lot_size < 1 && <span className="text-[10px] text-destructive">≥ 1</span>}
                     </DataTableCell>
                     {showAdvanced && <>
                       <DataTableCell>
-                        <Input type="number" className="h-8 w-20 font-mono" value={p.tbatch_size} onChange={(e) => handleCellChange(p.id, 'tbatch_size', +e.target.value)} />
-                        <span className="text-[9px] text-muted-foreground">-1 = lot size</span>
+                        <ProductTbatchInput
+                          tbatchSize={p.tbatch_size}
+                          className="h-8 w-20 font-mono"
+                          onChange={(v) => handleCellChange(p.id, 'tbatch_size', v)}
+                        />
                       </DataTableCell>
                       <DataTableCell><Input className="h-8 w-24" value={p.dept_code} onChange={(e) => handleCellChange(p.id, 'dept_code', e.target.value)} /></DataTableCell>
                       <DataTableCell>
                         <div className="flex items-center gap-1">
-                          <Input type="number" className="h-8 w-20 font-mono" value={p.demand_factor} step="0.1" onChange={(e) => handleCellChange(p.id, 'demand_factor', +e.target.value)} />
+                          <NonNegativeNumericInput allowDecimal value={p.demand_factor} onChange={(v) => handleCellChange(p.id, 'demand_factor', v)} />
                           <InfoTip text="Scales the product demand without changing the stored demand value. Set to 0 to effectively exclude this product from calculations while keeping its data." />
                         </div>
                       </DataTableCell>
-                      <DataTableCell><Input type="number" className="h-8 w-20 font-mono" value={p.lot_factor} step="0.1" onChange={(e) => handleCellChange(p.id, 'lot_factor', +e.target.value)} /></DataTableCell>
-                      <DataTableCell><Input type="number" className="h-8 w-20 font-mono" value={p.var_factor} step="0.1" onChange={(e) => handleCellChange(p.id, 'var_factor', +e.target.value)} /></DataTableCell>
+                      <DataTableCell><NonNegativeNumericInput allowDecimal value={p.lot_factor} onChange={(v) => handleCellChange(p.id, 'lot_factor', v)} /></DataTableCell>
+                      <DataTableCell><NonNegativeNumericInput allowDecimal value={p.var_factor} onChange={(v) => handleCellChange(p.id, 'var_factor', v)} /></DataTableCell>
                       
                       <DataTableCell>
                         <div className="flex items-center gap-1">
@@ -275,10 +284,12 @@ export default function ProductData() {
                           <InfoTip text="When checked, the first transfer batch waits for the full lot before moving to stock. Uncheck if transfer batches are sent forward immediately as completed." />
                         </div>
                       </DataTableCell>
-                      <DataTableCell><Input type="number" className="h-8 w-20 font-mono" value={p.prod1} onChange={(e) => handleCellChange(p.id, 'prod1', +e.target.value)} /></DataTableCell>
-                      <DataTableCell><Input type="number" className="h-8 w-20 font-mono" value={p.prod2} onChange={(e) => handleCellChange(p.id, 'prod2', +e.target.value)} /></DataTableCell>
-                      <DataTableCell><Input type="number" className="h-8 w-20 font-mono" value={p.prod3} onChange={(e) => handleCellChange(p.id, 'prod3', +e.target.value)} /></DataTableCell>
-                      <DataTableCell><Input type="number" className="h-8 w-20 font-mono" value={p.prod4} onChange={(e) => handleCellChange(p.id, 'prod4', +e.target.value)} /></DataTableCell>
+                      {SHOW_PARAM_VARIABLE_FIELDS_IN_UI && <>
+                        <DataTableCell><NonNegativeNumericInput value={p.prod1} onChange={(v) => handleCellChange(p.id, 'prod1', v)} /></DataTableCell>
+                        <DataTableCell><NonNegativeNumericInput value={p.prod2} onChange={(v) => handleCellChange(p.id, 'prod2', v)} /></DataTableCell>
+                        <DataTableCell><NonNegativeNumericInput value={p.prod3} onChange={(v) => handleCellChange(p.id, 'prod3', v)} /></DataTableCell>
+                        <DataTableCell><NonNegativeNumericInput value={p.prod4} onChange={(v) => handleCellChange(p.id, 'prod4', v)} /></DataTableCell>
+                      </>}
                     </>}
                     <DataTableCell>
                       <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs font-mono" onClick={() => goToOps(p.id)}>
@@ -333,9 +344,9 @@ export default function ProductData() {
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <TooltipProvider delayDuration={400}><Tooltip><TooltipTrigger asChild><Label className="text-xs cursor-help">End Demand</Label></TooltipTrigger><TooltipContent className="max-w-[260px] text-xs">Quantity shipped directly to customers. Set to 0 for components used only within assemblies; their production quantity will be calculated automatically from the IBOM.</TooltipContent></Tooltip></TooltipProvider>
-                      <Input type="number" className="h-8 font-mono" value={p.demand} onChange={(e) => handleCellChange(p.id, 'demand', +e.target.value)} />
+                      <NonNegativeNumericInput value={p.demand} onChange={(v) => handleCellChange(p.id, 'demand', v)} />
                     </div>
-                    <div><Label className="text-xs">Lot Size</Label><Input type="number" className="h-8 font-mono" value={p.lot_size} onChange={(e) => handleCellChange(p.id, 'lot_size', +e.target.value)} /></div>
+                    <div><Label className="text-xs">Lot Size</Label><NonNegativeNumericInput value={p.lot_size} onChange={(v) => handleCellChange(p.id, 'lot_size', v)} /></div>
                   </div>
                   <div><Label className="text-xs">Comments</Label><Input className="h-8" value={p.comments} onChange={(e) => handleCellChange(p.id, 'comments', e.target.value)} /></div>
                   <Button variant="outline" size="sm" className="w-full gap-1 text-xs" onClick={() => goToOps(p.id)}>
@@ -351,18 +362,21 @@ export default function ProductData() {
                       <div className="grid grid-cols-2 gap-3">
                          <div>
                             <Label className="text-xs">Transfer Batch</Label>
-                            <Input type="number" className="h-8 font-mono" value={p.tbatch_size} onChange={(e) => handleCellChange(p.id, 'tbatch_size', +e.target.value)} />
-                            <span className="text-[9px] text-muted-foreground">-1 = same as lot size (default)</span>
+                            <ProductTbatchInput
+                              tbatchSize={p.tbatch_size}
+                              className="h-8 font-mono"
+                              onChange={(v) => handleCellChange(p.id, 'tbatch_size', v)}
+                            />
                           </div>
                         <div>
                           <div className="flex items-center gap-1">
                             <Label className="text-xs">Demand Factor</Label>
                             <InfoTip text="Scales the product demand without changing the stored demand value. Set to 0 to effectively exclude this product from calculations while keeping its data." />
                           </div>
-                          <Input type="number" className="h-8 font-mono" value={p.demand_factor} step="0.1" onChange={(e) => handleCellChange(p.id, 'demand_factor', +e.target.value)} />
+                          <NonNegativeNumericInput allowDecimal value={p.demand_factor} onChange={(v) => handleCellChange(p.id, 'demand_factor', v)} />
                         </div>
-                        <div><Label className="text-xs">Lot Factor</Label><Input type="number" className="h-8 font-mono" value={p.lot_factor} step="0.1" onChange={(e) => handleCellChange(p.id, 'lot_factor', +e.target.value)} /></div>
-                        <div><Label className="text-xs">Var Factor</Label><Input type="number" className="h-8 font-mono" value={p.var_factor} step="0.1" onChange={(e) => handleCellChange(p.id, 'var_factor', +e.target.value)} /></div>
+                        <div><Label className="text-xs">Lot Factor</Label><NonNegativeNumericInput allowDecimal value={p.lot_factor} onChange={(v) => handleCellChange(p.id, 'lot_factor', v)} /></div>
+                        <div><Label className="text-xs">Var Factor</Label><NonNegativeNumericInput allowDecimal value={p.var_factor} onChange={(v) => handleCellChange(p.id, 'var_factor', v)} /></div>
                       </div>
                       
                       <div className="flex items-center justify-between">
@@ -386,18 +400,19 @@ export default function ProductData() {
                         </div>
                         <Input className="h-8" value={p.dept_code} placeholder="e.g. Hubs, Components" onChange={(e) => handleCellChange(p.id, 'dept_code', e.target.value)} />
                       </div>
-                      {/* Prod1-4 parameter variables */}
+                      {SHOW_PARAM_VARIABLE_FIELDS_IN_UI && (
                       <div className="pt-2 border-t border-border">
                         <Label className="text-[10px] text-muted-foreground uppercase tracking-wider flex items-center gap-1">Parameter Variables <InfoTip text="Use Display Name to rename the variable. The new label appears across the app and in the Formula Builder." /></Label>
                         <div className="grid grid-cols-4 gap-3 mt-1.5">
                           {(['prod1', 'prod2', 'prod3', 'prod4'] as const).map(key => (
                             <div key={key}>
-                              <Label className="text-xs">{model.param_names[`${key}_name` as keyof typeof model.param_names]}</Label>
-                              <Input type="number" className="h-8 font-mono" value={p[key]} onChange={(e) => handleCellChange(p.id, key, +e.target.value)} />
+                              <Label className="text-xs">{pn[`${key}_name` as keyof typeof pn]}</Label>
+                              <NonNegativeNumericInput value={p[key]} onChange={(v) => handleCellChange(p.id, key, v)} />
                             </div>
                           ))}
                         </div>
                       </div>
+                      )}
                     </div>
                   )}
                 </div>

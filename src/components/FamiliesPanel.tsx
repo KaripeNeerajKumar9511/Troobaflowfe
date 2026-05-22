@@ -10,6 +10,7 @@ import {
 import { Plus, ChevronDown, ChevronRight, X } from 'lucide-react';
 import { getScenarioColor } from '@/lib/scenarioColors';
 import { toast } from 'sonner';
+import { NonNegativeNumericInput } from '@/components/NonNegativeNumericInput';
 
 interface FamiliesTabContentProps {
   modelId: string;
@@ -90,14 +91,7 @@ export default function FamiliesTabContent({
           </div>
           <div>
             <Label className="text-[11px]">Number of members</Label>
-            <Input
-              type="number"
-              min={1}
-              max={50}
-              value={memberCount}
-              onChange={e => setMemberCount(Math.min(50, Math.max(1, +e.target.value)))}
-              className="h-7 text-xs mt-1 w-20"
-            />
+            <NonNegativeNumericInput className="h-7 text-xs mt-1 w-20" value={memberCount} onChange={(v) => setMemberCount(Math.min(50, Math.max(1, v)))} />
           </div>
           <div className="flex gap-1.5 pt-1">
             <Button size="sm" className="h-7 text-[11px] px-3" onClick={handleCreate} disabled={!familyName.trim()}>

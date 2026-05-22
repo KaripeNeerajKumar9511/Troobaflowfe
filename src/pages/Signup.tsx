@@ -9,6 +9,8 @@ import { toast } from 'sonner';
 import { seedDemoModelToDB } from '@/lib/supabaseData';
 import { Check, X } from 'lucide-react';
 import troobaLogoLight from '@/assets/trooba-logo-light.svg';
+import { useRmctDeviceSupported } from '@/hooks/useRmctDeviceSupported';
+import { UnsupportedDeviceScreen } from '@/components/auth/UnsupportedDeviceScreen';
 
 function PasswordRequirement({ met, label }: { met: boolean; label: string }) {
   return (
@@ -26,6 +28,7 @@ export default function Signup() {
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const supported = useRmctDeviceSupported();
 
   useEffect(() => { document.title = 'Trooba Flow — Create Account'; return () => { document.title = 'Trooba Flow'; }; }, []);
 
@@ -37,6 +40,10 @@ export default function Signup() {
 
   const passwordValid = pwChecks.minLength && pwChecks.hasUppercase && pwChecks.hasNumber;
 
+  if (supported === false) return <UnsupportedDeviceScreen />;
+  if (supported === null) {
+    return <div className="min-h-screen bg-sidebar flex items-center justify-center p-4" aria-busy="true" />;
+  }
   if (loading) return null;
   if (user) return <Navigate to="/library" replace />;
 

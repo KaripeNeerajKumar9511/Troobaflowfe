@@ -1,3 +1,4 @@
+import { useAuth } from '@/contexts/AuthContext';
 import { useUserLevelStore, type UserLevel } from '@/hooks/useUserLevel';
 import { Badge } from '@/components/ui/badge';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -23,12 +24,14 @@ const LEVEL_CONFIG: Record<UserLevel, { label: string; className: string; descri
 };
 
 export function UserLevelChip() {
+  const { refreshProfile } = useAuth();
   const { userLevel, setUserLevel } = useUserLevelStore();
   const [open, setOpen] = useState(false);
   const config = LEVEL_CONFIG[userLevel];
 
   const handleChange = async (level: UserLevel) => {
     await setUserLevel(level);
+    await refreshProfile();
     setOpen(false);
     toast.success(`Switched to ${LEVEL_CONFIG[level].label} mode`);
   };

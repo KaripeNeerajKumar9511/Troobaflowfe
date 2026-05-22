@@ -16,9 +16,9 @@ const navItems = [
   { href: "/dashboard/alloperations", label: "All Operations" },
   { href: "/dashboard/ibomscreens", label: "IBOM" },
   { href: "/dashboard/runresults", label: "Run & Results" },
-  { href: "/dashboard/whatif", label: "What-If Studio" },
-  { href: "/dashboard/reports", label: "Reports" },
-  { href: "/dashboard/parameternames", label: "Parameter Names" },
+  // { href: "/dashboard/whatif", label: "What-If Studio" },
+  // { href: "/dashboard/reports", label: "Reports" },
+  // { href: "/dashboard/parameternames", label: "Parameter Names" },
   { href: "/settings", label: "Settings" },
 ] as const
 

@@ -1,10 +1,15 @@
-import { useState, useCallback, useSyncExternalStore } from 'react';
+import { useState, useCallback, useEffect, useSyncExternalStore } from 'react';
 import { useModelStore } from '@/stores/modelStore';
 import { useScenarioStore } from '@/stores/scenarioStore';
 import { useResultsStore } from '@/stores/resultsStore';
 import { fullCalculate, verifyModel } from '@/lib/simulationApi';
+import {
+  getModelValidationMessages,
+  mergeValidationMessages,
+  toUtilOnlyResults,
+  type CalcResults,
+} from '@/lib/calculationEngine';
 import { toast } from 'sonner';
-import type { CalcResults } from '@/lib/calculationEngine';
 
 export type RunMode = 'full' | 'verify' | 'util_only';
 
@@ -17,10 +22,18 @@ export interface RunLogEntry {
   status: 'success' | 'warning' | 'error';
 }
 
+export type VerifyMessages = {
+  errors: string[];
+  warnings: string[];
+  verifiedOk?: boolean;
+};
+
 interface UseRunCalculationReturn {
   isRunning: boolean;
   runLog: RunLogEntry[];
-  verifyMessages: { errors: string[]; warnings: string[] } | null;
+  verifyMessages: VerifyMessages | null;
+  /** True when issue / validation banners should be visible (verify, util-only, or full calculate). */
+  showIssueBanners: boolean;
   handleRun: (mode: RunMode) => Promise<void>;
   clearVerifyMessages: () => void;
 }
@@ -73,7 +86,13 @@ export function useRunCalculation(): UseRunCalculationReturn {
       ? allScenarios.find((s) => s.id === selectedRunScenarioId) || activeScenario
       : activeScenario;
 
-  const [verifyMessages, setVerifyMessages] = useState<{ errors: string[]; warnings: string[] } | null>(null);
+  const [verifyMessages, setVerifyMessages] = useState<VerifyMessages | null>(null);
+  const [showIssueBanners, setShowIssueBanners] = useState(false);
+
+  useEffect(() => {
+    setShowIssueBanners(false);
+    setVerifyMessages(null);
+  }, [model?.id]);
 
   const runLog = useSyncExternalStore(subscribeRunLog, getRunLogSnapshot);
   const isRunning = useSyncExternalStore(subscribeIsRunning, getIsRunningSnapshot);
@@ -84,68 +103,77 @@ export function useRunCalculation(): UseRunCalculationReturn {
 
       if (mode === 'verify') {
         const startTime = Date.now();
+        const local = getModelValidationMessages(model);
+        let remote = { errors: [] as string[], warnings: [] as string[] };
         try {
-          const msgs = await verifyModel(model);
-          setVerifyMessages(msgs);
-          const entry: RunLogEntry = {
-            id: crypto.randomUUID(),
-            timestamp: new Date().toISOString(),
-            mode: 'verify',
-            scenarioName: runScenario?.name || 'Basecase',
-            durationMs: Date.now() - startTime,
-            status:
-              msgs.errors.length > 0 ? 'error' : msgs.warnings.length > 0 ? 'warning' : 'success',
-          };
-          _runLog = [entry, ..._runLog].slice(0, 5);
-          notifyRunLog();
-          if (msgs.errors.length === 0 && msgs.warnings.length === 0) {
-            toast.success('Data verification complete — no issues found');
-          } else {
-            toast.warning(`Found ${msgs.errors.length} error(s) and ${msgs.warnings.length} warning(s)`);
-          }
+          remote = await verifyModel(model);
         } catch (e) {
           console.error(e);
-          toast.error('Verification request failed');
+          toast.error('Could not reach the verification service — showing checks performed in your browser.');
+        }
+        const msgs = mergeValidationMessages(local, remote);
+        const ok = msgs.errors.length === 0 && msgs.warnings.length === 0;
+        setVerifyMessages(ok ? { errors: [], warnings: [], verifiedOk: true } : msgs);
+        setShowIssueBanners(true);
+        const entry: RunLogEntry = {
+          id: crypto.randomUUID(),
+          timestamp: new Date().toISOString(),
+          mode: 'verify',
+          scenarioName: runScenario?.name || 'Basecase',
+          durationMs: Date.now() - startTime,
+          status:
+            msgs.errors.length > 0 ? 'error' : msgs.warnings.length > 0 ? 'warning' : 'success',
+        };
+        _runLog = [entry, ..._runLog].slice(0, 5);
+        notifyRunLog();
+        return;
+      }
+
+      const localPre = getModelValidationMessages(model);
+      let remotePre = { errors: [] as string[], warnings: [] as string[] };
+      try {
+        remotePre = await verifyModel(model);
+      } catch (e) {
+        console.error(e);
+      }
+      const mergedPre = mergeValidationMessages(localPre, remotePre);
+      setVerifyMessages(
+        mergedPre.errors.length > 0 || mergedPre.warnings.length > 0 ? mergedPre : null,
+      );
+
+      if (mergedPre.errors.length > 0) {
+        setShowIssueBanners(true);
+        if (mode === 'util_only') {
+          toast.error('Fix validation errors before calculating utilization.');
         }
         return;
       }
 
-      const validationErrors: string[] = [];
-      if (model.general.conv1 <= 0) validationErrors.push('Time Conversion 1 must be greater than 0');
-      if (model.general.conv2 <= 0) validationErrors.push('Time Conversion 2 must be greater than 0');
-      model.products.forEach((p) => {
-        if (p.lot_size < 1) validationErrors.push(`Product "${p.name}": Lot Size must be ≥ 1`);
-        if (p.demand < 0) validationErrors.push(`Product "${p.name}": Demand cannot be negative`);
-      });
-      model.equipment.forEach((e) => {
-        if (e.equip_type === 'standard' && e.count < 1) {
-          validationErrors.push(`Equipment "${e.name}": Count must be ≥ 1`);
-        }
-      });
-      model.labor.forEach((l) => {
-        if (l.count < 1) validationErrors.push(`Labor "${l.name}": Count must be ≥ 1`);
-      });
-      if (validationErrors.length > 0) {
-        setVerifyMessages({ errors: validationErrors, warnings: [] });
-        toast.error(`${validationErrors.length} validation error(s) — fix before calculating`, {
-          description: validationErrors.slice(0, 3).join('; ') + (validationErrors.length > 3 ? '…' : ''),
-        });
-        return;
-      }
+      if (mode === 'full') setShowIssueBanners(false);
 
       setGlobalIsRunning(true);
       const startTime = Date.now();
       const resultKey = runScenario ? runScenario.id : 'basecase';
+      let calcSucceeded = false;
 
       try {
-        const calcResults: CalcResults = await fullCalculate(model, runScenario ?? null);
+        let calcResults: CalcResults = await fullCalculate(model, runScenario ?? null);
+        calcSucceeded = true;
+        if (mode === 'util_only') {
+          calcResults = toUtilOnlyResults(calcResults);
+        } else {
+          calcResults = { ...calcResults, runMode: 'full' };
+        }
         if (mode === 'full') {
           console.log('[Full Calculate] frontend received data:', calcResults);
         }
         setResults(resultKey, calcResults);
         setRunStatus(model.id, 'current');
         if (runScenario) markCalculated(runScenario.id);
-        setVerifyMessages(null);
+        // Keep non-blocking validation warnings visible above calculation messages; clear if none.
+        setVerifyMessages(
+          mergedPre.warnings.length > 0 ? { errors: [], warnings: mergedPre.warnings } : null,
+        );
 
         const durationMs = Date.now() - startTime;
         const hasErrors = calcResults.errors.length > 0;
@@ -163,10 +191,14 @@ export function useRunCalculation(): UseRunCalculationReturn {
         notifyRunLog();
 
         const { scenarioDb } = await import('@/lib/scenarioDb');
-        if (runScenario) {
-          await scenarioDb.saveResults(runScenario.id, calcResults);
-        } else {
-          await scenarioDb.saveBasecaseResults(model.id, calcResults);
+        try {
+          if (runScenario) {
+            await scenarioDb.saveResults(runScenario.id, calcResults);
+          } else {
+            await scenarioDb.saveBasecaseResults(model.id, calcResults);
+          }
+        } catch (persistErr) {
+          console.error('Failed to persist run results:', persistErr);
         }
         const { db } = await import('@/lib/supabaseData');
         await db.updateModel(model.id, {
@@ -174,22 +206,17 @@ export function useRunCalculation(): UseRunCalculationReturn {
           last_run_at: new Date().toISOString(),
         });
 
-        if (hasErrors) {
-          toast.error(calcResults.errors[0]);
-        } else if (hasWarnings) {
-          toast.warning(`${calcResults.overLimitResources.length} resource(s) exceed utilization limit`);
-        } else {
-          toast.success(
-            mode === 'full'
-              ? 'Full calculation complete — all production targets achievable'
-              : 'Utilization calculation complete',
-          );
-        }
       } catch (e) {
         console.error(e);
-        toast.error(e instanceof Error ? e.message : 'Calculation failed');
+        const message = e instanceof Error ? e.message : 'Calculation failed';
+        toast.error(mode === 'util_only' ? `Utilization calculate failed: ${message}` : `Calculate failed: ${message}`);
+        setShowIssueBanners(true);
       } finally {
         setGlobalIsRunning(false);
+        if (mode === 'full' || mode === 'util_only') setShowIssueBanners(true);
+        if (mode === 'util_only' && calcSucceeded) {
+          toast.success('Utilization calculated — equipment and labor tabs are updated.');
+        }
       }
     },
     [model, runScenario, setResults, setRunStatus, markCalculated],
@@ -199,6 +226,7 @@ export function useRunCalculation(): UseRunCalculationReturn {
     isRunning,
     runLog,
     verifyMessages,
+    showIssueBanners,
     handleRun,
     clearVerifyMessages: () => setVerifyMessages(null),
   };

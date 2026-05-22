@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { Model, LaborGroup } from '@/stores/modelStore';
-import { useModelStore } from '@/stores/modelStore';
+import { useModelStore, displayParamNames, SHOW_PARAM_VARIABLE_FIELDS_IN_UI } from '@/stores/modelStore';
 import type { Scenario } from '@/stores/scenarioStore';
 import { useScenarioStore } from '@/stores/scenarioStore';
 import { useUserLevelStore, isVisible } from '@/hooks/useUserLevel';
@@ -13,6 +13,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { Button } from '@/components/ui/button';
 import { Info, ChevronDown, ChevronUp, Users } from 'lucide-react';
 import { DeptCodeSelect } from '@/components/DeptCodeSelect';
+import { NonNegativeNumericInput } from '@/components/NonNegativeNumericInput';
 
 function InfoTip({ text }: { text: string }) {
   return (
@@ -41,6 +42,8 @@ export function WhatIfLaborTab({ model, scenario }: { model: Model; scenario: Sc
   if (!model.labor.length) {
     return <div className="py-12 text-center"><Users className="h-10 w-10 mx-auto text-muted-foreground/40 mb-3" /><p className="text-sm text-muted-foreground">No labor groups defined</p></div>;
   }
+
+  const pn = displayParamNames(model);
 
   const handleChange = (id: string, field: keyof LaborGroup, value: any) => {
     const labor = model.labor.find(l => l.id === id);
@@ -76,10 +79,12 @@ export function WhatIfLaborTab({ model, scenario }: { model: Model; scenario: Sc
                   <TableHead className="font-mono text-xs">
                     <div className="flex items-center gap-1">Prioritize <InfoTip text="When enabled, MPX shifts labor time toward more heavily utilised equipment groups served by this labor group." /></div>
                   </TableHead>
-                  <TableHead className="font-mono text-xs">{model.param_names.lab1_name}</TableHead>
-                  <TableHead className="font-mono text-xs">{model.param_names.lab2_name}</TableHead>
-                  <TableHead className="font-mono text-xs">{model.param_names.lab3_name}</TableHead>
-                  <TableHead className="font-mono text-xs">{model.param_names.lab4_name}</TableHead>
+                  {SHOW_PARAM_VARIABLE_FIELDS_IN_UI && <>
+                    <TableHead className="font-mono text-xs">{pn.lab1_name}</TableHead>
+                    <TableHead className="font-mono text-xs">{pn.lab2_name}</TableHead>
+                    <TableHead className="font-mono text-xs">{pn.lab3_name}</TableHead>
+                    <TableHead className="font-mono text-xs">{pn.lab4_name}</TableHead>
+                  </>}
                 </>}
               </TableRow>
             </TableHeader>
@@ -87,21 +92,23 @@ export function WhatIfLaborTab({ model, scenario }: { model: Model; scenario: Sc
               {model.labor.map((l) => (
                 <TableRow key={l.id}>
                   <TableCell className="font-mono font-medium">{l.name}</TableCell>
-                  <TableCell><Input type="number" className={`h-8 w-20 font-mono ${cc(scenario, l.id, 'count')}`} value={l.count} onChange={(e) => handleChange(l.id, 'count', +e.target.value)} /></TableCell>
-                  <TableCell><Input type="number" className={`h-8 w-20 font-mono ${cc(scenario, l.id, 'overtime_pct')}`} value={l.overtime_pct} onChange={(e) => handleChange(l.id, 'overtime_pct', +e.target.value)} /></TableCell>
-                  <TableCell><Input type="number" className={`h-8 w-20 font-mono ${cc(scenario, l.id, 'unavail_pct')}`} value={l.unavail_pct} onChange={(e) => handleChange(l.id, 'unavail_pct', +e.target.value)} /></TableCell>
+                  <TableCell><NonNegativeNumericInput value={l.count} onChange={(v) => handleChange(l.id, 'count', v)} /></TableCell>
+                  <TableCell><NonNegativeNumericInput value={l.overtime_pct} onChange={(v) => handleChange(l.id, 'overtime_pct', v)} /></TableCell>
+                  <TableCell><NonNegativeNumericInput value={l.unavail_pct} onChange={(v) => handleChange(l.id, 'unavail_pct', v)} /></TableCell>
                   {showAdvanced && <>
                     <TableCell>
                       <DeptCodeSelect modelId={model.id} value={l.dept_code} onChange={(v) => handleChange(l.id, 'dept_code', v)} section="labor" className={`h-8 w-28 ${cc(scenario, l.id, 'dept_code')}`} />
                     </TableCell>
-                    <TableCell><Input type="number" className={`h-8 w-20 font-mono ${cc(scenario, l.id, 'setup_factor')}`} value={l.setup_factor} step="0.1" onChange={(e) => handleChange(l.id, 'setup_factor', +e.target.value)} /></TableCell>
-                    <TableCell><Input type="number" className={`h-8 w-20 font-mono ${cc(scenario, l.id, 'run_factor')}`} value={l.run_factor} step="0.1" onChange={(e) => handleChange(l.id, 'run_factor', +e.target.value)} /></TableCell>
-                    <TableCell><Input type="number" className={`h-8 w-20 font-mono ${cc(scenario, l.id, 'var_factor')}`} value={l.var_factor} step="0.1" onChange={(e) => handleChange(l.id, 'var_factor', +e.target.value)} /></TableCell>
+                    <TableCell><NonNegativeNumericInput allowDecimal value={l.setup_factor} onChange={(v) => handleChange(l.id, 'setup_factor', v)} /></TableCell>
+                    <TableCell><NonNegativeNumericInput allowDecimal value={l.run_factor} onChange={(v) => handleChange(l.id, 'run_factor', v)} /></TableCell>
+                    <TableCell><NonNegativeNumericInput allowDecimal value={l.var_factor} onChange={(v) => handleChange(l.id, 'var_factor', v)} /></TableCell>
                     <TableCell><Switch checked={l.prioritize_use} onCheckedChange={(v) => handleChange(l.id, 'prioritize_use', v)} /></TableCell>
-                    <TableCell><Input type="number" className={`h-8 w-20 font-mono ${cc(scenario, l.id, 'lab1')}`} value={l.lab1} onChange={(e) => handleChange(l.id, 'lab1', +e.target.value)} /></TableCell>
-                    <TableCell><Input type="number" className={`h-8 w-20 font-mono ${cc(scenario, l.id, 'lab2')}`} value={l.lab2} onChange={(e) => handleChange(l.id, 'lab2', +e.target.value)} /></TableCell>
-                    <TableCell><Input type="number" className={`h-8 w-20 font-mono ${cc(scenario, l.id, 'lab3')}`} value={l.lab3} onChange={(e) => handleChange(l.id, 'lab3', +e.target.value)} /></TableCell>
-                    <TableCell><Input type="number" className={`h-8 w-20 font-mono ${cc(scenario, l.id, 'lab4')}`} value={l.lab4} onChange={(e) => handleChange(l.id, 'lab4', +e.target.value)} /></TableCell>
+                    {SHOW_PARAM_VARIABLE_FIELDS_IN_UI && <>
+                      <TableCell><NonNegativeNumericInput value={l.lab1} onChange={(v) => handleChange(l.id, 'lab1', v)} /></TableCell>
+                      <TableCell><NonNegativeNumericInput value={l.lab2} onChange={(v) => handleChange(l.id, 'lab2', v)} /></TableCell>
+                      <TableCell><NonNegativeNumericInput value={l.lab3} onChange={(v) => handleChange(l.id, 'lab3', v)} /></TableCell>
+                      <TableCell><NonNegativeNumericInput value={l.lab4} onChange={(v) => handleChange(l.id, 'lab4', v)} /></TableCell>
+                    </>}
                   </>}
                 </TableRow>
               ))}

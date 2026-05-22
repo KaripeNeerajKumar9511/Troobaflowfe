@@ -40,6 +40,15 @@ export const AUTH_LOGIN = "/api/auth/login/";
 export const AUTH_SIGNUP = "/api/auth/signup/";
 export const AUTH_LOGOUT = "/api/auth/logout/";
 
+export const ADMIN_LOGIN = "/api/admin/login/";
+export const ADMIN_LOGOUT = "/api/admin/logout/";
+export const ADMIN_ME = "/api/admin/me/";
+export const ADMIN_STATS = "/api/admin/stats/";
+export const ADMIN_USERS = "/api/admin/users/";
+export const adminUserDetail = (userId: number | string) => `/api/admin/users/${userId}/`;
+export const adminModelDetail = (userId: number | string, modelId: string) =>
+  `/api/admin/users/${userId}/models/${modelId}/`;
+
 function readCookie(name: string): string | null {
   const m = document.cookie.match(new RegExp(`(?:^|; )${name.replace(/[.$?*|{}()[\]\\/+^]/g, '\\$&')}=([^;]*)`));
   return m ? decodeURIComponent(m[1]) : null;
@@ -50,6 +59,8 @@ let csrfPrimed = false;
 export async function ensureApiCsrf(): Promise<void> {
   if (csrfPrimed) return;
   const res = await fetch(resolveApiUrl(AUTH_CSRF), { credentials: "include" });
+  const data = await res.json();
+console.log("res for csrf data", data);
   if (res.ok) csrfPrimed = true;
 }
 
@@ -58,8 +69,13 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
   const headers = new Headers(init.headers);
   if (!['GET', 'HEAD', 'OPTIONS', 'TRACE'].includes(method)) {
     await ensureApiCsrf();
+    
     const token = readCookie('csrftoken');
+    console.log('token', token);
+    const csrf= headers.get('csrftoken')
+    console.log('csrf', csrf);
     if (token) headers.set('X-CSRFToken', token);
+    else if(csrf) headers.set('X-CSRFToken', csrf);
     if (!headers.has('Content-Type') && init.body && typeof init.body === 'string') {
       headers.set('Content-Type', 'application/json');
     }

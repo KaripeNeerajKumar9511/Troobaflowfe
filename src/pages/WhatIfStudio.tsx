@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Checkbox } from '@/components/ui/Checkbox';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useModelStore, type Model } from '@/stores/modelStore';
+import { useModelStore, type Model, displayParamNames } from '@/stores/modelStore';
 import { useScenarioStore, type Scenario, type ScenarioChange, type ScenarioFamily } from '@/stores/scenarioStore';
 import FamiliesTabContent from '@/components/FamiliesPanel';
 import { WhatIfGeneralTab } from '@/components/whatif/WhatIfGeneralTab';
@@ -12,12 +12,15 @@ import { WhatIfOperationsTab } from '@/components/whatif/WhatIfOperationsTab';
 import { useResultsStore } from '@/stores/resultsStore';
 import { useUserLevelStore, isVisible, type UserLevel } from '@/hooks/useUserLevel';
 import { fullCalculate } from '@/lib/simulationApi';
+import { findLaborForEquipment, resolvePureLaborEquipment } from '@/lib/pureLabor';
+import { isPureLaborOperation, resolvePureLaborOperation } from '@/lib/pureLaborOperations';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/Select';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
@@ -34,6 +37,7 @@ import {
 } from 'lucide-react';
 import { getScenarioColor } from '@/lib/scenarioColors';
 import { toast } from 'sonner';
+import { NonNegativeNumericInput } from '@/components/NonNegativeNumericInput';
 
 // ═══════════════════════════════════════════════════════════════════════
 // Main Page
@@ -150,10 +154,12 @@ export default function WhatIfStudio() {
     if (modelId) navigate(`/models/${modelId}/run`);
   };
 
+  const selectedScenarioValue = selectedId ?? '';
+
   return (
     <div style={{ display: 'flex', flexDirection: 'row', height: '100%', width: '100%', overflow: 'hidden' }}>
       {/* ═══ LEFT PANEL — 240px with tabs ═══ */}
-      <div style={{ width: 240, minWidth: 240, flexShrink: 0, height: '100%', overflow: 'hidden' }} className="border-r border-border flex flex-col bg-muted/20">
+      <div style={{ width: 240, minWidth: 240, flexShrink: 0, height: '100%', overflow: 'hidden' }} className="border-r border-border flex flex-col bg-muted/20 tablet:hidden">
         {/* Tab bar — 36px */}
         <div className="h-9 flex items-center border-b border-border shrink-0">
           <button
@@ -254,6 +260,61 @@ export default function WhatIfStudio() {
 
       {/* ═══ CENTRE PANEL ═══ */}
       <div style={{ flex: 1, minWidth: 0, height: '100%', overflowY: 'auto' }} className="flex flex-col">
+        {/* Tablet-only scenario switcher (replaces left scenarios rail) */}
+        <div className="hidden tablet:flex items-center gap-2 px-4 py-2 border-b border-border bg-background shrink-0">
+          <Label htmlFor="tablet-scenario-select" className="text-xs text-muted-foreground whitespace-nowrap">
+            Scenario
+          </Label>
+          <Select
+            value={selectedScenarioValue}
+            onValueChange={(value) => {
+              if (value === '') {
+                setSelectedId(null);
+                setShowNewForm(false);
+                setFamilyRecordsId(null);
+                return;
+              }
+              handleLeftClick(value as string | 'basecase');
+            }}
+          >
+            <SelectTrigger id="tablet-scenario-select" className="h-8 min-w-0 flex-1 text-xs">
+              <SelectValue placeholder="Select scenario" />
+            </SelectTrigger>
+            <SelectContent className="w-[var(--radix-select-trigger-width)] max-w-[calc(100vw-2rem)]">
+              <SelectItem value="basecase">Basecase</SelectItem>
+              {scenarios.map((sc) => {
+                const isActive = activeScenarioId === sc.id;
+                const hasResults = useResultsStore.getState().getResults(sc.id) != null;
+                const statusText = isActive
+                  ? 'Active'
+                  : sc.status === 'calculated'
+                    ? 'Current'
+                    : (sc.status === 'needs_recalc' && hasResults)
+                      ? 'Stale'
+                      : 'Not Run';
+                return (
+                  <SelectItem key={sc.id} value={sc.id}>
+                    {`● ${sc.name} (${statusText})`}
+                  </SelectItem>
+                );
+              })}
+            </SelectContent>
+          </Select>
+          <Button
+            size="sm"
+            className="h-8 shrink-0 text-xs"
+            onClick={() => {
+              setShowNewForm(true);
+              setSelectedId(null);
+              setFamilyRecordsId(null);
+            }}
+            disabled={activeScenarioId !== null}
+          >
+            <Plus className="h-3.5 w-3.5 mr-1" />
+            New What-if
+          </Button>
+        </div>
+
         {familyRecordsId ? (
           <FamilyRecordsView
             family={families.find(f => f.id === familyRecordsId)!}
@@ -426,9 +487,12 @@ function FamilyRecordsView({ family, scenarios, activeScenarioId, model, modelId
                       return (
                         <td key={m.id} className={`p-2 text-right font-mono ${activeScenarioId === m.id ? 'bg-amber-500/5' : ''}`}>
                           {editingEnabled && change ? (
-                            <input type="number" defaultValue={change.whatIfValue}
-                              onBlur={e => { const v = Number(e.target.value); if (!isNaN(v)) updateChange(m.id, change.id, v); }}
-                              className="w-full text-right bg-transparent border border-border rounded px-1 py-0.5 font-mono text-xs focus:border-primary focus:outline-none" />
+                            <NonNegativeNumericInput
+                              allowDecimal
+                              className="w-full text-right bg-transparent border border-border rounded px-1 py-0.5 font-mono text-xs h-7"
+                              value={typeof change.whatIfValue === 'number' ? change.whatIfValue : Number(change.whatIfValue) || 0}
+                              onChange={(v) => updateChange(m.id, change.id, v)}
+                            />
                           ) : (
                             <span className={change ? 'font-semibold text-primary' : 'text-muted-foreground'}>
                               {change ? change.whatIfValue : '—'}
@@ -453,13 +517,13 @@ function FamilyRecordsView({ family, scenarios, activeScenarioId, model, modelId
 // ═══════════════════════════════════════════════════════════════════════
 function EmptyState({ onNew, disabled }: { onNew: () => void; disabled: boolean }) {
   return (
-    <div className="flex-1 flex flex-col items-center justify-center text-center p-8 text-muted-foreground">
-      <FlaskConical className="h-12 w-12 mb-4 opacity-30" />
-      <p className="text-sm mb-4">Select a scenario to view or edit it</p>
-      <TooltipProvider><Tooltip>
-        <TooltipTrigger asChild><div><Button size="lg" onClick={onNew} disabled={disabled}><Plus className="h-4 w-4 mr-2" /> New What-if</Button></div></TooltipTrigger>
-        {disabled && <TooltipContent><p className="text-xs">Save or return to Basecase first.</p></TooltipContent>}
-      </Tooltip></TooltipProvider>
+    <div className="flex-1 flex flex-col items-center justify-center text-center p-8">
+      <div className="rounded-full bg-primary mb-4 p-4">
+        <FlaskConical className="h-10 w-10 text-foreground" />
+      </div>
+      <p className="text-sm mb-2 text-foreground font-medium">No What-if scenarios defined</p>
+      <p className="text-sm mb-4 text-muted-foreground">Create a What-if scenario to start editing.</p>
+      <Button size="lg" onClick={onNew} disabled={disabled}><Plus className="h-4 w-4 mr-2" /> New What-if</Button>
     </div>
   );
 }
@@ -582,8 +646,9 @@ function ReadOnlyGeneralTab({ model }: { model: Model }) {
 function ReadOnlyLaborTab({ model }: { model: Model }) {
   const [showAdvanced, setShowAdvanced] = useState(false);
   if (!model.labor.length) return <p className="text-sm text-muted-foreground">No labor groups.</p>;
+  const pn = displayParamNames(model);
   const baseHeaders = ['Name', 'Count', 'OT%', 'Unavail%', 'Dept'];
-  const advHeaders = ['Run Fac', 'Setup Fac', 'Var Fac', 'Priority', model.param_names.lab1_name, model.param_names.lab2_name, model.param_names.lab3_name, model.param_names.lab4_name];
+  const advHeaders = ['Run Fac', 'Setup Fac', 'Var Fac', 'Priority', pn.lab1_name, pn.lab2_name, pn.lab3_name, pn.lab4_name];
   const headers = showAdvanced ? [...baseHeaders, ...advHeaders] : baseHeaders;
   const rows = model.labor.map(l => {
     const base = [l.name, l.count, l.overtime_pct, l.unavail_pct, l.dept_code || '—'];
@@ -601,12 +666,14 @@ function ReadOnlyLaborTab({ model }: { model: Model }) {
 function ReadOnlyEquipmentTab({ model }: { model: Model }) {
   const [showAdvanced, setShowAdvanced] = useState(false);
   if (!model.equipment.length) return <p className="text-sm text-muted-foreground">No equipment.</p>;
+  const pn = displayParamNames(model);
   const baseHeaders = ['Name', 'Type', 'Count', 'MTTF', 'MTTR', 'Unavail%'];
-  const advHeaders = ['OT%', 'Dept', 'Run Fac', 'Setup Fac', 'Var Fac', model.param_names.eq1_name, model.param_names.eq2_name, model.param_names.eq3_name, model.param_names.eq4_name];
+  const advHeaders = ['Dept', 'Run Fac', 'Setup Fac', 'Var Fac', pn.eq1_name, pn.eq2_name, pn.eq3_name, pn.eq4_name];
   const headers = showAdvanced ? [...baseHeaders, ...advHeaders] : baseHeaders;
   const rows = model.equipment.map(e => {
-    const base: (string | number)[] = [e.name, e.equip_type, e.count, e.mttf, e.mttr, e.unavail_pct];
-    if (showAdvanced) base.push(e.overtime_pct as any, e.dept_code || '—', e.run_factor as any, e.setup_factor as any, e.var_factor as any, e.eq1 as any, e.eq2 as any, e.eq3 as any, e.eq4 as any);
+    const eff = resolvePureLaborEquipment(e, findLaborForEquipment(model.labor, e.labor_group_id));
+    const base: (string | number)[] = [eff.name, e.equip_type, eff.count, eff.mttf, eff.mttr, eff.unavail_pct];
+    if (showAdvanced) base.push(eff.dept_code || '—', eff.run_factor as number, eff.setup_factor as number, eff.var_factor as number, eff.eq1 as number, eff.eq2 as number, eff.eq3 as number, eff.eq4 as number);
     return base;
   });
   return (
@@ -622,6 +689,7 @@ function ReadOnlyProductsTab({ model, scenario, userLevel: ul }: { model: Model;
   const [search, setSearch] = useState('');
   if (!model.products.length) return <p className="text-sm text-muted-foreground">No products.</p>;
   const showInclude = !!scenario && !!ul && isVisible('product_inclusion', ul);
+  const pn = displayParamNames(model);
 
   const isExcluded = (productId: string) => {
     if (!scenario) return false;
@@ -639,7 +707,7 @@ function ReadOnlyProductsTab({ model, scenario, userLevel: ul }: { model: Model;
   const noneChecked = model.products.every(p => isExcluded(p.id));
 
   const baseHeaders = ['Name', 'Demand', 'Lot Size', 'TBatch', 'Dept'];
-  const advHeaders = ['Demand Fac', 'Lot Fac', 'Var Fac', 'MTS', 'Gather', model.param_names.prod1_name, model.param_names.prod2_name, model.param_names.prod3_name, model.param_names.prod4_name];
+  const advHeaders = ['Demand Fac', 'Lot Fac', 'Var Fac', 'MTS', 'Gather', pn.prod1_name, pn.prod2_name, pn.prod3_name, pn.prod4_name];
   let headers = showAdvanced ? [...baseHeaders, ...advHeaders] : [...baseHeaders];
 
   return (
@@ -710,8 +778,10 @@ function ReadOnlyOperationsTab({ model }: { model: Model }) {
   const advHeaders = ['Eq Setup/Pc', 'Eq Run/Lot', 'Eq Setup/TB', 'Eq Run/TB', 'Lab Setup/Lot', 'Lab Run/Pc', 'Lab Setup/Pc', 'Lab Run/Lot', 'Lab Setup/TB', 'Lab Run/TB', '% Assigned'];
   const headers = showAdvanced ? [...baseHeaders, ...advHeaders] : baseHeaders;
   const rows = model.operations.map(o => {
-    const base: (string | number)[] = [pm[o.product_id] || '—', o.op_number, o.op_name, em[o.equip_id] || '—', o.equip_setup_lot, o.equip_run_piece];
-    if (showAdvanced) base.push(o.equip_setup_piece, o.equip_run_lot, o.equip_setup_tbatch, o.equip_run_tbatch, o.labor_setup_lot, o.labor_run_piece, o.labor_setup_piece, o.labor_run_lot, o.labor_setup_tbatch, o.labor_run_tbatch, o.pct_assigned);
+    const eff = resolvePureLaborOperation(o, model.equipment);
+    const pure = isPureLaborOperation(o, model.equipment);
+    const base: (string | number)[] = [pm[o.product_id] || '—', o.op_number, o.op_name, em[o.equip_id] || '—', pure ? 'NA' : eff.equip_setup_lot, pure ? 'NA' : eff.equip_run_piece];
+    if (showAdvanced) base.push(pure ? 'NA' : eff.equip_setup_piece, pure ? 'NA' : eff.equip_run_lot, pure ? 'NA' : eff.equip_setup_tbatch, pure ? 'NA' : eff.equip_run_tbatch, o.labor_setup_lot, o.labor_run_piece, o.labor_setup_piece, o.labor_run_lot, o.labor_setup_tbatch, o.labor_run_tbatch, o.pct_assigned);
     return base;
   });
   return (
@@ -818,7 +888,7 @@ function ScenarioView({
             <Pencil className="h-3 w-3 text-muted-foreground" />
           </h2>
         )}
-        {statusBadge}
+        <div className="tablet:hidden">{statusBadge}</div>
         <div className="flex-1" />
         {isActive ? (
           <>
@@ -984,18 +1054,24 @@ function ChangesTab({ scenario, isActive, userLevel, modelId, onPromote }: {
                   <td className="p-2 text-muted-foreground">{c.fieldLabel}</td>
                   <td className={`p-2 text-right font-mono ${directEdits && !isIncluded ? 'bg-red-50/50' : ''}`}>
                     {directEdits && !isIncluded ? (
-                      <input type="number" defaultValue={c.basecaseValue}
-                        onBlur={e => handleBasecaseEdit(c, e.target.value)}
-                        className="w-full text-right bg-transparent border border-destructive/30 rounded px-1 py-0.5 font-mono text-xs focus:border-destructive focus:outline-none" />
+                      <NonNegativeNumericInput
+                        allowDecimal
+                        className="w-full text-right bg-transparent border border-destructive/30 rounded px-1 py-0.5 font-mono text-xs h-7"
+                        value={typeof c.basecaseValue === 'number' ? c.basecaseValue : Number(c.basecaseValue) || 0}
+                        onChange={(v) => handleBasecaseEdit(c, String(v))}
+                      />
                     ) : (
                       <span className="text-muted-foreground">{displayBase}</span>
                     )}
                   </td>
                   <td className="p-2 text-right font-mono">
                     {directEdits && !isIncluded ? (
-                      <input type="number" defaultValue={c.whatIfValue}
-                        onBlur={e => handleWhatIfEdit(c.id, e.target.value)}
-                        className="w-full text-right bg-transparent border border-border rounded px-1 py-0.5 font-mono text-xs focus:border-primary focus:outline-none" />
+                      <NonNegativeNumericInput
+                        allowDecimal
+                        className="w-full text-right bg-transparent border border-border rounded px-1 py-0.5 font-mono text-xs h-7"
+                        value={typeof c.whatIfValue === 'number' ? c.whatIfValue : Number(c.whatIfValue) || 0}
+                        onChange={(v) => handleWhatIfEdit(c.id, String(v))}
+                      />
                     ) : (
                       <span className="font-semibold text-primary">{displayWi}</span>
                     )}

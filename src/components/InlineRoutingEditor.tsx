@@ -5,6 +5,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Separator } from '@/components/ui/separator';
 import { Plus, X, CheckCircle, XCircle, AlertTriangle } from 'lucide-react';
 import type { RoutingEntry } from '@/stores/modelStore';
+import { NonNegativeNumericInput } from '@/components/NonNegativeNumericInput';
+import { blockSignedNumericKeys, parseNonNegativeInt, sanitizeNonNegativeIntegerInput } from '@/lib/numericInput';
 
 /** Percentage input that uses local state and only commits on blur/Enter */
 function PctInput({ value, onChange, className }: { value: number; onChange: (v: number) => void; className?: string }) {
@@ -12,20 +14,29 @@ function PctInput({ value, onChange, className }: { value: number; onChange: (v:
   const committed = useRef(value);
   useEffect(() => { setLocal(String(value)); committed.current = value; }, [value]);
   const commit = () => {
-    const n = +local;
-    if (!isNaN(n) && n !== committed.current) {
+    const n = parseNonNegativeInt(local, committed.current);
+    if (n !== committed.current) {
       committed.current = n;
+      setLocal(String(n));
       onChange(n);
     }
   };
   return (
     <Input
-      type="number"
+      type="text"
+      inputMode="numeric"
+      placeholder="%"
       className={className}
       value={local}
-      onChange={e => setLocal(e.target.value)}
+      onChange={(e) => setLocal(sanitizeNonNegativeIntegerInput(e.target.value))}
       onBlur={commit}
-      onKeyDown={e => { if (e.key === 'Enter') { commit(); (e.target as HTMLInputElement).blur(); } }}
+      onKeyDown={(e) => {
+        blockSignedNumericKeys(e);
+        if (e.key === 'Enter') {
+          commit();
+          (e.target as HTMLInputElement).blur();
+        }
+      }}
     />
   );
 }
@@ -177,15 +188,12 @@ export function InlineRoutingEditor({
                 </SelectItem>
               </SelectContent>
             </Select>
-            <Input
-              type="number"
+            <NonNegativeNumericInput
               className="h-7 w-16 font-mono text-xs"
               value={newPct}
-              onChange={e => setNewPct(+e.target.value)}
-              placeholder="%"
-              disabled={addDisabled}
+              onChange={setNewPct}
             />
-            <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={handleAdd} disabled={!newTo || addDisabled}>
+            <Button size="sm" className="h-7 text-xs gap-1" disabled={addDisabled || !newTo} onClick={handleAdd}>
               <Plus className="h-3 w-3" /> Add path
             </Button>
           </div>

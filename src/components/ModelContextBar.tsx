@@ -25,14 +25,9 @@ import {
   buildModelSnapshot,
   createModelCheckpoint,
   restoreModelFromVersion,
+  type ModelVersionRow,
 } from '@/lib/supabaseData';
 import { useRunCalculation } from '@/hooks/useRunCalculation';
-
-interface RecentVersion {
-  id: string;
-  label: string;
-  created_at: string;
-}
 
 export function ModelContextBar() {
   const model = useModelStore((s) => s.getActiveModel());
@@ -42,7 +37,7 @@ export function ModelContextBar() {
   const [showCheckpointDialog, setShowCheckpointDialog] = useState(false);
   const [checkpointName, setCheckpointName] = useState('');
   const [isSavingCheckpoint, setIsSavingCheckpoint] = useState(false);
-  const [recentVersions, setRecentVersions] = useState<RecentVersion[]>([]);
+  const [recentVersions, setRecentVersions] = useState<ModelVersionRow[]>([]);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [restoreVersionId, setRestoreVersionId] = useState<string | null>(null);
   const [isRestoring, setIsRestoring] = useState(false);
@@ -120,8 +115,8 @@ export function ModelContextBar() {
   const handleRestore = async (versionId: string) => {
     setIsRestoring(true);
     try {
-      const restored = await restoreModelFromVersion(model.id, versionId);
-      if (!restored) {
+      const result = await restoreModelFromVersion(model.id, versionId);
+      if (!result) {
         toast.error('Failed to load version snapshot');
         return;
       }
@@ -130,8 +125,14 @@ export function ModelContextBar() {
       useModelStore.getState().setActiveModel(model.id);
 
       const v = recentVersions.find(rv => rv.id === versionId);
-      toast.success(`Restored to: ${v?.label || 'checkpoint'}`);
+      toast.success(
+        result.consumedUndo
+          ? `Restored to: ${v?.label || 'checkpoint'}. The undo checkpoint was cleared — restore any other checkpoint to get a new one.`
+          : `Restored to: ${v?.label || 'checkpoint'}. Your previous data was saved as "${result.rollbackLabel || 'Previous state (auto-saved)'}".`,
+        { duration: 6000 },
+      );
       setDropdownOpen(false);
+      loadRecentVersions();
     } catch (err) {
       console.error('Restore error:', err);
       toast.error('Failed to restore checkpoint');
@@ -223,8 +224,17 @@ export function ModelContextBar() {
                     {recentVersions.map(v => (
                       <div key={v.id} className="flex items-center justify-between px-3 py-2 hover:bg-accent/50 transition-colors group">
                         <div className="min-w-0 flex-1 mr-2">
-                          <p className="text-sm font-medium truncate">{v.label || 'Unnamed Checkpoint'}</p>
-                          <p className="text-[10px] text-muted-foreground">{new Date(v.created_at).toLocaleString()}</p>
+                          <p className="text-sm font-medium truncate flex items-center gap-1.5">
+                            {v.version_kind === 'pre_restore' && (
+                              <Badge variant="secondary" className="text-[9px] px-1 py-0 h-4 shrink-0">Undo</Badge>
+                            )}
+                            <span className="truncate">{v.label || 'Unnamed Checkpoint'}</span>
+                          </p>
+                          <p className="text-[10px] text-muted-foreground">
+                            {v.version_kind === 'pre_restore'
+                              ? 'Restore to get data from before your last restore'
+                              : new Date(v.created_at).toLocaleString()}
+                          </p>
                         </div>
                         <Button
                           size="sm" variant="ghost"
@@ -292,7 +302,7 @@ export function ModelContextBar() {
             <AlertDialogDescription>
               This will replace the current model data with the checkpoint
               {restoreVersion ? ` "${restoreVersion.label}"` : ''}.
-              This action cannot be undone. Save a checkpoint first if you want to preserve your current state.
+              Your current data will be saved automatically as &quot;Previous state (auto-saved)&quot; so you can restore it from the checkpoint list.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

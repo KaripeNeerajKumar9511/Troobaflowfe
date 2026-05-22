@@ -27,6 +27,7 @@ import PlaceholderPage from "./pages/PlaceholderPage";
 import SettingsPage from "./pages/SettingsPage";
 import ModelSettings from "./pages/ModelSettings";
 import NotFound from "./pages/NotFound";
+import TFAdmin from "./pages/TFAdmin";
 
 const queryClient = new QueryClient();
 
@@ -44,6 +45,9 @@ const App = () => (
             <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/reset-password" element={<ResetPassword />} />
 
+            {/* TF Admin portal (separate admin session) */}
+            <Route path="/TF-admin/*" element={<TFAdmin />} />
+
             {/* Protected routes */}
             <Route path="/" element={<ProtectedRoute><Navigate to="/library" replace /></ProtectedRoute>} />
             <Route path="/library" element={<ProtectedRoute><ModelLibrary /></ProtectedRoute>} />
@@ -58,7 +62,7 @@ const App = () => (
               <Route path="intelligence" element={<TroobaIntelligence />} />
               <Route path="all-operations" element={<TroobaIntelligence />} />
               <Route path="ibom" element={<IBOMScreen />} />
-              <Route path="param-names" element={<Navigate to="../settings?tab=params" replace />} />
+              <Route path="param-names" element={<Navigate to="../settings" replace />} />
               <Route path="run" element={<RunResults />} />
               <Route path="whatif" element={<WhatIfStudio />} />
               <Route path="reports" element={<Reports />} />

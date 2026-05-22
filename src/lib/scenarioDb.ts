@@ -97,7 +97,10 @@ export const scenarioDb = {
       method: 'PUT',
       body: JSON.stringify(results),
     });
-    if (!res.ok) console.error('saveResults', res.status);
+    if (!res.ok) {
+      console.error('saveResults', res.status);
+      throw new Error(`Failed to store scenario results (${res.status})`);
+    }
   },
 
   async saveBasecaseResults(modelId: string, results: CalcResults) {
@@ -105,6 +108,9 @@ export const scenarioDb = {
       method: 'PUT',
       body: JSON.stringify(results),
     });
-    if (!res.ok) console.error('saveBasecaseResults', res.status);
+    if (!res.ok) {
+      console.error('saveBasecaseResults', res.status);
+      throw new Error(`Failed to store basecase results (${res.status})`);
+    }
   },
 };

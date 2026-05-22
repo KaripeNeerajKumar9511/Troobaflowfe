@@ -12,6 +12,8 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { ChevronRight, ChevronDown, Network, X, Search, Package, PlusCircle, GitBranch, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
+import { SavingOverlay } from '@/components/SavingOverlay';
+import { NonNegativeNumericInput } from '@/components/NonNegativeNumericInput';
 
 interface TreeNode {
   productId: string;
@@ -227,7 +229,7 @@ export default function IBOMScreen() {
         component_product_id: d.component_product_id,
         units_per_assy: d.units_per_assy,
       }));
-      setIBOMForParent(model.id, editParentId, newEntries);
+      await setIBOMForParent(model.id, editParentId, newEntries);
       const snapshot = draftComponents.map(d => ({ ...d }));
       setSavedSnapshot(snapshot);
       setDraftComponents(snapshot);
@@ -452,9 +454,10 @@ export default function IBOMScreen() {
 
   return (
     <div className="flex-1 min-h-0 flex flex-col overflow-hidden animate-fade-in bg-[#F9FAFB]">
+      {isSaving && <SavingOverlay />}
       {/* Alert banner — light yellow/amber */}
       {activeScenarioId && activeScenario && (
-        <div className="mx-6 mt-4 mb-2 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 shrink-0">
+        <div className="mx-3 md:mx-4 lg:mx-6 mt-4 mb-2 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 shrink-0">
           <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
           <span className="text-sm text-slate-800 font-medium">
             Changes recorded to <span className="font-semibold">{activeScenario.name}</span>
@@ -462,13 +465,13 @@ export default function IBOMScreen() {
         </div>
       )}
       {/* Page Header */}
-      <div className="px-6 pt-2 pb-3 shrink-0">
+      <div className="px-3 md:px-4 lg:px-6 pt-2 pb-3 shrink-0">
         <div className="flex items-center justify-between gap-4">
           <div>
             <h1 className="text-xl font-bold text-slate-900">Indented Bill of Materials</h1>
             <p className="text-sm text-slate-600 mt-0.5">Define parent-child relationships between products and their component parts.</p>
           </div>
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
             <span className="text-sm text-slate-600">Go to:</span>
             <div className="flex rounded-md border border-slate-200 bg-white overflow-hidden">
               <Button variant="ghost" size="sm" className="h-8 rounded-none border-r border-slate-200 text-xs font-medium text-slate-800 bg-slate-50 hover:bg-slate-100" onClick={() => router.push('/dashboard/productdata')}>
@@ -483,7 +486,7 @@ export default function IBOMScreen() {
       </div>
 
       {/* ═══ Panels wrapper: takes remaining height so panels get a real height ═══ */}
-      <div className="flex-1 min-h-0 flex flex-col px-6 pb-6 gap-3">
+      <div className="flex-1 min-h-0 flex flex-col px-3 md:px-4 lg:px-6 pb-4 md:pb-6 gap-3">
         {/* TOP PANEL — IBOM Structure: always full height (45%), never collapse when empty */}
         <div className="flex-[0_0_45%] min-h-[280px] flex flex-col px-0 pb-0 shrink-0">
           <div className="h-full min-h-[260px] flex flex-col rounded-lg border border-slate-200 bg-white overflow-hidden">
@@ -500,7 +503,7 @@ export default function IBOMScreen() {
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-sm text-slate-600">View assembly:</span>
                 <Select value={viewAssemblyId} onValueChange={(v) => { setViewAssemblyId(v); setExpandedNodes(new Set()); setSelectedProductId(''); setFilterText(''); }}>
-                  <SelectTrigger className="h-8 w-48 text-sm border border-slate-200 bg-white text-slate-900 rounded-md shadow-none focus:ring-2 focus:ring-slate-300 focus:ring-offset-0 placeholder:text-slate-400 [&>svg]:text-slate-500">
+                  <SelectTrigger className="h-8 w-full sm:w-56 md:w-48 text-sm border border-slate-200 bg-white text-slate-900 rounded-md shadow-none focus:ring-2 focus:ring-slate-300 focus:ring-offset-0 placeholder:text-slate-400 [&>svg]:text-slate-500">
                     <SelectValue placeholder="Select assembly..." />
                   </SelectTrigger>
                   <SelectContent className="border border-slate-200 bg-white rounded-md shadow-lg min-w-[var(--radix-select-trigger-width)]">
@@ -557,7 +560,7 @@ export default function IBOMScreen() {
               </div>
             )}
           </div>
-          <div className="flex-1 min-h-0 overflow-y-auto flex flex-col">
+          <div className="flex-1 min-h-0 overflow-auto flex flex-col">
             {!viewAssemblyId ? (
               <div className="flex-1 flex items-center justify-center min-h-[180px] text-sm text-slate-500 px-4">
                 Select an assembly above to view its structure.
@@ -623,17 +626,56 @@ export default function IBOMScreen() {
         <div className="flex-1 min-h-[200px] flex flex-col overflow-hidden">
         <div className="h-full min-h-0 flex flex-col rounded-lg border border-slate-200 bg-white overflow-hidden">
           <div className="shrink-0 px-4 py-3 border-b border-slate-200">
-            <h2 className="text-base font-bold text-slate-900">
-              {editParentId
-                ? <>Components for: <span className="text-[#0D9488]">{prodName(editParentId)}</span></>
-                : 'Edit Components'
-              }
-            </h2>
-            {editParentId && isWhatIfTarget && (
-              <span className="inline-flex items-center mt-1 rounded-md border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800">
-                What-if active
-              </span>
-            )}
+            <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
+              <div className="min-w-0">
+                <h2 className="text-base font-bold text-slate-900">
+                  {editParentId
+                    ? <>Components for: <span className="text-[#0D9488]">{prodName(editParentId)}</span></>
+                    : 'Edit Components'
+                  }
+                </h2>
+                {editParentId && isWhatIfTarget && (
+                  <span className="inline-flex items-center mt-1 rounded-md border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800">
+                    What-if active
+                  </span>
+                )}
+              </div>
+              {isDirty && editParentId && !pendingSwitchId && (
+                <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1.5 shrink-0 ml-auto">
+                  <div className="flex items-center gap-1.5 text-amber-700">
+                    <AlertTriangle className="h-4 w-4 shrink-0" />
+                    <span className="text-sm font-medium whitespace-nowrap">Unsaved changes</span>
+                  </div>
+                  <Button variant="outline" size="sm" className="h-8 text-sm border-slate-200" onClick={handleDiscard}>
+                    Discard
+                  </Button>
+                  <Button size="sm" className="h-8 text-sm bg-[#22C55E] hover:bg-[#16A34A] text-white" onClick={handleSave} disabled={isSaving}>
+                    {isSaving ? 'Saving…' : 'Save Changes'}
+                  </Button>
+                </div>
+              )}
+              {pendingSwitchId && isDirty && editParentId && (
+                <div className="flex flex-col items-stretch sm:items-end gap-2 shrink-0 w-full sm:w-auto max-w-full sm:max-w-[min(100%,24rem)] ml-auto">
+                  <div className="flex items-start gap-2 text-amber-800 sm:justify-end">
+                    <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                    <span className="text-sm font-medium leading-snug text-left sm:text-right">
+                      You have unsaved changes for {prodName(editParentId)}. Save before switching?
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                    <Button variant="ghost" size="sm" className="h-8 text-sm" onClick={() => setPendingSwitchId(null)}>
+                      Stay
+                    </Button>
+                    <Button variant="outline" size="sm" className="h-8 text-sm border-slate-200" onClick={handleDiscardAndSwitch}>
+                      Discard & Switch
+                    </Button>
+                    <Button size="sm" className="h-8 text-sm bg-[#22C55E] hover:bg-[#16A34A] text-white" onClick={handleSaveAndSwitch}>
+                      Save & Switch
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
           <div className="p-4 flex-1 min-h-0 overflow-y-auto">
             {!editParentId ? (
@@ -699,7 +741,7 @@ export default function IBOMScreen() {
               </div>
             ) : (
               /* ── Two-column editing layout (exact image match) ── */
-              <div className="grid grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 lg:gap-6">
                 {/* Left: Current Components */}
                 <div>
                   <p className="text-sm font-semibold text-slate-900 mb-2">Current Components</p>
@@ -734,13 +776,11 @@ export default function IBOMScreen() {
                                 {prodName(c.component_product_id)}
                               </span>
                               <div className="shrink-0">
-                                <Input
-                                  type="number"
+                                <NonNegativeNumericInput
                                   className={`h-8 w-14 text-sm font-mono text-center border-slate-200 rounded ${hasError ? 'border-red-500' : isUpaChanged ? 'border-amber-400' : ''}`}
-                                  defaultValue={c.units_per_assy}
+                                  value={c.units_per_assy}
                                   key={`${c.id}-${savedSnapshot.find(s => s.id === c.id)?.units_per_assy ?? 'new'}`}
-                                  min={1}
-                                  onChange={(e) => handleUpaChange(c.id, e.target.value, c.units_per_assy)}
+                                  onChange={(v) => handleUpaChange(c.id, String(v), c.units_per_assy)}
                                   onBlur={() => handleUpaBlur(c.id)}
                                 />
                                 {hasError && <p className="text-[10px] text-red-600 mt-0.5">{'> 0'}</p>}
@@ -807,47 +847,6 @@ export default function IBOMScreen() {
                       </>
                     )}
                   </div>
-                </div>
-              </div>
-            )}
-
-            {/* ═══ SAVE / DISCARD ACTION BAR ═══ */}
-            {isDirty && editParentId && !pendingSwitchId && (
-              <div className="mt-4 pt-4 border-t border-slate-200 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <AlertTriangle className="h-4 w-4 text-amber-500" />
-                  <span className="text-sm text-amber-700 font-medium">Unsaved changes</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button variant="outline" size="sm" className="h-8 text-sm border-slate-200" onClick={handleDiscard}>
-                    Discard
-                  </Button>
-                  <Button size="sm" className="h-8 text-sm bg-[#22C55E] hover:bg-[#16A34A] text-white" onClick={handleSave} disabled={isSaving}>
-                    {isSaving ? 'Saving…' : 'Save Changes'}
-                  </Button>
-                </div>
-              </div>
-            )}
-
-            {/* ═══ INLINE SWITCH CONFIRMATION ═══ */}
-            {pendingSwitchId && isDirty && editParentId && (
-              <div className="mt-4 pt-4 border-t border-amber-200 bg-amber-50 rounded-lg px-4 py-3 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <AlertTriangle className="h-4 w-4 text-amber-600" />
-                  <span className="text-sm text-amber-800 font-medium">
-                    You have unsaved changes for {prodName(editParentId)}. Save before switching?
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button variant="ghost" size="sm" className="h-8 text-sm" onClick={() => setPendingSwitchId(null)}>
-                    Stay
-                  </Button>
-                  <Button variant="outline" size="sm" className="h-8 text-sm border-slate-200" onClick={handleDiscardAndSwitch}>
-                    Discard & Switch
-                  </Button>
-                  <Button size="sm" className="h-8 text-sm bg-[#22C55E] hover:bg-[#16A34A] text-white" onClick={handleSaveAndSwitch}>
-                    Save & Switch
-                  </Button>
                 </div>
               </div>
             )}

@@ -2,6 +2,7 @@ import type { Model } from '@/stores/modelStore';
 import type { Scenario } from '@/stores/scenarioStore';
 import type { CalcResults } from '@/lib/calculationEngine';
 import { apiJson } from '@/lib/api';
+import { modelWithResolvedPureLabor } from '@/lib/pureLabor';
 
 export function scenarioToApi(scenario: Scenario | null | undefined): Record<string, unknown> | null {
   if (!scenario?.changes?.length) return null;
@@ -92,6 +93,31 @@ function normalizeResults(raw: Record<string, unknown>, model: Model): CalcResul
     const goodMade = asNumber(it.goodMade, asNumber(it.totalGoodProd));
     const goodShipped = asNumber(it.goodShipped, asNumber(it.shippedProd));
     const started = asNumber(it.started, goodMade + asNumber(it.scrap));
+    const scrappedInAssembly = asNumber(
+      it.scrappedInAssembly,
+      asNumber(
+        it.scrapInAssembly,
+        asNumber(
+          it.scrappedInAssy,
+          asNumber(
+            it.scrapInAssy,
+            asNumber(it.ScrapInAsm, asNumber(it.ScarpInAsm, asNumber(it.scrapped_in_assembly, asNumber(it.scrap_in_assembly)))),
+          ),
+        ),
+      ),
+    );
+    const usedInAssembly = asNumber(
+      it.usedInAssembly,
+      asNumber(it.usedInAssy, asNumber(it.used_in_assembly, goodMade - scrappedInAssembly)),
+    );
+    const scrapInProduction = asNumber(
+      it.scrapInProduction,
+      asNumber(it.scrap_in_production, asNumber(it.scrap)),
+    );
+    const totalProduction = asNumber(
+      it.totalProduction,
+      asNumber(it.total_production, asNumber(it.total, asNumber(it.shippedProduction, asNumber(it.shippedProd, goodShipped)) + usedInAssembly + scrappedInAssembly + scrapInProduction)),
+    );
     return {
       id,
       name: asString(it.name, modelProduct?.name ?? `Product ${idx + 1}`),
@@ -104,10 +130,16 @@ function normalizeResults(raw: Record<string, unknown>, model: Model): CalcResul
       wip: asNumber(it.wip),
       mct: asNumber(it.mct),
       mctLotWait: asNumber(it.mctLotWait, asNumber(it.w_lot)),
-      mctQueue: asNumber(it.mctQueue, asNumber(it.w_equip)),
-      mctWaitLabor: asNumber(it.mctWaitLabor, asNumber(it.w_labor)),
+      // Use DLL LTEquip / LTLabor channels for MCT chart waits.
+      mctQueue: asNumber(it.mctQueue, asNumber(it.LTEquip, asNumber(it.w_equip))),
+      mctWaitLabor: asNumber(it.mctWaitLabor, asNumber(it.LTLabor, asNumber(it.w_labor))),
       mctSetup: asNumber(it.mctSetup, asNumber(it.w_setup)),
       mctRun: asNumber(it.mctRun, asNumber(it.w_run)),
+      shippedProduction: asNumber(it.shippedProduction, asNumber(it.shippedProd, goodShipped)),
+      usedInAssembly,
+      scrappedInAssembly,
+      scrapInProduction,
+      totalProduction,
     };
   }) as CalcResults['products'];
 
@@ -152,7 +184,7 @@ function normalizeResults(raw: Record<string, unknown>, model: Model): CalcResul
 }
 
 export async function fullCalculate(model: Model, scenario?: Scenario | null): Promise<CalcResults> {
-  const body: Record<string, unknown> = { model };
+  const body: Record<string, unknown> = { model: modelWithResolvedPureLabor(model) };
   const s = scenarioToApi(scenario ?? undefined);
   if (s) body.scenario = s;
   const data = await apiJson<{ results: Record<string, unknown> }>('/api/simulations/full-calculate', {
@@ -166,6 +198,6 @@ export async function fullCalculate(model: Model, scenario?: Scenario | null): P
 export async function verifyModel(model: Model): Promise<{ errors: string[]; warnings: string[] }> {
   return apiJson<{ errors: string[]; warnings: string[] }>('/api/simulations/verify', {
     method: 'POST',
-    body: JSON.stringify({ model }),
+    body: JSON.stringify({ model: modelWithResolvedPureLabor(model) }),
   });
 }

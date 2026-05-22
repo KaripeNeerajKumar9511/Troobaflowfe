@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import type { Model, Operation } from '@/stores/modelStore';
-import { useModelStore } from '@/stores/modelStore';
+import { useModelStore, displayParamNames, SHOW_PARAM_VARIABLE_FIELDS_IN_UI } from '@/stores/modelStore';
 import type { Scenario } from '@/stores/scenarioStore';
 import { useScenarioStore } from '@/stores/scenarioStore';
 import { useUserLevelStore, isVisible } from '@/hooks/useUserLevel';
@@ -12,6 +12,9 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ChevronDown, ChevronUp, Lock } from 'lucide-react';
 import { ProductSelectorBar } from '@/components/ProductSelectorBar';
+import { OperationEquipTimeInput } from '@/components/OperationEquipTimeInput';
+import { canEditOperationEquipField, isPureLaborOperation } from '@/lib/pureLaborOperations';
+import { NonNegativeNumericInput } from '@/components/NonNegativeNumericInput';
 
 function cc(scenario: Scenario, entityId: string, field: string): string {
   return scenario.changes.some(c => c.entityId === entityId && c.field === field)
@@ -25,7 +28,7 @@ export function WhatIfOperationsTab({ model, scenario }: { model: Model; scenari
   const updateRouting = useModelStore(s => s.updateRouting);
   const applyScenarioChange = useScenarioStore(s => s.applyScenarioChange);
   const { userLevel } = useUserLevelStore();
-  const pn = model.param_names;
+  const pn = displayParamNames(model);
 
   const effectiveProduct = model.products.find(p => p.id === selectedProductId);
 
@@ -44,6 +47,7 @@ export function WhatIfOperationsTab({ model, scenario }: { model: Model; scenari
   const userOps = useMemo(() => productOps.filter(o => o.op_name !== 'DOCK'), [productOps]);
 
   const handleOpFieldChange = (op: Operation, field: string, value: number) => {
+    if (!canEditOperationEquipField(op, field, model.equipment)) return;
     const productName = model.products.find(p => p.id === op.product_id)?.name || '';
     const entityName = `${productName}: ${op.op_name}`;
     applyScenarioChange(scenario.id, 'Routing', op.id, entityName, field, field, value);
@@ -106,10 +110,12 @@ export function WhatIfOperationsTab({ model, scenario }: { model: Model; scenari
                       <TableHead className="font-mono text-xs">L.Setup/TB</TableHead>
                       <TableHead className="font-mono text-xs">L.Run/Lot</TableHead>
                       <TableHead className="font-mono text-xs">L.Run/TB</TableHead>
-                      <TableHead className="font-mono text-xs">{pn.oper1_name}</TableHead>
-                      <TableHead className="font-mono text-xs">{pn.oper2_name}</TableHead>
-                      <TableHead className="font-mono text-xs">{pn.oper3_name}</TableHead>
-                      <TableHead className="font-mono text-xs">{pn.oper4_name}</TableHead>
+                      {SHOW_PARAM_VARIABLE_FIELDS_IN_UI && <>
+                        <TableHead className="font-mono text-xs">{pn.oper1_name}</TableHead>
+                        <TableHead className="font-mono text-xs">{pn.oper2_name}</TableHead>
+                        <TableHead className="font-mono text-xs">{pn.oper3_name}</TableHead>
+                        <TableHead className="font-mono text-xs">{pn.oper4_name}</TableHead>
+                      </>}
                     </>}
                     <TableHead className="font-mono text-xs">Routing</TableHead>
                   </TableRow>
@@ -117,13 +123,14 @@ export function WhatIfOperationsTab({ model, scenario }: { model: Model; scenari
                 <TableBody>
                   {productOps.map((op) => {
                     const isDock = op.op_name === 'DOCK';
+                    const isPureOp = !isDock && isPureLaborOperation(op, model.equipment);
                     const opRoutes = productRouting.filter(r => r.from_op_name === op.op_name);
                     const routingSummary = opRoutes.length > 0
                       ? opRoutes.map(r => `${r.to_op_name} ${r.pct_routed}%`).join(', ')
                       : '—';
 
                     return (
-                      <TableRow key={op.id}>
+                      <TableRow key={op.id} className={isPureOp ? 'bg-slate-50/80' : ''}>
                         <TableCell className="w-10 text-center">
                           {isDock && <Lock className="h-3 w-3 text-muted-foreground inline-block" />}
                         </TableCell>
@@ -157,7 +164,7 @@ export function WhatIfOperationsTab({ model, scenario }: { model: Model; scenari
                           {isDock ? (
                             <span className="font-mono text-xs text-muted-foreground">—</span>
                           ) : (
-                            <Input type="number" className={`h-8 w-16 font-mono ${cc(scenario, op.id, 'pct_assigned')}`} value={op.pct_assigned} onChange={(e) => handleOpFieldChange(op, 'pct_assigned', +e.target.value)} />
+                            <NonNegativeNumericInput value={op.pct_assigned} onChange={(v) => handleOpFieldChange(op, 'pct_assigned', v)} />
                           )}
                         </TableCell>
                         {isDock ? (
@@ -169,31 +176,33 @@ export function WhatIfOperationsTab({ model, scenario }: { model: Model; scenari
                           </>
                         ) : (
                           <>
-                            <TableCell><Input type="number" className={`h-8 w-20 font-mono ${cc(scenario, op.id, 'equip_setup_lot')}`} value={op.equip_setup_lot} step="0.1" onChange={(e) => handleOpFieldChange(op, 'equip_setup_lot', +e.target.value)} /></TableCell>
-                            <TableCell><Input type="number" className={`h-8 w-20 font-mono ${cc(scenario, op.id, 'equip_run_piece')}`} value={op.equip_run_piece} step="0.01" onChange={(e) => handleOpFieldChange(op, 'equip_run_piece', +e.target.value)} /></TableCell>
-                            <TableCell><Input type="number" className={`h-8 w-20 font-mono ${cc(scenario, op.id, 'labor_setup_lot')}`} value={op.labor_setup_lot} step="0.1" onChange={(e) => handleOpFieldChange(op, 'labor_setup_lot', +e.target.value)} /></TableCell>
-                            <TableCell><Input type="number" className={`h-8 w-20 font-mono ${cc(scenario, op.id, 'labor_run_piece')}`} value={op.labor_run_piece} step="0.01" onChange={(e) => handleOpFieldChange(op, 'labor_run_piece', +e.target.value)} /></TableCell>
+                            <TableCell><OperationEquipTimeInput op={op} field="equip_setup_lot" equipment={model.equipment} value={op.equip_setup_lot} step="0.1" inputClassName={cc(scenario, op.id, 'equip_setup_lot')} onChange={(v) => handleOpFieldChange(op, 'equip_setup_lot', v)} /></TableCell>
+                            <TableCell><OperationEquipTimeInput op={op} field="equip_run_piece" equipment={model.equipment} value={op.equip_run_piece} step="0.01" inputClassName={cc(scenario, op.id, 'equip_run_piece')} onChange={(v) => handleOpFieldChange(op, 'equip_run_piece', v)} /></TableCell>
+                            <TableCell><NonNegativeNumericInput allowDecimal value={op.labor_setup_lot} onChange={(v) => handleOpFieldChange(op, 'labor_setup_lot', v)} /></TableCell>
+                            <TableCell><NonNegativeNumericInput allowDecimal value={op.labor_run_piece} onChange={(v) => handleOpFieldChange(op, 'labor_run_piece', v)} /></TableCell>
                           </>
                         )}
                         {showAdvanced && (
                           isDock ? (
-                            Array.from({ length: 12 }).map((_, i) => (
+                            Array.from({ length: 8 + (SHOW_PARAM_VARIABLE_FIELDS_IN_UI ? 4 : 0) }).map((_, i) => (
                               <TableCell key={i} className="font-mono text-xs text-muted-foreground">—</TableCell>
                             ))
                           ) : (
                             <>
-                              <TableCell><Input type="number" className={`h-8 w-20 font-mono ${cc(scenario, op.id, 'equip_setup_piece')}`} value={op.equip_setup_piece} step="0.1" onChange={(e) => handleOpFieldChange(op, 'equip_setup_piece', +e.target.value)} /></TableCell>
-                              <TableCell><Input type="number" className={`h-8 w-20 font-mono ${cc(scenario, op.id, 'equip_setup_tbatch')}`} value={op.equip_setup_tbatch} step="0.1" onChange={(e) => handleOpFieldChange(op, 'equip_setup_tbatch', +e.target.value)} /></TableCell>
-                              <TableCell><Input type="number" className={`h-8 w-20 font-mono ${cc(scenario, op.id, 'equip_run_lot')}`} value={op.equip_run_lot} step="0.1" onChange={(e) => handleOpFieldChange(op, 'equip_run_lot', +e.target.value)} /></TableCell>
-                              <TableCell><Input type="number" className={`h-8 w-20 font-mono ${cc(scenario, op.id, 'equip_run_tbatch')}`} value={op.equip_run_tbatch} step="0.1" onChange={(e) => handleOpFieldChange(op, 'equip_run_tbatch', +e.target.value)} /></TableCell>
-                              <TableCell><Input type="number" className={`h-8 w-20 font-mono ${cc(scenario, op.id, 'labor_setup_piece')}`} value={op.labor_setup_piece} step="0.1" onChange={(e) => handleOpFieldChange(op, 'labor_setup_piece', +e.target.value)} /></TableCell>
-                              <TableCell><Input type="number" className={`h-8 w-20 font-mono ${cc(scenario, op.id, 'labor_setup_tbatch')}`} value={op.labor_setup_tbatch} step="0.1" onChange={(e) => handleOpFieldChange(op, 'labor_setup_tbatch', +e.target.value)} /></TableCell>
-                              <TableCell><Input type="number" className={`h-8 w-20 font-mono ${cc(scenario, op.id, 'labor_run_lot')}`} value={op.labor_run_lot} step="0.1" onChange={(e) => handleOpFieldChange(op, 'labor_run_lot', +e.target.value)} /></TableCell>
-                              <TableCell><Input type="number" className={`h-8 w-20 font-mono ${cc(scenario, op.id, 'labor_run_tbatch')}`} value={op.labor_run_tbatch} step="0.1" onChange={(e) => handleOpFieldChange(op, 'labor_run_tbatch', +e.target.value)} /></TableCell>
-                              <TableCell><Input type="number" className={`h-8 w-20 font-mono ${cc(scenario, op.id, 'oper1')}`} value={op.oper1} onChange={(e) => handleOpFieldChange(op, 'oper1', +e.target.value)} /></TableCell>
-                              <TableCell><Input type="number" className={`h-8 w-20 font-mono ${cc(scenario, op.id, 'oper2')}`} value={op.oper2} onChange={(e) => handleOpFieldChange(op, 'oper2', +e.target.value)} /></TableCell>
-                              <TableCell><Input type="number" className={`h-8 w-20 font-mono ${cc(scenario, op.id, 'oper3')}`} value={op.oper3} onChange={(e) => handleOpFieldChange(op, 'oper3', +e.target.value)} /></TableCell>
-                              <TableCell><Input type="number" className={`h-8 w-20 font-mono ${cc(scenario, op.id, 'oper4')}`} value={op.oper4} onChange={(e) => handleOpFieldChange(op, 'oper4', +e.target.value)} /></TableCell>
+                              <TableCell><OperationEquipTimeInput op={op} field="equip_setup_piece" equipment={model.equipment} value={op.equip_setup_piece} step="0.1" inputClassName={cc(scenario, op.id, 'equip_setup_piece')} onChange={(v) => handleOpFieldChange(op, 'equip_setup_piece', v)} /></TableCell>
+                              <TableCell><OperationEquipTimeInput op={op} field="equip_setup_tbatch" equipment={model.equipment} value={op.equip_setup_tbatch} step="0.1" inputClassName={cc(scenario, op.id, 'equip_setup_tbatch')} onChange={(v) => handleOpFieldChange(op, 'equip_setup_tbatch', v)} /></TableCell>
+                              <TableCell><OperationEquipTimeInput op={op} field="equip_run_lot" equipment={model.equipment} value={op.equip_run_lot} step="0.1" inputClassName={cc(scenario, op.id, 'equip_run_lot')} onChange={(v) => handleOpFieldChange(op, 'equip_run_lot', v)} /></TableCell>
+                              <TableCell><OperationEquipTimeInput op={op} field="equip_run_tbatch" equipment={model.equipment} value={op.equip_run_tbatch} step="0.1" inputClassName={cc(scenario, op.id, 'equip_run_tbatch')} onChange={(v) => handleOpFieldChange(op, 'equip_run_tbatch', v)} /></TableCell>
+                              <TableCell><NonNegativeNumericInput allowDecimal value={op.labor_setup_piece} onChange={(v) => handleOpFieldChange(op, 'labor_setup_piece', v)} /></TableCell>
+                              <TableCell><NonNegativeNumericInput allowDecimal value={op.labor_setup_tbatch} onChange={(v) => handleOpFieldChange(op, 'labor_setup_tbatch', v)} /></TableCell>
+                              <TableCell><NonNegativeNumericInput allowDecimal value={op.labor_run_lot} onChange={(v) => handleOpFieldChange(op, 'labor_run_lot', v)} /></TableCell>
+                              <TableCell><NonNegativeNumericInput allowDecimal value={op.labor_run_tbatch} onChange={(v) => handleOpFieldChange(op, 'labor_run_tbatch', v)} /></TableCell>
+                              {SHOW_PARAM_VARIABLE_FIELDS_IN_UI && <>
+                                <TableCell><NonNegativeNumericInput value={op.oper1} onChange={(v) => handleOpFieldChange(op, 'oper1', v)} /></TableCell>
+                                <TableCell><NonNegativeNumericInput value={op.oper2} onChange={(v) => handleOpFieldChange(op, 'oper2', v)} /></TableCell>
+                                <TableCell><NonNegativeNumericInput value={op.oper3} onChange={(v) => handleOpFieldChange(op, 'oper3', v)} /></TableCell>
+                                <TableCell><NonNegativeNumericInput value={op.oper4} onChange={(v) => handleOpFieldChange(op, 'oper4', v)} /></TableCell>
+                              </>}
                             </>
                           )
                         )}
@@ -203,10 +212,7 @@ export function WhatIfOperationsTab({ model, scenario }: { model: Model; scenari
                               {opRoutes.map(r => (
                                 <div key={r.id} className="flex items-center gap-1">
                                   <span className="text-[11px] font-mono text-muted-foreground">{r.to_op_name}</span>
-                                  <Input type="number" className={`h-6 w-14 font-mono text-[11px] ${cc(scenario, r.id, 'pct_routed')}`}
-                                    value={r.pct_routed}
-                                    onChange={(e) => handleRoutingPctChange(r.id, r.from_op_name, r.to_op_name, +e.target.value)}
-                                  />
+                                  <NonNegativeNumericInput value={r.pct_routed} onChange={(v) => handleRoutingPctChange(r.id, r.from_op_name, r.to_op_name, v)} />
                                   <span className="text-[10px] text-muted-foreground">%</span>
                                 </div>
                               ))}

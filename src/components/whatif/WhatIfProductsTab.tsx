@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { Model, Product } from '@/stores/modelStore';
-import { useModelStore } from '@/stores/modelStore';
+import { useModelStore, displayParamNames, SHOW_PARAM_VARIABLE_FIELDS_IN_UI } from '@/stores/modelStore';
 import type { Scenario } from '@/stores/scenarioStore';
 import { useScenarioStore } from '@/stores/scenarioStore';
 import { useUserLevelStore, isVisible, type UserLevel } from '@/hooks/useUserLevel';
@@ -13,6 +13,8 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { Button } from '@/components/ui/button';
 import { Info, ChevronDown, ChevronUp } from 'lucide-react';
 import { DeptCodeSelect } from '@/components/DeptCodeSelect';
+import { ProductTbatchInput } from '@/components/ProductTbatchInput';
+import { NonNegativeNumericInput } from '@/components/NonNegativeNumericInput';
 
 function InfoTip({ text }: { text: string }) {
   return (
@@ -42,6 +44,8 @@ export function WhatIfProductsTab({ model, scenario, userLevel }: { model: Model
   if (!model.products.length) {
     return <div className="py-12 text-center text-sm text-muted-foreground">No products defined</div>;
   }
+
+  const pn = displayParamNames(model);
 
   const handleChange = (id: string, field: keyof Product, value: any) => {
     const prod = model.products.find(p => p.id === id);
@@ -136,10 +140,12 @@ export function WhatIfProductsTab({ model, scenario, userLevel }: { model: Model
                   <TableHead className="font-mono text-xs">Var Fac</TableHead>
                   <TableHead className="font-mono text-xs">MTS</TableHead>
                   <TableHead className="font-mono text-xs">Gather</TableHead>
-                  <TableHead className="font-mono text-xs">{model.param_names.prod1_name}</TableHead>
-                  <TableHead className="font-mono text-xs">{model.param_names.prod2_name}</TableHead>
-                  <TableHead className="font-mono text-xs">{model.param_names.prod3_name}</TableHead>
-                  <TableHead className="font-mono text-xs">{model.param_names.prod4_name}</TableHead>
+                  {SHOW_PARAM_VARIABLE_FIELDS_IN_UI && <>
+                    <TableHead className="font-mono text-xs">{pn.prod1_name}</TableHead>
+                    <TableHead className="font-mono text-xs">{pn.prod2_name}</TableHead>
+                    <TableHead className="font-mono text-xs">{pn.prod3_name}</TableHead>
+                    <TableHead className="font-mono text-xs">{pn.prod4_name}</TableHead>
+                  </>}
                 </>}
                 <TableHead className="font-mono text-xs">Comments</TableHead>
               </TableRow>
@@ -155,22 +161,30 @@ export function WhatIfProductsTab({ model, scenario, userLevel }: { model: Model
                       </TableCell>
                     )}
                     <TableCell className="font-mono font-medium">{p.name}</TableCell>
-                    <TableCell><Input type="number" className={`h-8 w-20 font-mono ${cc(scenario, p.id, 'demand')}`} value={p.demand} onChange={(e) => handleChange(p.id, 'demand', +e.target.value)} /></TableCell>
-                    <TableCell><Input type="number" className={`h-8 w-20 font-mono ${cc(scenario, p.id, 'lot_size')}`} value={p.lot_size} onChange={(e) => handleChange(p.id, 'lot_size', +e.target.value)} /></TableCell>
+                    <TableCell><NonNegativeNumericInput value={p.demand} onChange={(v) => handleChange(p.id, 'demand', v)} /></TableCell>
+                    <TableCell><NonNegativeNumericInput value={p.lot_size} onChange={(v) => handleChange(p.id, 'lot_size', v)} /></TableCell>
                     {showAdvanced && <>
-                      <TableCell><Input type="number" className={`h-8 w-20 font-mono ${cc(scenario, p.id, 'tbatch_size')}`} value={p.tbatch_size} onChange={(e) => handleChange(p.id, 'tbatch_size', +e.target.value)} /></TableCell>
+                      <TableCell>
+                        <ProductTbatchInput
+                          tbatchSize={p.tbatch_size}
+                          className={`h-8 w-20 font-mono ${cc(scenario, p.id, 'tbatch_size')}`}
+                          onChange={(v) => handleChange(p.id, 'tbatch_size', v)}
+                        />
+                      </TableCell>
                       <TableCell>
                         <DeptCodeSelect modelId={model.id} value={p.dept_code} onChange={(v) => handleChange(p.id, 'dept_code', v)} section="product" className={`h-8 w-28 ${cc(scenario, p.id, 'dept_code')}`} />
                       </TableCell>
-                      <TableCell><Input type="number" className={`h-8 w-20 font-mono ${cc(scenario, p.id, 'demand_factor')}`} value={p.demand_factor} step="0.1" onChange={(e) => handleChange(p.id, 'demand_factor', +e.target.value)} /></TableCell>
-                      <TableCell><Input type="number" className={`h-8 w-20 font-mono ${cc(scenario, p.id, 'lot_factor')}`} value={p.lot_factor} step="0.1" onChange={(e) => handleChange(p.id, 'lot_factor', +e.target.value)} /></TableCell>
-                      <TableCell><Input type="number" className={`h-8 w-20 font-mono ${cc(scenario, p.id, 'var_factor')}`} value={p.var_factor} step="0.1" onChange={(e) => handleChange(p.id, 'var_factor', +e.target.value)} /></TableCell>
+                      <TableCell><NonNegativeNumericInput allowDecimal value={p.demand_factor} onChange={(v) => handleChange(p.id, 'demand_factor', v)} /></TableCell>
+                      <TableCell><NonNegativeNumericInput allowDecimal value={p.lot_factor} onChange={(v) => handleChange(p.id, 'lot_factor', v)} /></TableCell>
+                      <TableCell><NonNegativeNumericInput allowDecimal value={p.var_factor} onChange={(v) => handleChange(p.id, 'var_factor', v)} /></TableCell>
                       <TableCell><Switch checked={p.make_to_stock} onCheckedChange={(v) => handleChange(p.id, 'make_to_stock', v)} /></TableCell>
                       <TableCell><Switch checked={p.gather_tbatches} onCheckedChange={(v) => handleChange(p.id, 'gather_tbatches', v)} /></TableCell>
-                      <TableCell><Input type="number" className={`h-8 w-20 font-mono ${cc(scenario, p.id, 'prod1')}`} value={p.prod1} onChange={(e) => handleChange(p.id, 'prod1', +e.target.value)} /></TableCell>
-                      <TableCell><Input type="number" className={`h-8 w-20 font-mono ${cc(scenario, p.id, 'prod2')}`} value={p.prod2} onChange={(e) => handleChange(p.id, 'prod2', +e.target.value)} /></TableCell>
-                      <TableCell><Input type="number" className={`h-8 w-20 font-mono ${cc(scenario, p.id, 'prod3')}`} value={p.prod3} onChange={(e) => handleChange(p.id, 'prod3', +e.target.value)} /></TableCell>
-                      <TableCell><Input type="number" className={`h-8 w-20 font-mono ${cc(scenario, p.id, 'prod4')}`} value={p.prod4} onChange={(e) => handleChange(p.id, 'prod4', +e.target.value)} /></TableCell>
+                      {SHOW_PARAM_VARIABLE_FIELDS_IN_UI && <>
+                        <TableCell><NonNegativeNumericInput value={p.prod1} onChange={(v) => handleChange(p.id, 'prod1', v)} /></TableCell>
+                        <TableCell><NonNegativeNumericInput value={p.prod2} onChange={(v) => handleChange(p.id, 'prod2', v)} /></TableCell>
+                        <TableCell><NonNegativeNumericInput value={p.prod3} onChange={(v) => handleChange(p.id, 'prod3', v)} /></TableCell>
+                        <TableCell><NonNegativeNumericInput value={p.prod4} onChange={(v) => handleChange(p.id, 'prod4', v)} /></TableCell>
+                      </>}
                     </>}
                     <TableCell><Input className={`h-8 w-32 ${cc(scenario, p.id, 'comments')}`} value={p.comments} onChange={(e) => handleChange(p.id, 'comments', e.target.value)} /></TableCell>
                   </TableRow>

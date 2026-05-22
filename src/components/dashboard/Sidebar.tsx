@@ -15,9 +15,8 @@ import {
   Grid3X3,
   Network,
   Play,
-  FlaskConical,
-  FileText,
   Wrench,
+  LogOut,
 } from "lucide-react";
 
 const NAV_ITEMS = [
@@ -30,9 +29,9 @@ const NAV_ITEMS = [
   { href: "/dashboard/alloperations", label: "All Operations", icon: Grid3X3 },
   { href: "/dashboard/ibomscreens", label: "IBOM", icon: Network },
   { href: "/dashboard/runresults", label: "Run & Results", icon: Play },
-  { href: "/dashboard/whatif", label: "What-If Studio", icon: FlaskConical },
-  { href: "/dashboard/reports", label: "Reports", icon: FileText },
-  { href: "/dashboard/parameternames", label: "Model Settings", icon: Wrench },
+  // { href: "/dashboard/whatif", label: "What-If Studio", icon: FlaskConical },
+  // { href: "/dashboard/reports", label: "Reports", icon: FileText },
+  { href: "/dashboard/modelsettings", label: "Model Settings", icon: Wrench },
 ] as const;
 
 export function DashboardSidebar() {
@@ -53,39 +52,49 @@ export function DashboardSidebar() {
 
   return (
     <aside
-      className="flex w-64 shrink-0 flex-col min-h-0 border-r border-slate-800 bg-[#0A1929] text-slate-100"
+      className={[
+        "flex shrink-0 flex-col min-h-0 border-r border-slate-800 bg-[#0A1929] text-slate-100",
+        /* mobile + desktop: full width rail; tablet (md–lg): icon-only strip */
+        "w-64 tablet:w-[4.25rem] lg:w-64",
+      ].join(" ")}
       aria-label="Main navigation"
     >
-      <div className="shrink-0 border-b border-slate-800 px-4 py-3">
-        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
+      <div className="shrink-0 border-b border-slate-800 px-4 py-3 tablet:flex tablet:items-center tablet:justify-center tablet:px-2 tablet:py-3">
+        <p className="text-center text-xs font-semibold uppercase tracking-[0.14em] text-slate-400 tablet:sr-only lg:not-sr-only">
           MODEL WORKSPACE
         </p>
+        <LayoutDashboard
+          className="hidden h-5 w-5 shrink-0 text-slate-400 tablet:block lg:hidden"
+          aria-hidden
+        />
       </div>
 
-      <nav className="min-h-0 flex-1 space-y-0.5 overflow-y-auto overflow-x-hidden px-2 py-3">
+      <nav className="min-h-0 flex-1 space-y-0.5 overflow-y-auto overflow-x-hidden px-2 py-3 tablet:px-1.5 tablet:flex tablet:flex-col tablet:items-center">
         {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
           const isActive = pathname === href;
           return (
             <Link
               key={href}
               href={href}
+              title={label}
               className={[
-                "flex items-center gap-3 rounded-l-lg px-3 py-2.5 text-sm font-medium transition-colors relative",
+                "flex w-full items-center gap-3 rounded-l-lg px-3 py-2.5 text-sm font-medium transition-colors relative",
+                "tablet:w-11 tablet:justify-center tablet:rounded-lg tablet:px-0 tablet:py-2.5 tablet:gap-0",
                 isActive
                   ? "bg-slate-700/80 text-emerald-400"
                   : "text-slate-300 hover:bg-slate-800/70 hover:text-white",
               ].join(" ")}
             >
-              <Icon className={`h-4 w-4 shrink-0 ${isActive ? "text-emerald-400" : ""}`} />
-              <span className="truncate">{label}</span>
+              <Icon className={`h-4 w-4 shrink-0 tablet:h-[1.125rem] tablet:w-[1.125rem] ${isActive ? "text-emerald-400" : ""}`} />
+              <span className="truncate tablet:sr-only lg:not-sr-only lg:truncate">{label}</span>
             </Link>
           );
         })}
       </nav>
 
-      <div className="shrink-0 border-t border-slate-800 p-3 space-y-1">
+      <div className="shrink-0 border-t border-slate-800 p-3 space-y-1 tablet:flex tablet:flex-col tablet:items-center tablet:px-2 tablet:pb-3">
         {model && (
-          <p className="px-3 py-1.5 text-xs text-slate-400">
+          <p className="px-3 py-1.5 text-center text-xs text-slate-400 tablet:hidden lg:block">
             {model.products.length} products - {model.equipment.length} equip - {model.labor.length} labor
           </p>
         )}
@@ -97,10 +106,16 @@ export function DashboardSidebar() {
           Library
         </Link> */}
         <button
+          type="button"
+          title="Logout"
           onClick={handleLogout}
-          className="flex w-full items-center justify-center gap-2 rounded-lg bg-red-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700"
+          className={[
+            "flex w-full items-center justify-center gap-2 rounded-lg bg-red-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700",
+            "tablet:h-11 tablet:w-11 tablet:min-w-0 tablet:shrink-0 tablet:p-0",
+          ].join(" ")}
         >
-          Logout
+          <LogOut className="hidden h-4 w-4 shrink-0 tablet:block lg:hidden" aria-hidden />
+          <span className="tablet:sr-only lg:not-sr-only">Logout</span>
         </button>
       </div>
     </aside>

@@ -93,17 +93,18 @@ export const useScenarioStore = create<ScenarioStore>((set, get) => ({
 
   loadScenariosFromDb: async (modelId) => {
     if (get().loadedModelId === modelId) return;
+    const { useResultsStore } = await import('./resultsStore');
+    useResultsStore.getState().clearAllForModel();
+    useResultsStore.getState().setSelectedRunScenarioId('basecase');
+
     const { loadScenariosForModel } = await import('@/lib/scenarioDb');
     const { scenarios, results } = await loadScenariosForModel(modelId);
     set({ scenarios, loadedModelId: modelId, activeScenarioId: null, displayScenarioIds: [] });
 
-    // Populate resultsStore with loaded results
-    const { useResultsStore } = await import('./resultsStore');
     Object.entries(results).forEach(([scenarioId, calcResults]) => {
       useResultsStore.getState().setResults(scenarioId, calcResults);
     });
 
-    // Load basecase results
     const { loadBasecaseResults } = await import('@/lib/scenarioDb');
     const bcResults = await loadBasecaseResults(modelId);
     if (bcResults) {

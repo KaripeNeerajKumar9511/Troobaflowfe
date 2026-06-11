@@ -6,7 +6,7 @@ import { useSortableTable, type SortDir } from '@/hooks/useSortableTable';
 import { useModelStore, type Model } from '@/stores/modelStore';
 import { useScenarioStore } from '@/stores/scenarioStore';
 import { useResultsStore } from '@/stores/resultsStore';
-import { getScenarioColor } from '@/lib/scenarioColors';
+import { PRODUCT_METRIC_LABELS } from '@/lib/productMetricLabels';
 import { type CalcResults, type ProductResult, type EquipmentResult, type LaborResult, calculate, isUtilOnlyCalcResults } from '@/lib/calculationEngine';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../../../components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
@@ -1563,9 +1563,9 @@ function ProductResultsTable({ results, model, displayScenarioResults, isUtilOnl
           <TableHeader><TableRow>
             <SortHead label="Product" sortKey="name" current={sort} onSort={handleSort} align="left" />
             <SortHead label="Demand" sortKey="demand" current={sort} onSort={handleSort} />
-            <SortHead label="Good Made" sortKey="goodMade" current={sort} onSort={handleSort} />
-            <SortHead label="Good Shipped" sortKey="goodShipped" current={sort} onSort={handleSort} />
-            <SortHead label="Started" sortKey="started" current={sort} onSort={handleSort} />
+            <SortHead label={PRODUCT_METRIC_LABELS.goodMade} sortKey="goodMade" current={sort} onSort={handleSort} />
+            <SortHead label={PRODUCT_METRIC_LABELS.goodShipped} sortKey="goodShipped" current={sort} onSort={handleSort} />
+            <SortHead label={PRODUCT_METRIC_LABELS.started} sortKey="started" current={sort} onSort={handleSort} />
             <SortHead label="Scrap" sortKey="scrap" current={sort} onSort={handleSort} />
             <SortHead label="WIP" sortKey="wip" current={sort} onSort={handleSort} />
             <SortHead label="MCT" sortKey="mct" current={sort} onSort={handleSort} />
@@ -1991,9 +1991,9 @@ function NormalSummary({ results, model, scenarioResults, isUtilOnly = false }: 
     <Table>
       <TableHeader><TableRow>
         <TableHead className="font-mono text-xs">Product</TableHead>
-        <TableHead className="font-mono text-xs text-right">Good Made</TableHead>
-        <TableHead className="font-mono text-xs text-right">Good Shipped</TableHead>
-        <TableHead className="font-mono text-xs text-right">Started</TableHead>
+        <TableHead className="font-mono text-xs text-right">{PRODUCT_METRIC_LABELS.goodMade}</TableHead>
+        <TableHead className="font-mono text-xs text-right">{PRODUCT_METRIC_LABELS.goodShipped}</TableHead>
+        <TableHead className="font-mono text-xs text-right">{PRODUCT_METRIC_LABELS.started}</TableHead>
         <TableHead className="font-mono text-xs text-right">Scrap</TableHead>
         <TableHead className="font-mono text-xs text-right">WIP</TableHead>
         <TableHead className="font-mono text-xs text-right">MCT ({model.general.mct_time_unit})</TableHead>
@@ -2033,8 +2033,8 @@ function TransposedSummary({ results, model, scenarioResults, isUtilOnly = false
   const fields = [
     { key: 'demand',      label: 'Demand',                fmt: (v: number) => v.toLocaleString() },
     { key: 'lotSize',     label: 'Lot Size',               fmt: (v: number) => v.toString() },
-    { key: 'goodMade',    label: 'Good Made',              fmt: (v: number) => v.toLocaleString() },
-    { key: 'started',     label: 'Started',                fmt: (v: number) => v.toLocaleString() },
+    { key: 'goodMade',    label: PRODUCT_METRIC_LABELS.goodMade,              fmt: (v: number) => v.toLocaleString() },
+    { key: 'started',     label: PRODUCT_METRIC_LABELS.started,                fmt: (v: number) => v.toLocaleString() },
     { key: 'scrap',       label: 'Scrap',                  fmt: (v: number) => v > 0 ? v.toLocaleString() : '—' },
     { key: 'wip',         label: 'WIP',                    fmt: (v: number) => fmtRound(isUtilOnly ? 0 : v, 2) },
     { key: 'mct',         label: `MCT (${model.general.mct_time_unit})`, fmt: (v: number) => fmtRound(isUtilOnly ? 0 : v, 2) },

@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@300;400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@300;400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -176,4 +176,104 @@
   display: none;
   width: 0;
   height: 0;
+}
+
+.premium-output-table {
+  font-family: 'Plus Jakarta Sans', 'DM Sans', sans-serif;
+}
+
+.premium-output-table table {
+  border-collapse: collapse;
+  border-spacing: 0;
+}
+
+.premium-output-table thead th {
+  font-family: 'Plus Jakarta Sans', 'DM Sans', sans-serif !important;
+  text-transform: none !important;
+  letter-spacing: normal !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  color: #111827 !important;
+}
+
+.premium-output-table tbody tr:hover {
+  background-color: transparent !important;
+}
+
+/* Row borders on cells — avoids white gaps between pastel column backgrounds */
+.premium-output-table tr {
+  border-bottom: none !important;
+}
+
+.premium-output-table thead th {
+  border-bottom: 1px solid #E2E6EA;
+  vertical-align: top;
+}
+
+.premium-output-table tbody td {
+  border-bottom: 1px solid #E2E6EA;
+  vertical-align: top;
+}
+
+.premium-output-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.premium-output-table th,
+.premium-output-table td {
+  border-left: none;
+  border-right: none;
+}
+
+.premium-output-table th.premium-sticky-col-head {
+  overflow: visible;
+  background-clip: border-box;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  box-shadow: none !important;
+  border-right: 1px solid #E2E6EA;
+}
+
+.premium-output-table td.premium-sticky-col-cell {
+  overflow: hidden;
+  background-clip: border-box;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  box-shadow: none !important;
+  border-right: 1px solid #E2E6EA;
+}
+
+/* Single horizontal scroll host — prevent nested scroll white flicker */
+.output-table-h-scroll .premium-output-table > div.relative {
+  overflow: visible !important;
+  width: 100%;
+  max-width: 100%;
+}
+
+/* Output tables: horizontal scroll only — page width stays fixed */
+.output-table-h-scroll {
+  overflow-x: auto;
+  overflow-y: visible;
+  max-height: none !important;
+  max-width: 100%;
+  scrollbar-gutter: stable;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.output-table-h-scroll > div {
+  overflow: visible !important;
+  max-height: none !important;
+}
+
+/* Summary tables: stay within page width, no horizontal scroll */
+.output-table-fixed {
+  overflow-x: hidden !important;
+  max-width: 100%;
+}
+
+.output-table-fixed > div {
+  overflow-x: hidden !important;
+  overflow-y: visible !important;
+  max-height: none !important;
 }

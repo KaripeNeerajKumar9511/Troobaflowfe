@@ -15,6 +15,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { FileText, Download, Printer, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
+import { PRODUCT_METRIC_LABELS } from '@/lib/productMetricLabels';
 
 const REPORT_SECTIONS = [
   { key: 'equip_util_chart', label: 'Equipment Utilization Chart' },
@@ -92,8 +93,8 @@ export default function Reports() {
     if (selected.has('output_summary') || selected.has('product_mct_chart') || selected.has('product_wip')) {
       const data = basecaseResults.products.map(p => ({
         Product: p.name, Demand: p.demand, 'Lot Size': p.lotSize,
-        'Good Made': p.goodMade, 'Good Shipped': p.goodShipped,
-        Started: p.started, Scrap: p.scrap, WIP: p.wip,
+        [PRODUCT_METRIC_LABELS.goodMade]: p.goodMade, [PRODUCT_METRIC_LABELS.goodShipped]: p.goodShipped,
+        [PRODUCT_METRIC_LABELS.started]: p.started, Scrap: p.scrap, WIP: p.wip,
         [`MCT (${model.general.mct_time_unit})`]: p.mct,
         'MCT Run': p.mctRun, 'MCT Setup': p.mctSetup,
         'MCT Queue': p.mctQueue, 'MCT Lot Wait': p.mctLotWait,

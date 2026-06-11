@@ -1,0 +1,11 @@
+<svg width="220" height="44" viewBox="0 0 220 44" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <path d="M4,18 C9,4 16,4 22,18 C28,32 35,32 40,18" stroke="#0C0F14" stroke-width="3.2" stroke-linecap="round" fill="none"/>
+  <path d="M4,18 C9,32 16,32 22,18 C28,4 35,4 40,18" stroke="#009A8E" stroke-width="3.2" stroke-linecap="round" fill="none"/>
+  <circle cx="4"  cy="18" r="2.6" fill="#0C0F14"/>
+  <circle cx="22" cy="18" r="2.6" fill="#0C0F14"/>
+  <circle cx="40" cy="18" r="2.6" fill="#009A8E"/>
+  <text x="52" y="23" font-family="DM Sans, sans-serif" font-weight="700" font-size="18" letter-spacing="-0.2">
+    <tspan fill="#0C0F14">TROOBA </tspan><tspan fill="#009A8E">FLOW</tspan>
+  </text>
+  <text x="53" y="39" font-family="DM Mono, monospace" font-weight="500" font-size="9.5" fill="#009A8E" letter-spacing="3">FLOW INTELLIGENCE</text>
+</svg>

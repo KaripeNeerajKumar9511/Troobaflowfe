@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { toast } from 'sonner';
 import { fetchAllModels, fetchModelById, saveFullModelToDB, db } from '@/lib/supabaseData';
 import type { MctTimeUnit, OpsTimeUnit, ProdPeriodUnit } from '@/lib/timeUnits';
 
@@ -105,6 +106,8 @@ export interface IBOMEntry {
   units_per_assy: number;
 }
 
+export type OutputViewMode = 'normal' | 'premium';
+
 export interface GeneralData {
   model_title: string;
   ops_time_unit: OpsTimeUnit;
@@ -122,6 +125,7 @@ export interface GeneralData {
   gen4: number;
   author: string;
   comments: string;
+  output_view_mode?: OutputViewMode;
 }
 
 export interface ParamNames {
@@ -154,13 +158,36 @@ export interface Model {
   ibom: IBOMEntry[];
 }
 
+export type AutoRoutingPruneNotice = {
+  /** Product id that had unreachable ops pruned (rounded->0%). */
+  productId: string;
+  /** Human readable product name at generation time. */
+  productName: string;
+  /** Operations pruned due to 0% after rounding. */
+  removed: { from: string; to: string; exactPct: number }[];
+  /** Data needed to regenerate with exact (no-rounding) percentages. */
+  source: {
+    rows: { product: string; routing: string; totalDemand: number; combinationId: string }[];
+    legend: { operation: string; code: string }[];
+    terminal: 'STOCK' | 'SCRAP';
+  };
+};
+
 interface ModelStore {
   models: Model[];
   activeModelId: string | null;
   modelsLoaded: boolean;
   modelsLoading: boolean;
+  autoRoutingNotices: Record<string, AutoRoutingPruneNotice | undefined>;
+  setAutoRoutingNotice: (notice: AutoRoutingPruneNotice) => void;
+  clearAutoRoutingNotice: (productId: string) => void;
+  /** Bumped after factor upload applies to model so data-page drafts re-sync. */
+  factorApplySyncToken: number;
+  notifyFactorApplySync: () => void;
   setActiveModel: (id: string | null) => void;
   getActiveModel: () => Model | undefined;
+  /** Replace in-memory model with server payload (after save or org refresh). */
+  upsertModelFromServer: (model: Model) => void;
   loadModels: (force?: boolean) => Promise<void>;
   createModel: (name: string, description?: string) => Promise<string>;
   duplicateModel: (id: string) => Promise<string>;
@@ -178,15 +205,33 @@ interface ModelStore {
   updateEquipment: (modelId: string, eqId: string, data: Partial<EquipmentGroup>) => void;
   deleteEquipment: (modelId: string, eqId: string) => void;
   addProduct: (modelId: string, product: Product) => void;
+  /** Local-only state update (no backend write). */
+  addProductLocal: (modelId: string, product: Product) => void;
+  /** Local-only delete (no backend write). */
+  deleteProductLocal: (modelId: string, productId: string) => void;
   updateProduct: (modelId: string, productId: string, data: Partial<Product>) => void;
   deleteProduct: (modelId: string, productId: string) => void;
   addOperation: (modelId: string, op: Operation) => void;
+  /** Local-only state update (no backend write). */
+  addOperationLocal: (modelId: string, op: Operation) => void;
   updateOperation: (modelId: string, opId: string, data: Partial<Operation>) => void;
+  /** Apply operation field from org WebSocket (DB already updated server-side). */
+  patchOperationFromCollab: (modelId: string, opId: string, data: Partial<Operation>) => void;
+  patchProductFromCollab: (modelId: string, productId: string, data: Partial<Product>) => void;
+  patchEquipmentFromCollab: (modelId: string, equipId: string, data: Partial<EquipmentGroup>) => void;
+  patchLaborFromCollab: (modelId: string, laborId: string, data: Partial<LaborGroup>) => void;
+  patchGeneralFromCollab: (modelId: string, data: Partial<Model['general']>) => void;
+  patchRoutingFromCollab: (modelId: string, routeId: string, data: Partial<RoutingEntry>) => void;
+  patchIBOMFromCollab: (modelId: string, entryId: string, data: Partial<IBOMEntry>) => void;
   deleteOperation: (modelId: string, opId: string) => void;
   addRouting: (modelId: string, entry: RoutingEntry) => void;
   updateRouting: (modelId: string, entryId: string, data: Partial<RoutingEntry>) => void;
   deleteRouting: (modelId: string, entryId: string) => void;
   setRouting: (modelId: string, productId: string, entries: RoutingEntry[]) => void;
+  /** Local-only state update (no backend write). */
+  setRoutingLocal: (modelId: string, productId: string, entries: RoutingEntry[]) => void;
+  /** Local-only: remove all operations (except STOCK/SCRAP) and routing for a product. */
+  clearOperationsRoutingLocal: (modelId: string, productId: string) => void;
   addIBOM: (modelId: string, entry: IBOMEntry) => void;
   updateIBOM: (modelId: string, entryId: string, data: Partial<IBOMEntry>) => void;
   deleteIBOM: (modelId: string, entryId: string) => void;
@@ -299,7 +344,7 @@ export function createDemoModel(): Model {
     ],
     operations: [
       // HUB1
-      { id: uid(), product_id: prodIds.HUB1, op_name: 'DOCK', op_number: 10, equip_id: '', pct_assigned: 100, equip_setup_lot: 0, equip_run_piece: 0, labor_setup_lot: 0, labor_run_piece: 0, ...defaultOpTimes },
+      { id: uid(), product_id: prodIds.HUB1, op_name: 'DOCK', op_number: 0, equip_id: '', pct_assigned: 100, equip_setup_lot: 0, equip_run_piece: 0, labor_setup_lot: 0, labor_run_piece: 0, ...defaultOpTimes },
       { id: uid(), product_id: prodIds.HUB1, op_name: 'BENCH', op_number: 20, equip_id: equipIds.BENCH, pct_assigned: 100, equip_setup_lot: 30, equip_run_piece: 5, labor_setup_lot: 30, labor_run_piece: 5, ...defaultOpTimes },
       { id: uid(), product_id: prodIds.HUB1, op_name: 'RFTURN', op_number: 30, equip_id: equipIds.VT_LATHE, pct_assigned: 100, equip_setup_lot: 45, equip_run_piece: 8, labor_setup_lot: 45, labor_run_piece: 8, ...defaultOpTimes },
       { id: uid(), product_id: prodIds.HUB1, op_name: 'DEBURR', op_number: 40, equip_id: equipIds.DEBURR, pct_assigned: 100, equip_setup_lot: 10, equip_run_piece: 3, labor_setup_lot: 10, labor_run_piece: 3, ...defaultOpTimes },
@@ -308,7 +353,7 @@ export function createDemoModel(): Model {
       { id: uid(), product_id: prodIds.HUB1, op_name: 'REWORK', op_number: 70, equip_id: equipIds.REWORK, pct_assigned: 100, equip_setup_lot: 20, equip_run_piece: 6, labor_setup_lot: 20, labor_run_piece: 6, ...defaultOpTimes },
       { id: uid(), product_id: prodIds.HUB1, op_name: 'SLOT', op_number: 80, equip_id: equipIds.MILL, pct_assigned: 100, equip_setup_lot: 30, equip_run_piece: 7, labor_setup_lot: 30, labor_run_piece: 7, ...defaultOpTimes },
       // HUB2
-      { id: uid(), product_id: prodIds.HUB2, op_name: 'DOCK', op_number: 10, equip_id: '', pct_assigned: 100, equip_setup_lot: 0, equip_run_piece: 0, labor_setup_lot: 0, labor_run_piece: 0, ...defaultOpTimes },
+      { id: uid(), product_id: prodIds.HUB2, op_name: 'DOCK', op_number: 0, equip_id: '', pct_assigned: 100, equip_setup_lot: 0, equip_run_piece: 0, labor_setup_lot: 0, labor_run_piece: 0, ...defaultOpTimes },
       { id: uid(), product_id: prodIds.HUB2, op_name: 'BENCH', op_number: 20, equip_id: equipIds.BENCH, pct_assigned: 100, equip_setup_lot: 30, equip_run_piece: 5, labor_setup_lot: 30, labor_run_piece: 5, ...defaultOpTimes },
       { id: uid(), product_id: prodIds.HUB2, op_name: 'RFTURN', op_number: 30, equip_id: equipIds.VT_LATHE, pct_assigned: 100, equip_setup_lot: 45, equip_run_piece: 8, labor_setup_lot: 45, labor_run_piece: 8, ...defaultOpTimes },
       { id: uid(), product_id: prodIds.HUB2, op_name: 'DEBURR', op_number: 40, equip_id: equipIds.DEBURR, pct_assigned: 100, equip_setup_lot: 10, equip_run_piece: 3, labor_setup_lot: 10, labor_run_piece: 3, ...defaultOpTimes },
@@ -317,7 +362,7 @@ export function createDemoModel(): Model {
       { id: uid(), product_id: prodIds.HUB2, op_name: 'REWORK', op_number: 70, equip_id: equipIds.REWORK, pct_assigned: 100, equip_setup_lot: 20, equip_run_piece: 6, labor_setup_lot: 20, labor_run_piece: 6, ...defaultOpTimes },
       { id: uid(), product_id: prodIds.HUB2, op_name: 'SLOT', op_number: 80, equip_id: equipIds.MILL, pct_assigned: 100, equip_setup_lot: 30, equip_run_piece: 7, labor_setup_lot: 30, labor_run_piece: 7, ...defaultOpTimes },
       // HUB3
-      { id: uid(), product_id: prodIds.HUB3, op_name: 'DOCK', op_number: 10, equip_id: '', pct_assigned: 100, equip_setup_lot: 0, equip_run_piece: 0, labor_setup_lot: 0, labor_run_piece: 0, ...defaultOpTimes },
+      { id: uid(), product_id: prodIds.HUB3, op_name: 'DOCK', op_number: 0, equip_id: '', pct_assigned: 100, equip_setup_lot: 0, equip_run_piece: 0, labor_setup_lot: 0, labor_run_piece: 0, ...defaultOpTimes },
       { id: uid(), product_id: prodIds.HUB3, op_name: 'BENCH', op_number: 20, equip_id: equipIds.BENCH, pct_assigned: 100, equip_setup_lot: 30, equip_run_piece: 5, labor_setup_lot: 30, labor_run_piece: 5, ...defaultOpTimes },
       { id: uid(), product_id: prodIds.HUB3, op_name: 'RFTURN', op_number: 30, equip_id: equipIds.VT_LATHE, pct_assigned: 100, equip_setup_lot: 45, equip_run_piece: 8, labor_setup_lot: 45, labor_run_piece: 8, ...defaultOpTimes },
       { id: uid(), product_id: prodIds.HUB3, op_name: 'DEBURR', op_number: 40, equip_id: equipIds.DEBURR, pct_assigned: 100, equip_setup_lot: 10, equip_run_piece: 3, labor_setup_lot: 10, labor_run_piece: 3, ...defaultOpTimes },
@@ -326,7 +371,7 @@ export function createDemoModel(): Model {
       { id: uid(), product_id: prodIds.HUB3, op_name: 'REWORK', op_number: 70, equip_id: equipIds.REWORK, pct_assigned: 100, equip_setup_lot: 20, equip_run_piece: 6, labor_setup_lot: 20, labor_run_piece: 6, ...defaultOpTimes },
       { id: uid(), product_id: prodIds.HUB3, op_name: 'SLOT', op_number: 80, equip_id: equipIds.MILL, pct_assigned: 100, equip_setup_lot: 30, equip_run_piece: 7, labor_setup_lot: 30, labor_run_piece: 7, ...defaultOpTimes },
       // HUB4
-      { id: uid(), product_id: prodIds.HUB4, op_name: 'DOCK', op_number: 10, equip_id: '', pct_assigned: 100, equip_setup_lot: 0, equip_run_piece: 0, labor_setup_lot: 0, labor_run_piece: 0, ...defaultOpTimes },
+      { id: uid(), product_id: prodIds.HUB4, op_name: 'DOCK', op_number: 0, equip_id: '', pct_assigned: 100, equip_setup_lot: 0, equip_run_piece: 0, labor_setup_lot: 0, labor_run_piece: 0, ...defaultOpTimes },
       { id: uid(), product_id: prodIds.HUB4, op_name: 'BENCH', op_number: 20, equip_id: equipIds.BENCH, pct_assigned: 100, equip_setup_lot: 30, equip_run_piece: 5, labor_setup_lot: 30, labor_run_piece: 5, ...defaultOpTimes },
       { id: uid(), product_id: prodIds.HUB4, op_name: 'RFTURN', op_number: 30, equip_id: equipIds.VT_LATHE, pct_assigned: 100, equip_setup_lot: 45, equip_run_piece: 8, labor_setup_lot: 45, labor_run_piece: 8, ...defaultOpTimes },
       { id: uid(), product_id: prodIds.HUB4, op_name: 'DEBURR', op_number: 40, equip_id: equipIds.DEBURR, pct_assigned: 100, equip_setup_lot: 10, equip_run_piece: 3, labor_setup_lot: 10, labor_run_piece: 3, ...defaultOpTimes },
@@ -335,16 +380,16 @@ export function createDemoModel(): Model {
       { id: uid(), product_id: prodIds.HUB4, op_name: 'REWORK', op_number: 70, equip_id: equipIds.REWORK, pct_assigned: 100, equip_setup_lot: 20, equip_run_piece: 6, labor_setup_lot: 20, labor_run_piece: 6, ...defaultOpTimes },
       { id: uid(), product_id: prodIds.HUB4, op_name: 'SLOT', op_number: 80, equip_id: equipIds.MILL, pct_assigned: 100, equip_setup_lot: 30, equip_run_piece: 7, labor_setup_lot: 30, labor_run_piece: 7, ...defaultOpTimes },
       // SLEEVE
-      { id: uid(), product_id: prodIds.SLEEVE, op_name: 'DOCK', op_number: 10, equip_id: '', pct_assigned: 100, equip_setup_lot: 0, equip_run_piece: 0, labor_setup_lot: 0, labor_run_piece: 0, ...defaultOpTimes },
+      { id: uid(), product_id: prodIds.SLEEVE, op_name: 'DOCK', op_number: 0, equip_id: '', pct_assigned: 100, equip_setup_lot: 0, equip_run_piece: 0, labor_setup_lot: 0, labor_run_piece: 0, ...defaultOpTimes },
       { id: uid(), product_id: prodIds.SLEEVE, op_name: 'TURN', op_number: 20, equip_id: equipIds.DRILL, pct_assigned: 100, equip_setup_lot: 20, equip_run_piece: 2, labor_setup_lot: 20, labor_run_piece: 2, ...defaultOpTimes },
       // MOUNT
-      { id: uid(), product_id: prodIds.MOUNT, op_name: 'DOCK', op_number: 10, equip_id: '', pct_assigned: 100, equip_setup_lot: 0, equip_run_piece: 0, labor_setup_lot: 0, labor_run_piece: 0, ...defaultOpTimes },
+      { id: uid(), product_id: prodIds.MOUNT, op_name: 'DOCK', op_number: 0, equip_id: '', pct_assigned: 100, equip_setup_lot: 0, equip_run_piece: 0, labor_setup_lot: 0, labor_run_piece: 0, ...defaultOpTimes },
       { id: uid(), product_id: prodIds.MOUNT, op_name: 'ASSEMBLE', op_number: 20, equip_id: equipIds.BENCH, pct_assigned: 100, equip_setup_lot: 20, equip_run_piece: 2, labor_setup_lot: 20, labor_run_piece: 2, ...defaultOpTimes },
       // BRACKET
-      { id: uid(), product_id: prodIds.BRACKET, op_name: 'DOCK', op_number: 10, equip_id: '', pct_assigned: 100, equip_setup_lot: 0, equip_run_piece: 0, labor_setup_lot: 0, labor_run_piece: 0, ...defaultOpTimes },
+      { id: uid(), product_id: prodIds.BRACKET, op_name: 'DOCK', op_number: 0, equip_id: '', pct_assigned: 100, equip_setup_lot: 0, equip_run_piece: 0, labor_setup_lot: 0, labor_run_piece: 0, ...defaultOpTimes },
       { id: uid(), product_id: prodIds.BRACKET, op_name: 'STAMP', op_number: 20, equip_id: equipIds.DRILL, pct_assigned: 100, equip_setup_lot: 20, equip_run_piece: 2, labor_setup_lot: 20, labor_run_piece: 2, ...defaultOpTimes },
       // BOLT
-      { id: uid(), product_id: prodIds.BOLT, op_name: 'DOCK', op_number: 10, equip_id: '', pct_assigned: 100, equip_setup_lot: 0, equip_run_piece: 0, labor_setup_lot: 0, labor_run_piece: 0, ...defaultOpTimes },
+      { id: uid(), product_id: prodIds.BOLT, op_name: 'DOCK', op_number: 0, equip_id: '', pct_assigned: 100, equip_setup_lot: 0, equip_run_piece: 0, labor_setup_lot: 0, labor_run_piece: 0, ...defaultOpTimes },
       { id: uid(), product_id: prodIds.BOLT, op_name: 'FORM', op_number: 20, equip_id: equipIds.DRILL, pct_assigned: 100, equip_setup_lot: 20, equip_run_piece: 2, labor_setup_lot: 20, labor_run_piece: 2, ...defaultOpTimes },
     ],
     routing: [
@@ -381,6 +426,7 @@ export const defaultGeneral: GeneralData = {
   conv1: 480, conv2: 210, util_limit: 95, var_equip: 30, var_labor: 30, var_prod: 30,
   gen1: 0, gen2: 0, gen3: 0, gen4: 0,
   author: '', comments: '',
+  output_view_mode: 'normal',
 };
 
 export const useModelStore = create<ModelStore>((set, get) => ({
@@ -388,6 +434,23 @@ export const useModelStore = create<ModelStore>((set, get) => ({
   activeModelId: null,
   modelsLoaded: false,
   modelsLoading: false,
+  autoRoutingNotices: {},
+  factorApplySyncToken: 0,
+  notifyFactorApplySync: () => {
+    set((s) => ({ factorApplySyncToken: s.factorApplySyncToken + 1 }));
+  },
+  setAutoRoutingNotice: (notice) => {
+    set((s) => ({
+      autoRoutingNotices: { ...s.autoRoutingNotices, [notice.productId]: notice },
+    }));
+  },
+  clearAutoRoutingNotice: (productId) => {
+    set((s) => {
+      const next = { ...s.autoRoutingNotices };
+      delete next[productId];
+      return { autoRoutingNotices: next };
+    });
+  },
 
   loadModels: async (force = false) => {
     if (get().modelsLoading) return;
@@ -407,6 +470,14 @@ export const useModelStore = create<ModelStore>((set, get) => ({
   getActiveModel: () => {
     const { models, activeModelId } = get();
     return models.find((m) => m.id === activeModelId);
+  },
+
+  upsertModelFromServer: (model) => {
+    set((s) => ({
+      models: s.models.some((m) => m.id === model.id)
+        ? s.models.map((m) => (m.id === model.id ? model : m))
+        : [...s.models, model],
+    }));
   },
 
   createModel: async (name, description = '') => {
@@ -530,6 +601,8 @@ export const useModelStore = create<ModelStore>((set, get) => ({
     db.updateModel(modelId, { run_status: 'needs_recalc' });
   },
   updateLabor: (modelId, laborId, data) => {
+    const m = get().models.find((x) => x.id === modelId);
+    const row = m?.labor.find((l) => l.id === laborId);
     set((s) => ({
       models: s.models.map((m) => {
         if (m.id !== modelId) return m;
@@ -537,7 +610,7 @@ export const useModelStore = create<ModelStore>((set, get) => ({
         return { ...m, labor, updated_at: new Date().toISOString(), run_status: 'needs_recalc' as const };
       }),
     }));
-    db.updateLabor(modelId, laborId, data);
+    db.updateLabor(modelId, laborId, data, row);
     db.updateModel(modelId, { run_status: 'needs_recalc' });
   },
   deleteLabor: (modelId, laborId) => {
@@ -564,10 +637,12 @@ export const useModelStore = create<ModelStore>((set, get) => ({
     db.updateModel(modelId, { run_status: 'needs_recalc' });
   },
   updateEquipment: (modelId, eqId, data) => {
+    const m = get().models.find((x) => x.id === modelId);
+    const eq = m?.equipment.find((e) => e.id === eqId);
     set((s) => ({
       models: s.models.map((m) => m.id === modelId ? { ...m, equipment: m.equipment.map((e) => e.id === eqId ? { ...e, ...data } : e), updated_at: new Date().toISOString(), run_status: 'needs_recalc' as const } : m),
     }));
-    db.updateEquipment(modelId, eqId, data);
+    db.updateEquipment(modelId, eqId, data, eq, m?.labor);
     db.updateModel(modelId, { run_status: 'needs_recalc' });
   },
   deleteEquipment: (modelId, eqId) => {
@@ -590,11 +665,37 @@ export const useModelStore = create<ModelStore>((set, get) => ({
     db.insertProduct(modelId, product);
     db.updateModel(modelId, { run_status: 'needs_recalc' });
   },
+  addProductLocal: (modelId, product) => {
+    set((s) => ({
+      models: s.models.map((m) => m.id === modelId
+        ? { ...m, products: [...m.products, product], updated_at: new Date().toISOString(), run_status: 'needs_recalc' as const }
+        : m,
+      ),
+    }));
+  },
+  deleteProductLocal: (modelId, productId) => {
+    set((s) => ({
+      models: s.models.map((m) => {
+        if (m.id !== modelId) return m;
+        return {
+          ...m,
+          products: m.products.filter((p) => p.id !== productId),
+          operations: m.operations.filter((o) => o.product_id !== productId),
+          routing: m.routing.filter((r) => r.product_id !== productId),
+          ibom: m.ibom.filter((e) => e.parent_product_id !== productId && e.component_product_id !== productId),
+          updated_at: new Date().toISOString(),
+          run_status: 'needs_recalc' as const,
+        };
+      }),
+    }));
+  },
   updateProduct: (modelId, productId, data) => {
+    const m = get().models.find((x) => x.id === modelId);
+    const row = m?.products.find((p) => p.id === productId);
     set((s) => ({
       models: s.models.map((m) => m.id === modelId ? { ...m, products: m.products.map((p) => p.id === productId ? { ...p, ...data } : p), updated_at: new Date().toISOString(), run_status: 'needs_recalc' as const } : m),
     }));
-    db.updateProduct(modelId, productId, data);
+    db.updateProduct(modelId, productId, data, row);
     db.updateModel(modelId, { run_status: 'needs_recalc' });
   },
   deleteProduct: (modelId, productId) => {
@@ -614,16 +715,152 @@ export const useModelStore = create<ModelStore>((set, get) => ({
 
   addOperation: (modelId, op) => {
     set((s) => ({
-      models: s.models.map((m) => m.id === modelId ? { ...m, operations: [...m.operations, op], updated_at: new Date().toISOString(), run_status: 'needs_recalc' as const } : m),
+      models: s.models.map((m) => {
+        if (m.id !== modelId) return m;
+        const productOps = m.operations.filter((o) => o.product_id === op.product_id);
+        const hasDock = productOps.some((o) => String(o.op_name).toUpperCase() === 'DOCK');
+        if (hasDock && String(op.op_name).toUpperCase() === 'DOCK') return m;
+        const nextOps = [...m.operations, op.op_name.toUpperCase() === 'DOCK' ? { ...op, op_number: 0 } : op];
+        return { ...m, operations: nextOps, updated_at: new Date().toISOString(), run_status: 'needs_recalc' as const };
+      }),
     }));
-    db.insertOperation(modelId, op);
+    db.insertOperation(modelId, op.op_name.toUpperCase() === 'DOCK' ? { ...op, op_number: 0 } : op);
     db.updateModel(modelId, { run_status: 'needs_recalc' });
   },
+  addOperationLocal: (modelId, op) => {
+    set((s) => ({
+      models: s.models.map((m) => {
+        if (m.id !== modelId) return m;
+        const productOps = m.operations.filter((o) => o.product_id === op.product_id);
+        const hasDock = productOps.some((o) => String(o.op_name).toUpperCase() === 'DOCK');
+        if (hasDock && String(op.op_name).toUpperCase() === 'DOCK') return m;
+        const nextOps = [...m.operations, op.op_name.toUpperCase() === 'DOCK' ? { ...op, op_number: 0 } : op];
+        return { ...m, operations: nextOps, updated_at: new Date().toISOString(), run_status: 'needs_recalc' as const };
+      }),
+    }));
+  },
+  patchOperationFromCollab: (modelId, opId, data) => {
+    set((s) => ({
+      models: s.models.map((m) =>
+        m.id === modelId
+          ? {
+              ...m,
+              operations: m.operations.map((o) =>
+                o.id === opId ? { ...o, ...data } : o,
+              ),
+              updated_at: new Date().toISOString(),
+              run_status: 'needs_recalc' as const,
+            }
+          : m,
+      ),
+    }));
+  },
+  patchProductFromCollab: (modelId, productId, data) => {
+    set((s) => ({
+      models: s.models.map((m) =>
+        m.id === modelId
+          ? {
+              ...m,
+              products: m.products.map((p) => (p.id === productId ? { ...p, ...data } : p)),
+              updated_at: new Date().toISOString(),
+              run_status: 'needs_recalc' as const,
+            }
+          : m,
+      ),
+    }));
+  },
+  patchEquipmentFromCollab: (modelId, equipId, data) => {
+    set((s) => ({
+      models: s.models.map((m) =>
+        m.id === modelId
+          ? {
+              ...m,
+              equipment: m.equipment.map((e) => (e.id === equipId ? { ...e, ...data } : e)),
+              updated_at: new Date().toISOString(),
+              run_status: 'needs_recalc' as const,
+            }
+          : m,
+      ),
+    }));
+  },
+  patchLaborFromCollab: (modelId, laborId, data) => {
+    set((s) => ({
+      models: s.models.map((m) =>
+        m.id === modelId
+          ? {
+              ...m,
+              labor: m.labor.map((l) => (l.id === laborId ? { ...l, ...data } : l)),
+              updated_at: new Date().toISOString(),
+              run_status: 'needs_recalc' as const,
+            }
+          : m,
+      ),
+    }));
+  },
+  patchGeneralFromCollab: (modelId, data) => {
+    set((s) => ({
+      models: s.models.map((m) =>
+        m.id === modelId
+          ? {
+              ...m,
+              general: { ...m.general, ...data },
+              updated_at: new Date().toISOString(),
+              run_status: 'needs_recalc' as const,
+            }
+          : m,
+      ),
+    }));
+  },
+  patchRoutingFromCollab: (modelId, routeId, data) => {
+    set((s) => ({
+      models: s.models.map((m) =>
+        m.id === modelId
+          ? {
+              ...m,
+              routing: m.routing.map((r) => (r.id === routeId ? { ...r, ...data } : r)),
+              updated_at: new Date().toISOString(),
+              run_status: 'needs_recalc' as const,
+            }
+          : m,
+      ),
+    }));
+  },
+  patchIBOMFromCollab: (modelId, entryId, data) => {
+    set((s) => ({
+      models: s.models.map((m) =>
+        m.id === modelId
+          ? {
+              ...m,
+              ibom: m.ibom.map((e) => (e.id === entryId ? { ...e, ...data } : e)),
+              updated_at: new Date().toISOString(),
+              run_status: 'needs_recalc' as const,
+            }
+          : m,
+      ),
+    }));
+  },
   updateOperation: (modelId, opId, data) => {
+    const prev = get().models.find(m => m.id === modelId)?.operations.find(o => o.id === opId);
     set((s) => ({
       models: s.models.map((m) => m.id === modelId ? { ...m, operations: m.operations.map((o) => o.id === opId ? { ...o, ...data } : o), updated_at: new Date().toISOString(), run_status: 'needs_recalc' as const } : m),
     }));
-    db.updateOperation(modelId, opId, data);
+    db.updateOperation(modelId, opId, data, prev).then((resp) => {
+      if (resp?.swapped_with && prev?.op_number !== undefined && data.op_number !== undefined) {
+        set((s) => ({
+          models: s.models.map((m) => m.id === modelId ? {
+            ...m,
+            operations: m.operations.map((o) => o.id === resp.swapped_with ? { ...o, op_number: prev.op_number } : o),
+          } : m),
+        }));
+      }
+    }).catch((err) => {
+      if (prev) {
+        set((s) => ({
+          models: s.models.map((m) => m.id === modelId ? { ...m, operations: m.operations.map((o) => o.id === opId ? { ...o, ...prev } : o) } : m),
+        }));
+      }
+      toast.error('Failed to update operation.');
+    });
     db.updateModel(modelId, { run_status: 'needs_recalc' });
   },
   deleteOperation: (modelId, opId) => {
@@ -656,10 +893,12 @@ export const useModelStore = create<ModelStore>((set, get) => ({
     db.updateModel(modelId, { run_status: 'needs_recalc' });
   },
   updateRouting: (modelId, entryId, data) => {
+    const m = get().models.find((x) => x.id === modelId);
+    const row = m?.routing.find((r) => r.id === entryId);
     set((s) => ({
       models: s.models.map((m) => m.id === modelId ? { ...m, routing: m.routing.map((r) => r.id === entryId ? { ...r, ...data } : r), updated_at: new Date().toISOString(), run_status: 'needs_recalc' as const } : m),
     }));
-    db.updateRouting(modelId, entryId, data);
+    db.updateRouting(modelId, entryId, data, row);
     db.updateModel(modelId, { run_status: 'needs_recalc' });
   },
   deleteRouting: (modelId, entryId) => {
@@ -681,6 +920,31 @@ export const useModelStore = create<ModelStore>((set, get) => ({
     db.setRouting(modelId, productId, entries);
     db.updateModel(modelId, { run_status: 'needs_recalc' });
   },
+  setRoutingLocal: (modelId, productId, entries) => {
+    set((s) => ({
+      models: s.models.map((m) => m.id === modelId ? {
+        ...m,
+        routing: [...m.routing.filter((r) => r.product_id !== productId), ...entries],
+        updated_at: new Date().toISOString(),
+        run_status: 'needs_recalc' as const,
+      } : m),
+    }));
+  },
+
+  clearOperationsRoutingLocal: (modelId, productId) => {
+    set((s) => ({
+      models: s.models.map((m) => {
+        if (m.id !== modelId) return m;
+        return {
+          ...m,
+          operations: m.operations.filter((o) => o.product_id !== productId),
+          routing: m.routing.filter((r) => r.product_id !== productId),
+          updated_at: new Date().toISOString(),
+          run_status: 'needs_recalc' as const,
+        };
+      }),
+    }));
+  },
 
   addIBOM: (modelId, entry) => {
     set((s) => ({
@@ -690,10 +954,12 @@ export const useModelStore = create<ModelStore>((set, get) => ({
     db.updateModel(modelId, { run_status: 'needs_recalc' });
   },
   updateIBOM: (modelId, entryId, data) => {
+    const m = get().models.find((x) => x.id === modelId);
+    const row = m?.ibom.find((e) => e.id === entryId);
     set((s) => ({
       models: s.models.map((m) => m.id === modelId ? { ...m, ibom: m.ibom.map((e) => e.id === entryId ? { ...e, ...data } : e), updated_at: new Date().toISOString(), run_status: 'needs_recalc' as const } : m),
     }));
-    db.updateIBOM(modelId, entryId, data);
+    db.updateIBOM(modelId, entryId, data, row);
     db.updateModel(modelId, { run_status: 'needs_recalc' });
   },
   deleteIBOM: (modelId, entryId) => {

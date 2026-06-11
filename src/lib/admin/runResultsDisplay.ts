@@ -1,6 +1,7 @@
 import type { Model } from '@/stores/modelStore';
 import type { CalcResults, OperationResult } from '@/lib/calculationEngine';
 import { getProductOutOfAreaTime } from '@/lib/calculationEngine';
+import { PRODUCT_METRIC_LABELS } from '@/lib/productMetricLabels';
 
 export type AdminTableColumn<TRow> = {
   key: string;
@@ -117,9 +118,9 @@ export function buildProductResultRows(results: CalcResults, isUtilOnly: boolean
 
 export const PRODUCT_RESULT_COLUMNS: AdminTableColumn<AdminProductResultRow>[] = [
   { key: 'name', label: 'Product', align: 'left', get: (r) => r.name },
-  { key: 'goodMade', label: 'Good Made', get: (r) => fmtFixed(r.goodMade, 2) },
-  { key: 'goodShipped', label: 'Good Shipped', get: (r) => fmtFixed(r.goodShipped, 2) },
-  { key: 'started', label: 'Started', get: (r) => fmtFixed(r.started, 2) },
+  { key: 'goodMade', label: PRODUCT_METRIC_LABELS.goodMade, get: (r) => fmtFixed(r.goodMade, 2) },
+  { key: 'goodShipped', label: PRODUCT_METRIC_LABELS.goodShipped, get: (r) => fmtFixed(r.goodShipped, 2) },
+  { key: 'started', label: PRODUCT_METRIC_LABELS.started, get: (r) => fmtFixed(r.started, 2) },
   { key: 'scrap', label: 'Scrap', get: (r) => fmtFixed(r.scrap, 2) },
   { key: 'scrappedInAssembly', label: 'Scrapped in Assembly', get: (r) => fmtFixed(r.scrappedInAssembly, 2) },
   { key: 'usedInAssembly', label: 'Used in Assembly', get: (r) => fmtFixed(r.usedInAssembly, 2) },

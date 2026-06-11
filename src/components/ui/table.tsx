@@ -4,12 +4,17 @@ import { cn } from "@/lib/utils"
 
 const Table = React.forwardRef<
   HTMLTableElement,
-  React.HTMLAttributes<HTMLTableElement>
->(({ className, ...props }, ref) => (
-  <div className="relative w-full overflow-auto">
+  React.HTMLAttributes<HTMLTableElement> & { fitContent?: boolean; outerScrollHost?: boolean }
+>(({ className, fitContent = false, outerScrollHost = false, ...props }, ref) => (
+  <div
+    className={cn(
+      "relative",
+      outerScrollHost ? "overflow-visible w-full" : cn("overflow-auto", fitContent ? "w-fit max-w-full" : "w-full"),
+    )}
+  >
     <table
       ref={ref}
-      className={cn("w-full caption-bottom text-sm", className)}
+      className={cn("caption-bottom text-sm", fitContent || outerScrollHost ? "w-auto" : "w-full", className)}
       {...props}
     />
   </div>

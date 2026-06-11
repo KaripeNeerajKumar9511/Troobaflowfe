@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { flushSync } from 'react-dom';
 import { ModelTransferOverlay, yieldForOverlayPaint } from '@/components/ModelTransferOverlay';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { useModelStore } from '@/stores/modelStore';
+import { useModelStore, type OutputViewMode } from '@/stores/modelStore';
 import { useResultsStore } from '@/stores/resultsStore';
 import {
   db,
@@ -28,7 +28,7 @@ import {
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
-import { Save, Trash2, Archive, Download, RotateCcw, X, Plus, Clock, Pencil, ChevronDown, Lock } from 'lucide-react';
+import { Save, Trash2, Archive, Download, RotateCcw, X, Plus, Clock, Pencil, ChevronDown, Lock, LayoutGrid, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useDeptCodes } from '@/hooks/useDeptCodes';
@@ -222,6 +222,7 @@ export default function ModelSettings() {
         <TabsList>
           <TabsTrigger value="general">General</TabsTrigger>
           <TabsTrigger value="deptcodes">Group/Dept/Area</TabsTrigger>
+          <TabsTrigger value="output-settings">Output Settings</TabsTrigger>
           <TabsTrigger value="versions">Version History</TabsTrigger>
           <TabsTrigger value="danger">Danger Zone</TabsTrigger>
         </TabsList>
@@ -291,15 +292,19 @@ export default function ModelSettings() {
         <TabsContent value="deptcodes" className="mt-4 space-y-4">
           <Card>
             <CardHeader className="pb-3">
-              {/* <CardTitle className="text-base">Product Group / Dept / Area</CardTitle>
+              <CardTitle className="text-base">Product Group / Dept / Area</CardTitle>
               <CardDescription>
                 Define grouping labels for products. These appear in the Dept/Area column on the Products page and drive MCT summary subtotals by group.
-              </CardDescription> */}
+              </CardDescription>
             </CardHeader>
             <CardContent>
               <DeptCodesSection modelId={model.id} section="product" title="Products" />
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="output-settings" className="mt-4 space-y-4">
+          <OutputSettingsSection modelId={model.id} />
         </TabsContent>
 
         <TabsContent value="versions" className="mt-4 space-y-4">
@@ -510,6 +515,83 @@ export default function ModelSettings() {
       </AlertDialog>
     </div>
     </>
+  );
+}
+
+function OutputSettingsSection({ modelId }: { modelId: string }) {
+  const model = useModelStore(s => s.models.find(m => m.id === modelId));
+  const viewMode: OutputViewMode = model?.general.output_view_mode ?? 'normal';
+
+  const handleViewModeChange = async (mode: OutputViewMode) => {
+    if (!model || mode === viewMode) return;
+    try {
+      await db.updateGeneral(modelId, { output_view_mode: mode });
+      useModelStore.setState(s => ({
+        models: s.models.map(m => m.id === modelId ? { ...m, general: { ...m.general, output_view_mode: mode } } : m),
+      }));
+      toast.success(mode === 'premium' ? 'Premium view enabled for outputs' : 'classic view restored for outputs');
+    } catch {
+      toast.error('Failed to save output view mode');
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Output View Mode</CardTitle>
+        <CardDescription>
+          Choose how result tables are displayed across Run &amp; Results. More view modes will be added here in the future.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <button
+            type="button"
+            onClick={() => handleViewModeChange('normal')}
+            className={`flex items-start gap-3 rounded-lg border p-4 text-left transition-colors ${
+              viewMode === 'normal'
+                ? 'border-primary bg-primary/5 ring-1 ring-primary/20'
+                : 'border-border hover:border-primary/40 hover:bg-muted/30'
+            }`}
+          >
+            <div className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-md ${viewMode === 'normal' ? 'bg-primary/10 text-primary' : 'bg-secondary/70 text-secondary-foreground'}`}>
+              <LayoutGrid className="h-4 w-4" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold">Classic View</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Standard compact tables with monospace numbers — the classic default layout.
+              </p>
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => handleViewModeChange('premium')}
+            className={`flex items-start gap-3 rounded-lg border p-4 text-left transition-colors ${
+              viewMode === 'premium'
+                ? 'border-primary bg-primary/5 ring-1 ring-primary/20'
+                : 'border-border hover:border-primary/40 hover:bg-muted/30'
+            }`}
+          >
+            <div className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-md ${viewMode === 'premium' ? 'bg-primary/10 text-primary' : 'bg-secondary/70 text-secondary-foreground'}`}>
+              <Sparkles className="h-4 w-4" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold">Premium View</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Color-coded columns, Plus Jakarta Sans typography, and formatted numbers — matching the premium report style.
+              </p>
+            </div>
+          </button>
+        </div>
+
+        <p className="text-xs text-muted-foreground">
+          Active mode: <span className="font-medium text-foreground">{viewMode === 'premium' ? 'Premium View' : 'Classic View'}</span>.
+          Open Run &amp; Results to see the change applied to all output tables.
+        </p>
+      </CardContent>
+    </Card>
   );
 }
 

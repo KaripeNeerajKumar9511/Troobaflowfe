@@ -3,10 +3,12 @@ import { flushSync } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useModelStore, type Model, defaultParamNames, defaultGeneral } from '@/stores/modelStore';
 import { useAuth } from '@/contexts/AuthContext';
-import { useUserLevelStore } from '@/hooks/useUserLevel';
+// Interface level disabled — fetchUserLevel not needed.
+// import { useUserLevelStore } from '@/hooks/useUserLevel';
 import { UserProfileDropdown } from '@/components/UserProfileDropdown';
 import { usePageTitle } from '@/hooks/usePageTitle';
 import { saveFullModelToDB, fetchModelById } from '@/lib/supabaseData';
+import { useOrgCollab } from '@/contexts/OrgCollabContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -29,6 +31,7 @@ import { toast } from 'sonner';
 import troobaLogoDark from '@/assets/trooba-logo-dark.svg';
 import troobaMarkDark from '@/assets/trooba-mark-dark.svg';
 import { ModelTransferOverlay, yieldForOverlayPaint, type ModelTransferMode } from '@/components/ModelTransferOverlay';
+import { SavingOverlay } from '@/components/SavingOverlay';
 
 type StatusFilter = 'all' | 'never_run' | 'current' | 'needs_recalc';
 
@@ -45,7 +48,8 @@ export default function ModelLibrary() {
   const toggleStar = useModelStore((s) => s.toggleStar);
   const archiveModel = useModelStore((s) => s.archiveModel);
   const { signOut, user } = useAuth();
-  const fetchUserLevel = useUserLevelStore(s => s.fetchUserLevel);
+  const { notifyModelLibraryChanged } = useOrgCollab();
+  // const fetchUserLevel = useUserLevelStore(s => s.fetchUserLevel);
   const navigate = useNavigate();
   const importRef = useRef<HTMLInputElement>(null);
 
@@ -65,8 +69,8 @@ export default function ModelLibrary() {
 
   useEffect(() => {
     if (!modelsLoaded && !modelsLoading) loadModels();
-    fetchUserLevel();
-  }, [modelsLoaded, modelsLoading, loadModels, fetchUserLevel]);
+    // fetchUserLevel();
+  }, [modelsLoaded, modelsLoading, loadModels]);
 
   const filtered = models.filter((m) => {
     if (!showArchived && m.is_archived) return false;
@@ -80,6 +84,7 @@ export default function ModelLibrary() {
     if (!newName.trim()) return;
     try {
       const id = await createModel(newName.trim(), newDesc.trim());
+      notifyModelLibraryChanged();
       setShowCreate(false); setNewName(''); setNewDesc('');
       navigate(`/models/${id}/general`);
     } catch (err) {
@@ -91,6 +96,7 @@ export default function ModelLibrary() {
   const handleDelete = () => {
     if (!deleteTarget || deleteConfirmName !== deleteTarget.name) return;
     deleteModel(deleteTarget.id);
+    notifyModelLibraryChanged();
     setDeleteTarget(null); setDeleteConfirmName('');
     toast.success(`Model "${deleteTarget.name}" permanently deleted`);
   };
@@ -338,7 +344,7 @@ export default function ModelLibrary() {
       <div className="min-h-screen bg-sidebar flex items-center justify-center">
         <div className="text-center">
           <img src={troobaMarkDark} alt="" className="h-12 w-12 mx-auto mb-3 animate-pulse-brand" />
-          <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-sidebar-muted">Loading...</p>
+          <p className="tabular-nums text-meta uppercase tracking-[0.14em] text-sidebar-muted">Loading...</p>
         </div>
       </div>
     );
@@ -348,30 +354,7 @@ export default function ModelLibrary() {
     <div className="min-h-screen bg-background">
       {jsonTransfer && <ModelTransferOverlay mode={jsonTransfer} />}
       {duplicatingModelId && (
-        <div className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center">
-          <div className="flex flex-col items-center justify-center py-24 text-center px-6">
-            <div className="relative flex h-24 w-24 items-center justify-center">
-              <div className="absolute h-40 w-40 rounded-full bg-primary/20 blur-2xl animate-pulse" />
-              <div className="h-20 w-20 rounded-full border-2 border-primary/30 border-t-primary animate-spin" />
-              <img src={troobaMarkDark} alt="" className="absolute h-12 w-12" />
-            </div>
-            <p className="mt-6 font-mono text-xs uppercase tracking-[0.2em] text-white/90 drop-shadow-[0_0_8px_rgba(255,255,255,0.35)]">
-  Duplicating Model
-</p>
-
-<p className="mt-1 text-sm text-white/75 animate-pulse drop-shadow-[0_0_6px_rgba(255,255,255,0.25)]">
-  Copying all model data...
-</p>
-            {/* <div className="mt-6 w-72">
-              <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-muted">
-                <div
-                  className="absolute h-full w-1/8 rounded-full bg-primary"
-                  style={{ animation: 'loading 0.8s linear infinite' }}
-                />
-              </div>
-            </div> */}
-          </div>
-        </div>
+        <SavingOverlay title="Duplicating Model" subtitle="Copying all model data…" />
       )}
       <input ref={importRef} type="file" accept=".json" className="hidden" onChange={handleImport} />
       {/* Dark navy header */}
@@ -380,7 +363,7 @@ export default function ModelLibrary() {
           <div className="flex items-center justify-between mb-6">
             <div>
               <img src={troobaLogoDark} alt="Trooba Flow" style={{ height: '34px', width: 'auto' }} />
-              <p className="subbrand-line mt-1.5 text-[11px] tracking-[0.18em]">Flow Intelligence</p>
+              <p className="subbrand-line mt-1.5 text-meta tracking-[0.18em]">Flow Intelligence</p>
             </div>
             <div className="flex items-center gap-2">
               <Button onClick={() => setShowCreate(true)} className="gap-2">
@@ -428,7 +411,7 @@ export default function ModelLibrary() {
           <div className="text-center py-20">
             <img src={troobaMarkDark} alt="" className="h-9 w-9 mx-auto mb-3 opacity-20" />
             <p className="text-[14px] font-medium text-foreground">No models found</p>
-            <p className="text-[13px] text-muted-foreground mt-1">{search ? 'Try a different search term' : 'Create a new model or import one to get started'}</p>
+            <p className="text-ui text-muted-foreground mt-1">{search ? 'Try a different search term' : 'Create a new model or import one to get started'}</p>
             <div className="flex gap-2 justify-center mt-4">
               <Button onClick={() => setShowCreate(true)} className="gap-1"><Plus className="h-4 w-4" /> Create Model</Button>
               <Button variant="outline" onClick={() => importRef.current?.click()} disabled={!!jsonTransfer} className="gap-1">
@@ -460,12 +443,12 @@ export default function ModelLibrary() {
                     {model.tags.map((t) => <Badge key={t} variant="secondary" className="text-xs">{t}</Badge>)}
                     {statusBadge(model.run_status)}
                   </div>
-                  <div className="flex items-center gap-3 text-xs text-muted-foreground font-mono">
+                  <div className="flex items-center gap-3 text-xs text-muted-foreground tabular-nums">
                     <span className="flex items-center gap-1"><Package className="h-3 w-3" />{model.products.length}</span>
                     <span className="flex items-center gap-1"><Cpu className="h-3 w-3" />{model.equipment.length}</span>
                     <span className="flex items-center gap-1"><Users className="h-3 w-3" />{model.labor.length}</span>
                   </div>
-                  <div className="text-xs font-mono text-muted-foreground mt-3">Updated {timeAgo(model.updated_at)}</div>
+                  <div className="text-xs tabular-nums text-muted-foreground mt-3">Updated {timeAgo(model.updated_at)}</div>
                 </div>
               </motion.div>
             ))}
@@ -475,11 +458,11 @@ export default function ModelLibrary() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b bg-[#F4F6F8]">
-                  <th className="text-left px-4 py-2.5 font-mono font-normal text-[10px] uppercase tracking-[0.1em] text-[#6B7280]">Name</th>
-                  <th className="text-left px-4 py-2.5 font-mono font-normal text-[10px] uppercase tracking-[0.1em] text-[#6B7280]">Products</th>
-                  <th className="text-left px-4 py-2.5 font-mono font-normal text-[10px] uppercase tracking-[0.1em] text-[#6B7280]">Equipment</th>
-                  <th className="text-left px-4 py-2.5 font-mono font-normal text-[10px] uppercase tracking-[0.1em] text-[#6B7280]">Status</th>
-                  <th className="text-left px-4 py-2.5 font-mono font-normal text-[10px] uppercase tracking-[0.1em] text-[#6B7280]">Updated</th>
+                  <th className="text-left px-4 py-2.5 tabular-nums font-normal text-meta uppercase tracking-[0.1em] text-[#6B7280]">Name</th>
+                  <th className="text-left px-4 py-2.5 tabular-nums font-normal text-meta uppercase tracking-[0.1em] text-[#6B7280]">Products</th>
+                  <th className="text-left px-4 py-2.5 tabular-nums font-normal text-meta uppercase tracking-[0.1em] text-[#6B7280]">Equipment</th>
+                  <th className="text-left px-4 py-2.5 tabular-nums font-normal text-meta uppercase tracking-[0.1em] text-[#6B7280]">Status</th>
+                  <th className="text-left px-4 py-2.5 tabular-nums font-normal text-meta uppercase tracking-[0.1em] text-[#6B7280]">Updated</th>
                   <th className="w-10"></th>
                 </tr>
               </thead>
@@ -487,10 +470,10 @@ export default function ModelLibrary() {
                 {filtered.map((model) => (
                   <tr key={model.id} className="border-b border-[#F0F2F5] last:border-0 hover:bg-[#F9FAFB] cursor-pointer" onClick={() => openModel(model.id)}>
                     <td className="px-4 py-3 font-medium text-foreground">{model.name}</td>
-                    <td className="px-4 py-3 font-mono text-muted-foreground">{model.products.length}</td>
-                    <td className="px-4 py-3 font-mono text-muted-foreground">{model.equipment.length}</td>
+                    <td className="px-4 py-3 tabular-nums text-muted-foreground">{model.products.length}</td>
+                    <td className="px-4 py-3 tabular-nums text-muted-foreground">{model.equipment.length}</td>
                     <td className="px-4 py-3">{statusBadge(model.run_status)}</td>
-                    <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{timeAgo(model.updated_at)}</td>
+                    <td className="px-4 py-3 text-ui text-muted-foreground tabular-nums">{timeAgo(model.updated_at)}</td>
                     <td className="px-2 py-3" onClick={(e) => e.stopPropagation()}>{modelActions(model)}</td>
                   </tr>
                 ))}

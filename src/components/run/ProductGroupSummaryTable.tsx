@@ -1,7 +1,18 @@
 import { useMemo } from 'react';
 import type { Model } from '@/stores/modelStore';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { CardDescription, CardTitle } from '../ui/card';
+import {
+  isPremiumOutputView,
+  outputTableFixedClass,
+  premiumColStyleForKey,
+  premiumFmtNum,
+  premiumHeadClass,
+  premiumLabelCellClass,
+  premiumNameCellClass,
+  premiumNumericCellClass,
+  premiumRowClass,
+  premiumTableWrapperClass,
+} from '@/lib/premiumOutputTable';
 
 export interface OperMetricForSummary {
   productId: string;
@@ -61,9 +72,14 @@ export function buildProductGroupSummaryRows(
   return Array.from(groups.values()).sort((a, b) => a.productGroup.localeCompare(b.productGroup));
 }
 
-function fmtCell(n: number) {
-  return Number.isFinite(n) ? (Math.round(n * 100) / 100).toFixed(2) : '—';
-}
+const SUMMARY_COLUMNS = [
+  { key: 'productGroup', label: 'Product Group (Dept)', align: 'left' as const },
+  { key: 'description', label: 'Description', align: 'left' as const },
+  { key: 'eqSetupUtil', label: 'Equip Setup Util', align: 'right' as const },
+  { key: 'eqRunUtil', label: 'Equip Run Util', align: 'right' as const },
+  { key: 'labSetupUtil', label: 'Labor Setup Util', align: 'right' as const },
+  { key: 'labRunUtil', label: 'Labor Run Util', align: 'right' as const },
+];
 
 interface ProductGroupSummaryTableProps {
   metrics: OperMetricForSummary[];
@@ -80,45 +96,82 @@ export function ProductGroupSummaryTable({
   showTimeUnits = false,
   timeUnitLabel = '',
 }: ProductGroupSummaryTableProps) {
+  const isPremium = isPremiumOutputView(model);
   const rows = useMemo(
     () => buildProductGroupSummaryRows(metrics, model, description, showTimeUnits),
     [metrics, model, description, showTimeUnits],
   );
 
   const unitSuffix = showTimeUnits && timeUnitLabel ? ` (${timeUnitLabel})` : ' %';
+  const fmtCell = (n: number) => {
+    if (!Number.isFinite(n)) return '—';
+    return isPremium ? premiumFmtNum(n, 2, true) : (Math.round(n * 100) / 100).toFixed(2);
+  };
 
   if (!metrics.length) return null;
 
-  return (
-    <div className="mt-6 pt-6 border-t border-border">
-      <CardTitle className="text-base mb-3">Group/Dept/Area Summary</CardTitle>
+  const columnLabels: Record<string, string> = {
+    productGroup: 'Product Group (Dept)',
+    description: 'Description',
+    eqSetupUtil: `Equip Setup Util${unitSuffix}`,
+    eqRunUtil: `Equip Run Util${unitSuffix}`,
+    labSetupUtil: `Labor Setup Util${unitSuffix}`,
+    labRunUtil: `Labor Run Util${unitSuffix}`,
+  };
 
-      <div className="overflow-x-auto">
-        <Table>
+  return (
+    <div className={`mt-6 pt-6 border-t border-[#E2E6EA] ${isPremium ? '' : 'border-border'}`}>
+      <h3 className={`mb-3 ${isPremium ? 'text-base font-semibold text-foreground' : 'text-base font-medium'}`}>
+        Group/Dept/Area Summary
+      </h3>
+
+      <div className={`${isPremium ? outputTableFixedClass() : 'overflow-x-auto'} ${premiumTableWrapperClass(isPremium)}`}>
+        <Table className={`${isPremium ? 'w-full table-fixed' : ''} ${premiumTableWrapperClass(isPremium)}`}>
           <TableHeader>
-            <TableRow>
-              <TableHead className="font-mono text-xs text-left">Product Group (Dept)</TableHead>
-              <TableHead className="font-mono text-xs text-left">Description</TableHead>
-              <TableHead className="font-mono text-xs text-right">Equip Setup Util{unitSuffix}</TableHead>
-              <TableHead className="font-mono text-xs text-right">Equip Run Util{unitSuffix}</TableHead>
-              <TableHead className="font-mono text-xs text-right">Labor Setup Util{unitSuffix}</TableHead>
-              <TableHead className="font-mono text-xs text-right">Labor Run Util{unitSuffix}</TableHead>
+            <TableRow className={premiumRowClass(isPremium)}>
+              {SUMMARY_COLUMNS.map((col) => (
+                <TableHead
+                  key={col.key}
+                  className={
+                    isPremium
+                      ? premiumHeadClass(isPremium, col.align)
+                      : `font-mono text-xs ${col.align === 'left' ? 'text-left' : 'text-right'}`
+                  }
+                  style={premiumColStyleForKey('groupSummary', col.key, isPremium)}
+                >
+                  {columnLabels[col.key]}
+                </TableHead>
+              ))}
             </TableRow>
           </TableHeader>
           <TableBody>
             {rows.map((row) => (
-              <TableRow key={row.productGroup}>
-                <TableCell className="font-mono text-xs">{row.productGroup}</TableCell>
-                <TableCell className="font-mono text-xs">{row.description}</TableCell>
-                <TableCell className="font-mono text-xs text-right">{fmtCell(row.eqSetupUtil)}</TableCell>
-                <TableCell className="font-mono text-xs text-right">{fmtCell(row.eqRunUtil)}</TableCell>
-                <TableCell className="font-mono text-xs text-right">{fmtCell(row.labSetupUtil)}</TableCell>
-                <TableCell className="font-mono text-xs text-right">{fmtCell(row.labRunUtil)}</TableCell>
+              <TableRow key={row.productGroup} className={premiumRowClass(isPremium)}>
+                {SUMMARY_COLUMNS.map((col) => {
+                  const value = row[col.key as keyof ProductGroupSummaryRow];
+                  const isLabelCol = col.key === 'productGroup' || col.key === 'description';
+                  return (
+                    <TableCell
+                      key={col.key}
+                      className={
+                        isPremium
+                          ? isLabelCol
+                            ? col.key === 'productGroup'
+                              ? premiumNameCellClass(isPremium, true)
+                              : premiumLabelCellClass(isPremium)
+                            : premiumNumericCellClass(isPremium)
+                          : `font-mono text-xs ${col.align === 'right' ? 'text-right' : ''}`
+                      }
+                      style={premiumColStyleForKey('groupSummary', col.key, isPremium)}
+                    >
+                      {isLabelCol ? String(value) : fmtCell(value as number)}
+                    </TableCell>
+                  );
+                })}
               </TableRow>
             ))}
           </TableBody>
         </Table>
-        <CardDescription className="text-xs text-muted-foreground mt-3"></CardDescription>
       </div>
     </div>
   );

@@ -47,6 +47,8 @@ function mergeParamNames(pn: Record<string, string> | null | undefined): ParamNa
 }
 
 /** Map API JSON (snake_case dates) to store Model */
+import { normalizeModelOperations } from '@/lib/productOperations';
+
 function normalizeModel(m: Record<string, unknown>): Model {
   const g = (m.general as GeneralData | undefined) || defaultGeneral(String(m.name || ''));
   const base: Model = {
@@ -66,7 +68,7 @@ function normalizeModel(m: Record<string, unknown>): Model {
     labor: (m.labor as LaborGroup[]) || [],
     equipment: (m.equipment as EquipmentGroup[]) || [],
     products: (m.products as Product[]) || [],
-    operations: (m.operations as Operation[]) || [],
+    operations: normalizeModelOperations((m.operations as Operation[]) || []),
     routing: (m.routing as RoutingEntry[]) || [],
     ibom: (m.ibom as IBOMEntry[]) || [],
   };
@@ -281,8 +283,22 @@ export const db = {
   },
 
   async deleteModel(id: string) {
-    const res = await apiFetch(`/api/models/${id}/delete/`, { method: 'DELETE' });
-    if (!res.ok) console.error('deleteModel:', res.status);
+    try {
+      const res = await apiFetch(`/api/models/${id}/delete/`, {
+        method: 'DELETE'
+      });
+  
+      console.log('deleteModel status', res.status);
+      console.log('deleteModel ok', res.ok);
+      console.log('deleteModel response', await res.text());
+  
+      if (!res.ok) {
+        console.error('deleteModel:', res.status);
+      }
+    } catch (e) {
+      console.error('deleteModel error', e);
+      throw e;
+    }
   },
 
   async updateGeneral(modelId: string, data: Partial<GeneralData>) {
@@ -313,13 +329,39 @@ export const db = {
     });
   },
 
-  async updateLabor(modelId: string, id: string, data: Partial<LaborGroup>) {
-    await patchJson(`/api/models/${modelId}/labor/${id}/`, data);
+  async updateLabor(modelId: string, id: string, data: Partial<LaborGroup>, fullRow?: LaborGroup) {
+    const res = await apiFetch(`/api/models/${modelId}/labor/${id}/`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+    if (res.status === 404 && fullRow) {
+      await postJson(`/api/models/${modelId}/labor/`, { ...fullRow, ...data });
+      return;
+    }
+    if (!res.ok) {
+      const detail = await res.text();
+      throw new Error(`PATCH labor failed (${res.status}): ${detail || res.statusText}`);
+    }
   },
 
   async deleteLabor(modelId: string, id: string) {
-    const res = await apiFetch(`/api/models/${modelId}/labor/${id}/delete/`, { method: 'DELETE' });
-    if (!res.ok) console.error('deleteLabor:', res.status);
+    try {
+      const res = await apiFetch(
+        `/api/models/${modelId}/labor/${id}/delete/`,
+        { method: 'DELETE' }
+      );
+  
+      console.log('deleteLabor status', res.status);
+      console.log('deleteLabor ok', res.ok);
+      console.log('deleteLabor response', await res.text());
+  
+      if (!res.ok) {
+        console.error('deleteLabor:', res.status);
+      }
+    } catch (e) {
+      console.error('deleteLabor error', e);
+      throw e;
+    }
   },
 
   async insertEquipment(modelId: string, e: EquipmentGroup, labor?: LaborGroup[]) {
@@ -347,7 +389,7 @@ export const db = {
     });
   },
 
-  async updateEquipment(modelId: string, id: string, data: Partial<EquipmentGroup>) {
+  async updateEquipment(modelId: string, id: string, data: Partial<EquipmentGroup>, fullRow?: EquipmentGroup, labor?: LaborGroup[]) {
     const patch: Record<string, unknown> = { ...data };
     if (patch.equip_type === 'pure_labor') {
       patch.equip_type = 'standard';
@@ -356,12 +398,61 @@ export const db = {
     }
     delete patch.is_pure_labor;
     delete patch.pure_labor_labor_id;
-    await patchJson(`/api/models/${modelId}/equipment/${id}/`, patch);
+    const res = await apiFetch(`/api/models/${modelId}/equipment/${id}/`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    });
+    if (res.status === 404 && fullRow) {
+      await postJson(`/api/models/${modelId}/equipment/`, (() => {
+        const merged = { ...fullRow, ...data } as EquipmentGroup;
+        const apiEq = equipmentToApiPayload(merged, labor);
+        return {
+          id: merged.id,
+          name: apiEq.name,
+          equip_type: apiEq.equip_type,
+          count: apiEq.count,
+          mttf: apiEq.mttf,
+          mttr: apiEq.mttr,
+          overtime_pct: apiEq.overtime_pct,
+          labor_group_id: apiEq.labor_group_id || null,
+          dept_code: apiEq.dept_code,
+          out_of_area: apiEq.out_of_area,
+          unavail_pct: apiEq.unavail_pct,
+          setup_factor: apiEq.setup_factor,
+          run_factor: apiEq.run_factor,
+          var_factor: apiEq.var_factor,
+          eq1: apiEq.eq1,
+          eq2: apiEq.eq2,
+          eq3: apiEq.eq3,
+          eq4: apiEq.eq4,
+          comments: apiEq.comments,
+        };
+      })());
+      return;
+    }
+    if (!res.ok) {
+      const detail = await res.text();
+      console.error('PATCH equipment', res.status, detail);
+      throw new Error(`PATCH equipment failed (${res.status}): ${detail || res.statusText}`);
+    }
   },
 
   async deleteEquipment(modelId: string, id: string) {
-    const res = await apiFetch(`/api/models/${modelId}/equipment/${id}/delete/`, { method: 'DELETE' });
-    if (!res.ok) console.error('deleteEquipment:', res.status);
+    try {
+      const res = await apiFetch(
+        `/api/models/${modelId}/equipment/${id}/delete/`,
+        { method: 'DELETE' }
+      );
+  
+      console.log("DELETE STATUS", res.status);
+      console.log("DELETE OK", res.ok);
+  
+      const text = await res.text();
+      console.log("DELETE RESPONSE", text);
+  
+    } catch (e) {
+      console.error("DELETE ERROR", e);
+    }
   },
 
   async insertProduct(modelId: string, p: Product) {
@@ -386,13 +477,39 @@ export const db = {
     });
   },
 
-  async updateProduct(modelId: string, id: string, data: Partial<Product>) {
-    await patchJson(`/api/models/${modelId}/products/${id}/`, data);
+  async updateProduct(modelId: string, id: string, data: Partial<Product>, fullRow?: Product) {
+    const res = await apiFetch(`/api/models/${modelId}/products/${id}/`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+    if (res.status === 404 && fullRow) {
+      await postJson(`/api/models/${modelId}/products/`, { ...fullRow, ...data });
+      return;
+    }
+    if (!res.ok) {
+      const detail = await res.text();
+      throw new Error(`PATCH product failed (${res.status}): ${detail || res.statusText}`);
+    }
   },
 
   async deleteProduct(modelId: string, productId: string) {
-    const res = await apiFetch(`/api/models/${modelId}/products/${productId}/delete/`, { method: 'DELETE' });
-    if (!res.ok) console.error('deleteProduct:', res.status);
+    try {
+      const res = await apiFetch(
+        `/api/models/${modelId}/products/${productId}/delete/`,
+        { method: 'DELETE' }
+      );
+  
+      console.log('deleteProduct status', res.status);
+      console.log('deleteProduct ok', res.ok);
+      console.log('deleteProduct response', await res.text());
+  
+      if (!res.ok) {
+        console.error('deleteProduct:', res.status);
+      }
+    } catch (e) {
+      console.error('deleteProduct error', e);
+      throw e;
+    }
   },
 
   async insertOperation(modelId: string, o: Operation) {
@@ -422,34 +539,117 @@ export const db = {
     });
   },
 
-  async updateOperation(modelId: string, id: string, data: Partial<Operation>) {
-    await patchJson(`/api/models/${modelId}/operations/${id}/`, data);
+  async updateOperation(
+    modelId: string,
+    id: string,
+    data: Partial<Operation>,
+    fullRow?: Operation,
+  ): Promise<{ swapped_with?: string }> {
+    const res = await apiFetch(`/api/models/${modelId}/operations/${id}/`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+    if (res.status === 404 && fullRow) {
+      await postJson(`/api/models/${modelId}/operations/`, { ...fullRow, ...data });
+      return {};
+    }
+    if (!res.ok) {
+      const detail = await res.text();
+      console.error('PATCH operation', res.status, detail);
+      throw new Error(`PATCH operation failed (${res.status}): ${detail || res.statusText}`);
+    }
+    return res.json().catch(() => ({}));
   },
 
   async deleteOperation(modelId: string, opId: string) {
-    const res = await apiFetch(`/api/models/${modelId}/operations/${opId}/delete/`, { method: 'DELETE' });
-    if (!res.ok) console.error('deleteOperation:', res.status);
+    try {
+      const res = await apiFetch(
+        `/api/models/${modelId}/operations/${opId}/delete/`,
+        { method: 'DELETE' }
+      );
+  
+      console.log('deleteOperation status', res.status);
+      console.log('deleteOperation ok', res.ok);
+      console.log('deleteOperation response', await res.text());
+  
+      if (!res.ok) {
+        console.error('deleteOperation:', res.status);
+      }
+    } catch (e) {
+      console.error('deleteOperation error', e);
+      throw e;
+    }
   },
 
-  async insertRouting(modelId: string, r: RoutingEntry) {
-    await postJson(`/api/models/${modelId}/routing/`, {
+  async insertRouting(modelId: string, r: RoutingEntry): Promise<{ id: string }> {
+    const data = await postJson<{ id: string }>(`/api/models/${modelId}/routing/`, {
+      id: r.id,
       product_id: r.product_id,
       from_op_name: r.from_op_name,
       to_op_name: r.to_op_name,
       pct_routed: r.pct_routed,
     });
+    return { id: String(data?.id || r.id) };
   },
 
-  async updateRouting(modelId: string, id: string, data: Partial<RoutingEntry>) {
-    await patchJson(`/api/models/${modelId}/routing/${id}/`, data);
+  async updateRouting(
+    modelId: string,
+    id: string,
+    data: Partial<RoutingEntry>,
+    fullRow?: RoutingEntry,
+  ): Promise<{ id: string; merged?: boolean }> {
+    const res = await apiFetch(`/api/models/${modelId}/routing/${id}/`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+    if (res.status === 404 && fullRow) {
+      const created = await apiFetch(`/api/models/${modelId}/routing/`, {
+        method: 'POST',
+        body: JSON.stringify({ ...fullRow, ...data }),
+      });
+      if (!created.ok) {
+        const detail = await created.text();
+        throw new Error(`POST routing failed (${created.status}): ${detail || created.statusText}`);
+      }
+      const body = await created.json().catch(() => ({}));
+      return { id: String((body as { id?: string }).id ?? fullRow.id) };
+    }
+    if (!res.ok) {
+      const detail = await res.text();
+      throw new Error(`PATCH routing failed (${res.status}): ${detail || res.statusText}`);
+    }
+    const body = await res.json().catch(() => ({}));
+    return {
+      id: String((body as { id?: string }).id ?? id),
+      merged: Boolean((body as { merged?: boolean }).merged),
+    };
   },
 
   async deleteRouting(modelId: string, id: string) {
-    const res = await apiFetch(`/api/models/${modelId}/routing/${id}/delete/`, { method: 'DELETE' });
-    if (!res.ok) console.error('deleteRouting:', res.status);
+    try {
+      const res = await apiFetch(
+        `/api/models/${modelId}/routing/${id}/delete/`,
+        { method: 'DELETE' }
+      );
+  
+      console.log('deleteRouting status', res.status);
+      console.log('deleteRouting ok', res.ok);
+      console.log('deleteRouting response', await res.text());
+  
+      if (!res.ok) {
+        console.error('deleteRouting:', res.status);
+      }
+    } catch (e) {
+      console.error('deleteRouting error', e);
+      throw e;
+    }
   },
 
-  async setRouting(modelId: string, productId: string, entries: RoutingEntry[]) {
+  async setRouting(
+    modelId: string,
+    productId: string,
+    entries: Pick<RoutingEntry, 'from_op_name' | 'to_op_name' | 'pct_routed'>[],
+  ) {
     await putJson(`/api/models/${modelId}/routing/set/`, {
       product_id: productId,
       entries: entries.map((e) => ({
@@ -469,13 +669,39 @@ export const db = {
     });
   },
 
-  async updateIBOM(modelId: string, id: string, data: Partial<IBOMEntry>) {
-    await patchJson(`/api/models/${modelId}/ibom/entry/${id}/`, data);
+  async updateIBOM(modelId: string, id: string, data: Partial<IBOMEntry>, fullRow?: IBOMEntry) {
+    const res = await apiFetch(`/api/models/${modelId}/ibom/entry/${id}/`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+    if (res.status === 404 && fullRow) {
+      await postJson(`/api/models/${modelId}/ibom/`, { ...fullRow, ...data });
+      return;
+    }
+    if (!res.ok) {
+      const detail = await res.text();
+      throw new Error(`PATCH ibom failed (${res.status}): ${detail || res.statusText}`);
+    }
   },
 
   async deleteIBOM(modelId: string, id: string) {
-    const res = await apiFetch(`/api/models/${modelId}/ibom/entry/${id}/delete/`, { method: 'DELETE' });
-    if (!res.ok) console.error('deleteIBOM:', res.status);
+    try {
+      const res = await apiFetch(
+        `/api/models/${modelId}/ibom/entry/${id}/delete/`,
+        { method: 'DELETE' }
+      );
+  
+      console.log('deleteIBOM status', res.status);
+      console.log('deleteIBOM ok', res.ok);
+      console.log('deleteIBOM response', await res.text());
+  
+      if (!res.ok) {
+        console.error('deleteIBOM:', res.status);
+      }
+    } catch (e) {
+      console.error('deleteIBOM error', e);
+      throw e;
+    }
   },
 
   async setIBOMForParent(modelId: string, parentId: string, entries: IBOMEntry[]) {

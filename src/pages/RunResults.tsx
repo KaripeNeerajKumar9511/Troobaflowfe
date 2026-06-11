@@ -1,6 +1,6 @@
 // Legacy page implementation
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { ArrowUp, ArrowDown, ArrowUpDown, Lock } from 'lucide-react';
+import { ArrowUp, ArrowDown, ArrowUpDown, Lock, Plus, Minus } from 'lucide-react';
 import { useSortableTable, type SortDir } from '@/hooks/useSortableTable';
 import { useModelStore, type Model } from '@/stores/modelStore';
 import { useScenarioStore } from '@/stores/scenarioStore';
@@ -24,8 +24,8 @@ import { Separator } from '@/components/ui/separator';
 import { Tooltip as ShadTooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import {
-  Play, CheckCircle, AlertTriangle, Shield, XCircle, RotateCcw, Network, Gauge, RefreshCw, Clock,
-  TrendingUp, BarChart3, Settings2, Square, ChevronRight, ToggleLeft, Layers,BadgeCheck,
+  Play, CheckCircle, AlertTriangle, Shield, XCircle, RotateCcw, ArrowLeftRight, Network, Gauge, RefreshCw, Clock,
+  TrendingUp, BarChart3, Settings2, Square, ChevronRight, ToggleLeft, Layers, BadgeCheck,
 } from 'lucide-react';
 import IBOMOutput, { MCT_COLORS, TreeChart, TreeTable, PolesChart, PolesTable, MCTLegend, buildNodeTree, buildPoles } from '@/components/IBOMOutput';
 import { toast } from 'sonner';
@@ -41,6 +41,49 @@ import {
   hasAnyIssueMessages,
 } from '@/components/run/RunResultsIssueBanners';
 import { ProductGroupSummaryTable } from '@/components/run/ProductGroupSummaryTable';
+import { PremiumEquipmentUtilChart } from '@/components/run/PremiumEquipmentUtilChart';
+import { PremiumLaborUtilChart } from '@/components/run/PremiumLaborUtilChart';
+import { PremiumProductMCTChart } from '@/components/run/PremiumProductMCTChart';
+import { ProductionCompactTooltip } from '@/components/run/ProductionCompactTooltip';
+import {
+  isPremiumOutputView,
+  premiumCardClass,
+  premiumColStyle,
+  premiumColStyleForKey,
+  type PremiumTableKind,
+  premiumFmtNum,
+  premiumHeadClass,
+  premiumLabelCellClass,
+  premiumNameCellClass,
+  premiumSecondaryNameCellClass,
+  premiumCellTextWrapClass,
+  premiumStickyCellClass,
+  formatPremiumDisplayName,
+  formatPremiumDisplayValue,
+  premiumStickyHeadClass,
+  premiumNumericCellClass,
+  premiumRowClass,
+  outputTableHScrollClass,
+  outputTableFixedClass,
+  premiumTableWrapperClass,
+} from '@/lib/premiumOutputTable';
+import { PRODUCT_METRIC_LABELS } from '@/lib/productMetricLabels';
+import { useCollapsibleTableColumns } from '@/hooks/useCollapsibleTableColumns';
+import {
+  EQUIPMENT_WIP_GROUP,
+  EQUIPMENT_LEGACY_COLUMN_ORDER,
+  EQUIPMENT_PREMIUM_COLUMN_ORDER,
+  PRODUCT_COLLAPSE_GROUPS,
+  PRODUCT_LEGACY_COLUMN_ORDER,
+  PRODUCT_PREMIUM_COLUMN_ORDER,
+  OPER_MCT_GROUP,
+  EQUIP_OPER_LEGACY_COLUMN_ORDER,
+  EQUIP_OPER_PREMIUM_COLUMN_ORDER,
+  LABOR_OPER_LEGACY_COLUMN_ORDER,
+  LABOR_OPER_PREMIUM_COLUMN_ORDER,
+  PRODUCT_OPER_LEGACY_COLUMN_ORDER,
+  PRODUCT_OPER_PREMIUM_COLUMN_ORDER,
+} from '@/lib/premiumCollapsibleColumns';
 import { useUserLevelStore, isVisible } from '@/hooks/useUserLevel';
 import { scenarioDb } from '@/lib/scenarioDb';
 import ScenarioContextBar from '@/components/ScenarioContextBar';
@@ -76,6 +119,29 @@ function roundTo(v: unknown, digits: number): number {
   const n = asNum(v);
   const f = 10 ** digits;
   return Math.round((n + Number.EPSILON) * f) / f;
+}
+
+const OPER_DETAILS_LABEL_COLS = new Set(['productName', 'opName', 'equipName', 'laborName']);
+
+const OPER_DETAILS_STICKY_COL: Partial<Record<PremiumTableKind, string>> = {
+  productOper: 'opNumber',
+  equipOper: 'productName',
+  laborOper: 'productName',
+};
+
+function isOperDetailsStickyCol(tableKind: PremiumTableKind, colKey: string): boolean {
+  return OPER_DETAILS_STICKY_COL[tableKind] === colKey;
+}
+
+function PremiumCellText({ children, className }: { children: React.ReactNode; className?: string }) {
+  return <span className={`${premiumCellTextWrapClass}${className ? ` ${className}` : ''}`}>{children}</span>;
+}
+
+function operDetailsCellClass(isPremium: boolean, isLabel: boolean, colKey: string, tableKind: PremiumTableKind): string {
+  const sticky = isPremium && isOperDetailsStickyCol(tableKind, colKey);
+  if (isLabel) return premiumNameCellClass(isPremium, sticky);
+  const base = premiumNumericCellClass(isPremium);
+  return sticky ? `${base} ${premiumStickyCellClass(isPremium, true)}` : base;
 }
 
 function estimateColMinWidthPx(label: string, values: Array<string | number>, minPx = 90, maxPx = 320): number {
@@ -293,10 +359,104 @@ function useResizableColumns(initialWidths: number[], minWidthPercent = 8) {
     setWidths([...initialWidthsRef.current]);
   }, []);
 
-  return { widths, containerRef, startResize, moveColumn, resetWidths };
+  const syncWidths = useCallback((count: number) => {
+    const equal = Array(Math.max(count, 1)).fill(100 / Math.max(count, 1));
+    initialWidthsRef.current = equal;
+    setWidths((prev) => {
+      if (prev.length === equal.length && prev.every((w, i) => Math.abs(w - equal[i]) < 0.01)) return prev;
+      return equal;
+    });
+  }, []);
+
+  const syncWidthsFromWeights = useCallback((weightsPx: number[]) => {
+    const count = weightsPx.length;
+    if (count === 0) return;
+    const sum = weightsPx.reduce((a, b) => a + b, 0);
+    const percents = sum > 0
+      ? weightsPx.map((w) => (w / sum) * 100)
+      : Array(count).fill(100 / count);
+    initialWidthsRef.current = percents;
+    setWidths((prev) => {
+      if (prev.length === percents.length && prev.every((w, i) => Math.abs(w - percents[i]) < 0.01)) return prev;
+      return percents;
+    });
+  }, []);
+
+  return { widths, containerRef, startResize, moveColumn, resetWidths, syncWidths, syncWidthsFromWeights };
 }
 
-function SortHead({ label, sortKey, current, onSort, align = 'right', onResizeStart, draggable = false, onDragStart, onDragOver, onDrop, onDragEnd, multiLine = false, compact = false }: {
+function PremiumCollapseTableHint({ parents }: { parents: string[] }) {
+  if (parents.length === 0) return null;
+  return (
+    <p className="text-xs text-muted-foreground mt-1 leading-snug">
+      Totals are shown by default. Expand{' '}
+      {parents.map((p, i) => (
+        <React.Fragment key={p}>
+          {i > 0 && (i === parents.length - 1 ? ' and ' : ', ')}
+          <span className="font-medium text-foreground">{p}</span>
+        </React.Fragment>
+      ))}
+      {' '}to view detailed metrics.
+    </p>
+  );
+}
+
+/** Collapsed: fill card width. Expanded: min-width columns + horizontal scroll. */
+function premiumCollapseTableClass(isPremium: boolean, collapseEnabled: boolean, hasExpandedGroups: boolean): string {
+  if (!isPremium || !collapseEnabled) return 'table-auto';
+  if (hasExpandedGroups) return 'table-auto w-max min-w-full';
+  return 'w-full table-fixed';
+}
+
+function premiumCollapseFillWidth(isPremium: boolean, collapseEnabled: boolean, hasExpandedGroups: boolean): boolean {
+  return isPremium && collapseEnabled && !hasExpandedGroups;
+}
+
+function premiumCollapseColStyle(fillWidth: boolean, widthPct: number | undefined, minWidthPx: number): { width?: string; minWidth?: string } {
+  if (fillWidth && widthPct != null) return { width: `${widthPct}%` };
+  return { minWidth: `${minWidthPx}px` };
+}
+
+/** Clears selection when switching models so Radix Select never holds a stale id. */
+function useModelScopedSelect(modelId: string) {
+  const [selectedId, setSelectedId] = useState('');
+  useEffect(() => {
+    setSelectedId('');
+  }, [modelId]);
+  return { selectedId, setSelectedId };
+}
+
+function validSelectValue(selectedId: string, options: { id: string }[]) {
+  return options.some((o) => o.id === selectedId) ? selectedId : undefined;
+}
+
+/** Radix Select requires non-empty unique item values. */
+function operDetailsSelectOptions<T extends { id: string; name: string }>(items: T[]): T[] {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    const id = String(item.id ?? '').trim();
+    if (!id || seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+}
+
+const OUTPUT_TABLE_H_SCROLL = outputTableHScrollClass();
+const OPER_DETAILS_SELECT_CONTENT = 'z-[200] max-h-60';
+const PRODUCT_TABLE_STICKY_TOP = 'sticky top-0 z-20 bg-[#F4F6F8] shadow-[0_1px_0_0_hsl(var(--border))]';
+const PRODUCT_TABLE_STICKY_TOP_LEFT = 'sticky top-0 left-0 z-30 bg-[#F4F6F8] shadow-[2px_1px_0_0_hsl(var(--border))]';
+/** Shrink numeric columns to content width; extra table width goes to name / long headers. */
+const PRODUCT_TABLE_NUMERIC_HEAD = 'w-px max-w-none';
+const PRODUCT_TABLE_NUMERIC_CELL = 'w-px max-w-none';
+/** Match transpose view: semibold foreground labels (not muted uppercase). */
+const PRODUCT_TABLE_COLUMN_HEAD = '!text-foreground !font-semibold normal-case !tracking-normal';
+
+const TRANSPOSE_PRODUCT_COL_DIVIDER = 'border-l border-border/40';
+const TRANSPOSE_PRODUCT_HEAD = 'text-center !px-2.5 !py-2 font-semibold text-foreground';
+const TRANSPOSE_PRODUCT_CELL = '!px-2.5 !py-2 text-right tabular-nums';
+const TRANSPOSE_METRIC_CELL = '!pl-3 !pr-4 !py-2 text-left';
+
+function SortHead({ label, sortKey, current, onSort, align = 'right', onResizeStart, draggable = false, onDragStart, onDragOver, onDrop, onDragEnd, multiLine = false, compact = false, stickyHeader = false, stickyTopLeft = false, className, isPremium = false, colIndex = 0, premiumTableKind, columnKey, collapseParent = false, collapseExpanded = false, onCollapseToggle }: {
   label: string; sortKey: string; current: { key: string; dir: SortDir };
   onSort: (k: string) => void; align?: 'left' | 'right';
   onResizeStart?: (ev: React.MouseEvent) => void;
@@ -307,6 +467,16 @@ function SortHead({ label, sortKey, current, onSort, align = 'right', onResizeSt
   onDragEnd?: () => void;
   multiLine?: boolean;
   compact?: boolean;
+  stickyHeader?: boolean;
+  stickyTopLeft?: boolean;
+  className?: string;
+  isPremium?: boolean;
+  colIndex?: number;
+  premiumTableKind?: PremiumTableKind;
+  columnKey?: string;
+  collapseParent?: boolean;
+  collapseExpanded?: boolean;
+  onCollapseToggle?: () => void;
 }) {
   const active = current.key === sortKey && current.dir !== 'default';
   const normalized = label.replace(/\s+/g, ' ').trim();
@@ -336,9 +506,18 @@ function SortHead({ label, sortKey, current, onSort, align = 'right', onResizeSt
       lines = wrapped;
     }
   }
+  const stickyClass = isPremium
+    ? premiumStickyHeadClass(isPremium, stickyTopLeft, stickyHeader)
+    : (stickyTopLeft ? PRODUCT_TABLE_STICKY_TOP_LEFT : stickyHeader ? PRODUCT_TABLE_STICKY_TOP : '');
+
   return (
     <TableHead
-      className={`font-mono text-xs cursor-pointer select-none hover:text-foreground transition-colors relative pr-3 ${shouldWrap ? 'h-auto py-3 whitespace-normal align-top' : 'whitespace-nowrap'} ${compact ? '!px-2' : ''} ${draggable ? 'cursor-move' : ''} ${align === 'right' ? 'text-right' : 'text-left'}`}
+      className={`${isPremium ? '' : 'font-mono text-xs'} cursor-pointer select-none hover:text-foreground transition-colors relative pr-3 ${shouldWrap ? 'h-auto py-3 whitespace-normal align-top' : 'whitespace-nowrap'} ${compact && !isPremium ? '!px-2' : ''} ${draggable ? 'cursor-move' : ''} ${align === 'right' ? 'text-right' : 'text-left'} ${stickyClass} ${premiumHeadClass(isPremium, align)} ${className ?? ''}`}
+      style={
+        isPremium && premiumTableKind && columnKey
+          ? premiumColStyleForKey(premiumTableKind, columnKey, isPremium)
+          : premiumColStyle(colIndex, isPremium)
+      }
       onClick={() => onSort(sortKey)}
       draggable={draggable}
       onDragStart={onDragStart}
@@ -346,7 +525,21 @@ function SortHead({ label, sortKey, current, onSort, align = 'right', onResizeSt
       onDrop={onDrop}
       onDragEnd={onDragEnd}
     >
-      <span className={`inline-flex items-center gap-1 ${shouldWrap ? 'whitespace-normal' : 'whitespace-nowrap'}`}>
+      <span className={`inline-flex items-center gap-1 ${shouldWrap ? 'whitespace-normal' : 'whitespace-nowrap'} ${align === 'right' ? 'justify-end' : ''}`}>
+        {collapseParent && onCollapseToggle && (
+          <button
+            type="button"
+            className="inline-flex items-center justify-center h-4 w-4 shrink-0 rounded hover:bg-muted/80 text-foreground"
+            aria-expanded={collapseExpanded}
+            aria-label={collapseExpanded ? 'Collapse column group' : 'Expand column group'}
+            onClick={(ev) => {
+              ev.stopPropagation();
+              onCollapseToggle();
+            }}
+          >
+            {collapseExpanded ? <Minus className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
+          </button>
+        )}
         {shouldWrap ? (
           <span className="inline-flex flex-col leading-tight">
             {lines.map((line, idx) => (
@@ -357,9 +550,9 @@ function SortHead({ label, sortKey, current, onSort, align = 'right', onResizeSt
           label
         )}
         {active ? (
-          current.dir === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
+          current.dir === 'asc' ? <ArrowUp className="h-3 w-3 shrink-0" /> : <ArrowDown className="h-3 w-3 shrink-0" />
         ) : (
-          <ArrowUpDown className="h-3 w-3 opacity-0 group-hover:opacity-30" />
+          <ArrowUpDown className="h-3 w-3 shrink-0 opacity-0 group-hover:opacity-30" />
         )}
       </span>
       {onResizeStart && (
@@ -759,6 +952,12 @@ export default function RunResults() {
 
   const [activeTab, setActiveTab] = useState('summary');
   const [equipSubTab, setEquipSubTab] = useState('util-chart');
+  const [equipInsightsOpen, setEquipInsightsOpen] = useState(false);
+  const [equipInsightsIconVisible, setEquipInsightsIconVisible] = useState(false);
+  const [laborInsightsOpen, setLaborInsightsOpen] = useState(false);
+  const [laborInsightsIconVisible, setLaborInsightsIconVisible] = useState(false);
+  const [productMctInsightsOpen, setProductMctInsightsOpen] = useState(false);
+  const [productMctInsightsIconVisible, setProductMctInsightsIconVisible] = useState(false);
   const [laborSubTab, setLaborSubTab] = useState('util-chart');
   const [productsSubTab, setProductsSubTab] = useState('mct-chart');
   const [ibomSubTab, setIbomSubTab] = useState('tree-chart');
@@ -808,6 +1007,75 @@ export default function RunResults() {
     if (!laborSubTabs.some((t) => t.key === laborSubTab)) setLaborSubTab('util-chart');
     if (!productSubTabs.some((t) => t.key === productsSubTab)) setProductsSubTab('results-table');
   }, [isUtilOnly, equipSubTab, laborSubTab, productsSubTab, equipSubTabs, laborSubTabs, productSubTabs]);
+
+  const isPremiumEquipUtilView =
+    isPremiumOutputView(model) &&
+    activeTab === 'equipment' &&
+    equipSubTab === 'util-chart' &&
+    hasRun;
+
+  const isPremiumLaborUtilView =
+    isPremiumOutputView(model) &&
+    activeTab === 'labor' &&
+    laborSubTab === 'util-chart' &&
+    hasRun &&
+    !isMultiScenario;
+
+  const isPremiumProductMctView =
+    isPremiumOutputView(model) &&
+    activeTab === 'products' &&
+    productsSubTab === 'mct-chart' &&
+    hasRun &&
+    !isMultiScenario &&
+    !isUtilOnly;
+
+  useEffect(() => {
+    if (!isPremiumEquipUtilView || !results || !model) {
+      setEquipInsightsOpen(false);
+      return;
+    }
+    setEquipInsightsOpen(true);
+    setEquipInsightsIconVisible(false);
+  }, [isPremiumEquipUtilView, model?.id, results]);
+
+  useEffect(() => {
+    if (!isPremiumLaborUtilView || !results || !model) {
+      setLaborInsightsOpen(false);
+      return;
+    }
+    setLaborInsightsOpen(true);
+    setLaborInsightsIconVisible(false);
+  }, [isPremiumLaborUtilView, model?.id, results]);
+
+  useEffect(() => {
+    if (!isPremiumProductMctView || !results || !model) {
+      setProductMctInsightsOpen(false);
+      return;
+    }
+    setProductMctInsightsOpen(true);
+    setProductMctInsightsIconVisible(false);
+  }, [isPremiumProductMctView, model?.id, results]);
+
+  const handleEquipInsightsOpenChange = useCallback((open: boolean) => {
+    setEquipInsightsOpen(open);
+    if (!open) {
+      setEquipInsightsIconVisible(true);
+    }
+  }, []);
+
+  const handleLaborInsightsOpenChange = useCallback((open: boolean) => {
+    setLaborInsightsOpen(open);
+    if (!open) {
+      setLaborInsightsIconVisible(true);
+    }
+  }, []);
+
+  const handleProductMctInsightsOpenChange = useCallback((open: boolean) => {
+    setProductMctInsightsOpen(open);
+    if (!open) {
+      setProductMctInsightsIconVisible(true);
+    }
+  }, []);
 
   // Auto-navigate to Summary on Full Calculate completion; toast on background recalc
   const prevRunLogLenRef = useRef(runLog.length);
@@ -908,7 +1176,7 @@ export default function RunResults() {
     <div className="h-full flex flex-col overflow-hidden animate-fade-in">
       {/* ── Page Header Row ── */}
       <div className="flex items-center justify-between px-6 pt-4 pb-2 shrink-0">
-        <h1 className="text-xl font-bold">Run &amp; Results</h1>
+        <h1 className="text-page-title">Run &amp; Results</h1>
         {activeScenario && (
           <Badge variant="outline" className="border-warning/50 bg-warning/10 text-warning gap-1.5 text-xs font-medium">
             <span className="inline-block h-2 w-2 rounded-full bg-warning" />
@@ -935,7 +1203,7 @@ export default function RunResults() {
             <><Play className="h-3.5 w-3.5" /> Full Calculate</>
           )}
         </Button>
-        <Button
+        {/* <Button
           size="sm"
           variant="outline"
           className="h-9 gap-1.5 px-3"
@@ -964,7 +1232,7 @@ export default function RunResults() {
               </Button>
             </TooltipTrigger>
             <TooltipContent side="bottom" className="text-xs">Calculates equipment and labor utilisation only — faster than Full Calculate.</TooltipContent>
-          </ShadTooltip>
+          </ShadTooltip> */}
    
 
         {/* Vertical divider before Advanced section */}
@@ -1017,7 +1285,7 @@ export default function RunResults() {
         {/* Scenario context dropdown */}
         <div className="h-[60%] w-px bg-border self-center" />
         <div className="flex items-center gap-1.5">
-          <span className="text-[11px] text-muted-foreground whitespace-nowrap">Running for:</span>
+          <span className="text-meta text-muted-foreground whitespace-nowrap">Running for:</span>
           <Select value={selectedRunScenarioId} onValueChange={setSelectedRunScenarioId}>
             <SelectTrigger className={`h-7 w-auto min-w-[140px] max-w-[220px] text-xs gap-1 ${selectedRunScenarioId !== 'basecase' ? 'text-warning border-warning/40' : ''}`}>
               <SelectValue />
@@ -1102,7 +1370,7 @@ export default function RunResults() {
       </div>
 
       {/* ── Content Panel — scrolls internally ── */}
-      <div className="flex-1 overflow-y-auto no-scrollbar px-6 py-4 pb-6">
+      <div className="flex-1 min-w-0 overflow-y-auto no-scrollbar px-6 py-4 pb-6">
         {showIssueBanners && !isRunning && !advRunning && (
           <RunResultsIssueBanners
             results={results}
@@ -1160,11 +1428,11 @@ export default function RunResults() {
                     <span className="text-sm text-success font-medium">All production targets can be achieved. Results are current.</span>
                   </div>
                 )}
-                <Card>
+                <Card className={premiumCardClass(isPremiumOutputView(model))}>
                   <CardHeader>
                     <div className="flex items-center justify-between">
                       <div>
-                        <CardTitle className="text-base">Output Summary</CardTitle>
+                        <CardTitle className={`${isPremiumOutputView(model) ? "font-semibold" : ''}`}>Output Summary</CardTitle>
                         <CardDescription>
                           Consolidated production metrics
                           {displayScenarioResults.length > 0 && ` — comparing ${displayScenarioResults.length} scenario(s)`}
@@ -1175,7 +1443,7 @@ export default function RunResults() {
                       </Button>
                     </div>
                   </CardHeader>
-                  <CardContent className="p-0 overflow-x-auto">
+                  <CardContent className={`p-0 ${OUTPUT_TABLE_H_SCROLL}`}>
                     {transposed ? (
                       <TransposedSummary results={results!} model={model} scenarioResults={displayScenarioResults} isUtilOnly={isUtilOnly} />
                     ) : (
@@ -1198,7 +1466,7 @@ export default function RunResults() {
                   <button
                     key={st.key}
                     onClick={() => setEquipSubTab(st.key)}
-                    className={`h-8 px-4 text-[13px] relative transition-colors ${
+                    className={`h-8 px-4 text-ui relative transition-colors ${
                       equipSubTab === st.key
                         ? 'text-foreground font-medium'
                         : 'text-muted-foreground hover:text-foreground'
@@ -1213,10 +1481,20 @@ export default function RunResults() {
               </div>
               <ScenarioContextBar />
 
-              {equipSubTab === 'util-chart' && (
+              {equipSubTab === 'util-chart' && isPremiumOutputView(model) && (
+                <PremiumEquipmentUtilChart
+                  results={results!}
+                  model={model}
+                  insightsOpen={equipInsightsOpen}
+                  onInsightsOpenChange={handleEquipInsightsOpenChange}
+                  showInsightsIcon={equipInsightsIconVisible}
+                />
+              )}
+
+              {equipSubTab === 'util-chart' && !isPremiumOutputView(model) && (
                 <Card>
                   <CardHeader>
-                    <CardTitle className="text-base">Equipment Utilization</CardTitle>
+                    <CardTitle>Equipment Utilization</CardTitle>
                     <CardDescription>
                       {isMultiScenario
                         ? `Comparing ${chartScenarios.length} scenarios — grouped stacked bars`
@@ -1275,7 +1553,7 @@ export default function RunResults() {
               )}
 
               {equipSubTab === 'oper-details' && (
-                <EquipOperDetails model={model} results={results!} />
+                <EquipOperDetails key={model.id} model={model} results={results!} />
               )}
             </div>
           )
@@ -1291,7 +1569,7 @@ export default function RunResults() {
                   <button
                     key={st.key}
                     onClick={() => setLaborSubTab(st.key)}
-                    className={`h-8 px-4 text-[13px] relative transition-colors ${
+                    className={`h-8 px-4 text-ui relative transition-colors ${
                       laborSubTab === st.key
                         ? 'text-foreground font-medium'
                         : 'text-muted-foreground hover:text-foreground'
@@ -1306,10 +1584,20 @@ export default function RunResults() {
               </div>
               <ScenarioContextBar />
 
-              {laborSubTab === 'util-chart' && (
+              {laborSubTab === 'util-chart' && isPremiumOutputView(model) && !isMultiScenario && (
+                <PremiumLaborUtilChart
+                  results={results!}
+                  model={model}
+                  insightsOpen={laborInsightsOpen}
+                  onInsightsOpenChange={handleLaborInsightsOpenChange}
+                  showInsightsIcon={laborInsightsIconVisible}
+                />
+              )}
+
+              {laborSubTab === 'util-chart' && (!isPremiumOutputView(model) || isMultiScenario) && (
                 <Card>
                   <CardHeader>
-                    <CardTitle className="text-base">Labor Utilization</CardTitle>
+                    <CardTitle>Labor Utilization</CardTitle>
                     <CardDescription>
                       {isMultiScenario
                         ? `Comparing ${chartScenarios.length} scenarios`
@@ -1356,7 +1644,7 @@ export default function RunResults() {
               )}
 
               {laborSubTab === 'results-table' && (
-                <LaborResultsTable labor={results!.labor} utilLimit={model.general.util_limit} />
+                <LaborResultsTable labor={results!.labor} utilLimit={model.general.util_limit} model={model} />
               )}
 
               {laborSubTab === 'equip-wait' && (
@@ -1369,7 +1657,7 @@ export default function RunResults() {
               )}
 
               {laborSubTab === 'oper-details' && (
-                <LaborOperDetails model={model} results={results!} />
+                <LaborOperDetails key={model.id} model={model} results={results!} />
               )}
             </div>
           )
@@ -1385,7 +1673,7 @@ export default function RunResults() {
                   <button
                     key={st.key}
                     onClick={() => setProductsSubTab(st.key)}
-                    className={`h-8 px-4 text-[13px] relative transition-colors ${
+                    className={`h-8 px-4 text-ui relative transition-colors ${
                       productsSubTab === st.key
                         ? 'text-foreground font-medium'
                         : 'text-muted-foreground hover:text-foreground'
@@ -1403,9 +1691,18 @@ export default function RunResults() {
               {productsSubTab === 'mct-chart' && (
                 <>
                   {isUtilOnly && <UtilOnlyBanner />}
+                  {isPremiumOutputView(model) && !isMultiScenario ? (
+                    <PremiumProductMCTChart
+                      results={results!}
+                      model={model}
+                      insightsOpen={productMctInsightsOpen}
+                      onInsightsOpenChange={handleProductMctInsightsOpenChange}
+                      showInsightsIcon={productMctInsightsIconVisible}
+                    />
+                  ) : (
                   <Card>
                     <CardHeader>
-                      <CardTitle className="text-base">Product MCT (Manufacturing Cycle Time)</CardTitle>
+                      <CardTitle>Product MCT (Manufacturing Cycle Time)</CardTitle>
                       <CardDescription>
                         {isMultiScenario
                           ? `Comparing ${chartScenarios.length} scenarios — MCT in ${model.general.mct_time_unit}s`
@@ -1455,6 +1752,7 @@ export default function RunResults() {
                       </ResponsiveContainer>
                     </CardContent>
                   </Card>
+                  )}
                 </>
               )}
 
@@ -1481,7 +1779,7 @@ export default function RunResults() {
                   {isUtilOnly && <UtilOnlyBanner />}
                   <Card>
                     <CardHeader>
-                      <CardTitle className="text-base">Product WIP (Work In Progress)</CardTitle>
+                      <CardTitle>Product WIP (Work In Progress)</CardTitle>
                     </CardHeader>
                     <CardContent className="relative">
                       <ChartScenarioLabel />
@@ -1515,7 +1813,7 @@ export default function RunResults() {
               {productsSubTab === 'oper-details' && (
                 <>
                   {isUtilOnly && <UtilOnlyBanner />}
-                  <ProductOperDetails model={model} results={results!} />
+                  <ProductOperDetails key={model.id} model={model} results={results!} />
                 </>
               )}
             </div>
@@ -1565,7 +1863,7 @@ export default function RunResults() {
                       <TableCell className="text-xs">{entry.scenarioName}</TableCell>
                       <TableCell className="text-xs text-right font-mono">{entry.durationMs < 1000 ? `${entry.durationMs}ms` : `${(entry.durationMs / 1000).toFixed(1)}s`}</TableCell>
                       <TableCell>
-                        <Badge variant="outline" className={`text-[10px] ${
+                        <Badge variant="outline" className={`text-meta ${
                           entry.status === 'success' ? 'border-success/40 text-success' :
                           entry.status === 'warning' ? 'border-warning/40 text-warning' :
                           'border-destructive/40 text-destructive'
@@ -2000,7 +2298,7 @@ function IBOMTabContent({ model, results, basecaseResults, isRunning, isUtilOnly
           <button
             key={st.key}
             onClick={() => setIbomSubTab(st.key)}
-            className={`h-8 px-4 text-[13px] relative transition-colors ${
+            className={`h-8 px-4 text-ui relative transition-colors ${
               ibomSubTab === st.key
                 ? 'text-foreground font-medium'
                 : 'text-muted-foreground hover:text-foreground'
@@ -2091,16 +2389,266 @@ type ProductTableColKey = typeof UTIL_ONLY_PRODUCT_COLUMNS[number] | 'started' |
 
 function productColumnLabel(colKey: ProductTableColKey, utilOnly: boolean): string {
   if (!utilOnly) {
-    return colKey === 'name' ? 'Product' : colKey === 'goodMade' ? 'Good Made' : colKey === 'goodShipped' ? 'Good Shipped' : colKey === 'started' ? 'Started' : colKey === 'scrap' ? 'Scrap' : colKey === 'scrappedInAssembly' ? 'Scrapped Assy' : colKey === 'usedInAssembly' ? 'Used Assy' : colKey === 'timeWaitingEquipment' ? 'Wait Equip' : colKey === 'timeWaitingLabor' ? 'Wait Labor' : colKey === 'timeSetup' ? 'Setup Time' : colKey === 'timeRun' ? 'Run Time' : colKey === 'timeWaitingRestOfLot' ? 'Wait Lot' : colKey === 'outOfAreaTime' ? 'Out Area' : colKey === 'wip' ? 'WIP' : 'MCT';
+    return colKey === 'name' ? 'Product' : colKey === 'goodMade' ? PRODUCT_METRIC_LABELS.goodMade : colKey === 'goodShipped' ? PRODUCT_METRIC_LABELS.goodShipped : colKey === 'started' ? PRODUCT_METRIC_LABELS.started : colKey === 'scrap' ? 'Scrap' : colKey === 'scrappedInAssembly' ? 'Scrapped Assy' : colKey === 'usedInAssembly' ? 'Used Assy' : colKey === 'timeWaitingEquipment' ? 'Wait Equip' : colKey === 'timeWaitingLabor' ? 'Wait Labor' : colKey === 'timeSetup' ? 'Setup Time' : colKey === 'timeRun' ? 'Run Time' : colKey === 'timeWaitingRestOfLot' ? 'Wait Lot' : colKey === 'outOfAreaTime' ? 'Out Area' : colKey === 'wip' ? 'WIP' : 'MCT';
   }
   if (colKey === 'name') return 'Product';
-  if (colKey === 'goodMade') return 'Total Good Production';
-  if (colKey === 'goodShipped') return 'Shipped Production';
+  if (colKey === 'goodMade') return PRODUCT_METRIC_LABELS.goodMade;
+  if (colKey === 'goodShipped') return PRODUCT_METRIC_LABELS.goodShipped;
   if (colKey === 'scrappedInAssembly') return 'Scrapped In Assembly';
   if (colKey === 'usedInAssembly') return 'Used in Assembly';
   if (colKey === 'scrap') return 'Scrap In Initial Production';
   if (colKey === 'wip') return 'WIP';
   return 'MCT';
+}
+
+function formatProductMetricValue(row: any, colKey: ProductTableColKey, isUtilOnly: boolean, isPremium = false): string {
+  const fmt = (v: unknown, digits: number) => isPremium ? premiumFmtNum(v, digits, true) : fmtFixed(v, digits);
+  if (colKey === 'name') return row.name;
+  if (colKey === 'goodMade') return fmt(row.goodMade, 2);
+  if (colKey === 'goodShipped') return fmt(row.goodShipped, 2);
+  if (colKey === 'started') return fmt(row.started, 2);
+  if (colKey === 'scrap') return fmt(row.scrap, 2);
+  if (colKey === 'scrappedInAssembly') return fmt(row.scrappedInAssembly, 2);
+  if (colKey === 'usedInAssembly') return fmt(row.usedInAssembly, 2);
+  if (colKey === 'timeWaitingEquipment') return fmt(row.timeWaitingEquipment, 2);
+  if (colKey === 'timeWaitingLabor') return fmt(row.timeWaitingLabor, 2);
+  if (colKey === 'timeSetup') return fmt(row.timeSetup, 2);
+  if (colKey === 'timeRun') return fmt(row.timeRun, 2);
+  if (colKey === 'timeWaitingRestOfLot') return fmt(row.timeWaitingRestOfLot, 2);
+  if (colKey === 'outOfAreaTime') return fmt(row.outOfAreaTime, 2);
+  if (colKey === 'wip') return fmt(isUtilOnly ? 0 : row.wip, 2);
+  return fmt(isUtilOnly ? 0 : row.mct, 2);
+}
+
+function transposeProductCountCap(productCount: number): { minPx: number; maxPx: number; padPx: number } {
+  if (productCount <= 4) return { minPx: 52, maxPx: 104, padPx: 14 };
+  if (productCount <= 8) return { minPx: 48, maxPx: 88, padPx: 12 };
+  if (productCount <= 12) return { minPx: 46, maxPx: 78, padPx: 12 };
+  return { minPx: 44, maxPx: 72, padPx: 10 };
+}
+
+function computeTransposeProductColWidthsPx(
+  products: any[],
+  metricColumns: Exclude<ProductTableColKey, 'name'>[],
+  isUtilOnly: boolean,
+  displayScenarioResults: { id: string; scenario: any; results: CalcResults }[],
+): number[] {
+  const { minPx, maxPx, padPx } = transposeProductCountCap(products.length);
+  return products.map((product) => {
+    let maxChars = String(product.name ?? '').length;
+    for (const colKey of metricColumns) {
+      maxChars = Math.max(maxChars, formatProductMetricValue(product, colKey, isUtilOnly).length);
+    }
+    for (const sr of displayScenarioResults) {
+      const sp = sr.results.products.find((p: any) => p.id === product.id);
+      maxChars = Math.max(
+        maxChars,
+        sp ? fmtFixed(isUtilOnly ? 0 : sp.wip, 3).length : 1,
+        sp ? fmtFixed(isUtilOnly ? 0 : sp.mct, 3).length : 1,
+      );
+    }
+    const px = Math.round(maxChars * 6.5 + padPx);
+    return Math.min(maxPx, Math.max(minPx, px));
+  });
+}
+
+function computeTransposeMetricColWidthPx(
+  metricColumns: Exclude<ProductTableColKey, 'name'>[],
+  isUtilOnly: boolean,
+  displayScenarioResults: { id: string; scenario: any; results: CalcResults }[],
+): number {
+  const labels = [
+    'Metric',
+    ...metricColumns.map((k) => productColumnLabel(k, isUtilOnly)),
+    ...displayScenarioResults.flatMap((sr) => [`WIP ${sr.scenario.name}`, `MCT ${sr.scenario.name}`]),
+  ];
+  return estimateColMinWidthPx('Metric', labels, 84, 152);
+}
+
+/** Content-weighted column % so the table spans full card width (metric + products = 100%). */
+function computeTransposeColPercents(metricColWidthPx: number, productColWeightsPx: number[]): number[] {
+  const productSum = productColWeightsPx.reduce((sum, w) => sum + w, 0);
+  if (productSum <= 0) return [100];
+  const total = metricColWidthPx + productSum;
+  const metricPercent = (metricColWidthPx / total) * 100;
+  const productShare = 100 - metricPercent;
+  return [
+    metricPercent,
+    ...productColWeightsPx.map((w) => (w / productSum) * productShare),
+  ];
+}
+
+function TransposedProductResults({
+  products,
+  columnOrder,
+  displayScenarioResults,
+  isUtilOnly,
+  colPercents,
+  onResizeProductColumn,
+  onMoveMetric,
+  onMoveProduct,
+  isPremium = false,
+  collapseEnabled = false,
+  isCollapseParent,
+  isGroupExpanded,
+  onCollapseToggle,
+}: {
+  products: any[];
+  columnOrder: ProductTableColKey[];
+  displayScenarioResults: { id: string; scenario: any; results: CalcResults }[];
+  isUtilOnly: boolean;
+  colPercents: number[];
+  onResizeProductColumn: (index: number, ev: React.MouseEvent) => void;
+  onMoveMetric: (fromKey: string, toKey: string) => void;
+  onMoveProduct: (fromId: string, toId: string) => void;
+  isPremium?: boolean;
+  collapseEnabled?: boolean;
+  isCollapseParent?: (colKey: string) => boolean;
+  isGroupExpanded?: (parent: string) => boolean;
+  onCollapseToggle?: (parent: string) => void;
+}) {
+  const dragMetricRef = useRef<string | null>(null);
+  const dragProductRef = useRef<string | null>(null);
+  const metricColumns = columnOrder.filter((k): k is Exclude<ProductTableColKey, 'name'> => k !== 'name');
+  const hasScenarios = displayScenarioResults.length > 0;
+  const scenarioRows = hasScenarios
+    ? displayScenarioResults.flatMap(sr => ([
+        { key: `${sr.id}-wip`, label: `WIP — ${sr.scenario.name}`, kind: 'wip' as const, scenario: sr },
+        { key: `${sr.id}-mct`, label: `MCT — ${sr.scenario.name}`, kind: 'mct' as const, scenario: sr },
+      ]))
+    : [];
+
+  const metricPercent = colPercents[0] ?? 12;
+  const productPercents = colPercents.slice(1);
+
+  return (
+    <Table fitContent outerScrollHost className={`w-full table-fixed border-separate border-spacing-0 ${premiumTableWrapperClass(isPremium)}`}>
+      <colgroup>
+        <col style={{ width: `${metricPercent}%` }} />
+        {products.map((row, i) => (
+          <col key={row.id} style={{ width: `${productPercents[i] ?? 100 / Math.max(products.length, 1)}%` }} />
+        ))}
+      </colgroup>
+      <TableHeader>
+        <TableRow className={premiumRowClass(isPremium)}>
+          <TableHead
+            className={`${isPremium ? '' : 'font-mono text-xs'} ${PRODUCT_TABLE_COLUMN_HEAD} ${TRANSPOSE_METRIC_CELL} ${isPremium ? premiumStickyHeadClass(isPremium, true, true) : PRODUCT_TABLE_STICKY_TOP_LEFT} ${premiumHeadClass(isPremium, 'left')}`}
+            style={premiumColStyleForKey('product', 'name', isPremium)}
+          >
+            Metric
+          </TableHead>
+          {products.map((row: any, index: number) => (
+            <TableHead
+              key={row.id}
+              draggable
+              className={`${isPremium ? '' : 'font-mono text-xs'} whitespace-nowrap ${PRODUCT_TABLE_COLUMN_HEAD} ${TRANSPOSE_PRODUCT_HEAD} ${!isPremium && index > 0 ? TRANSPOSE_PRODUCT_COL_DIVIDER : ''} relative cursor-move select-none hover:text-foreground transition-colors ${isPremium ? 'sticky top-0 z-20' : PRODUCT_TABLE_STICKY_TOP} ${premiumHeadClass(isPremium, 'right')}`}
+              style={premiumColStyleForKey('product', 'name', isPremium)}
+              onDragStart={() => { dragProductRef.current = row.id; }}
+              onDragOver={ev => ev.preventDefault()}
+              onDrop={() => {
+                if (dragProductRef.current) onMoveProduct(dragProductRef.current, row.id);
+                dragProductRef.current = null;
+              }}
+              onDragEnd={() => { dragProductRef.current = null; }}
+            >
+              <span className={`block leading-snug break-words line-clamp-2 ${isPremium ? 'font-semibold normal-case' : ''}`} title={row.name}>
+                {isPremium ? formatPremiumDisplayName(row.name) : row.name}
+              </span>
+              {index < products.length - 1 && (
+                <span
+                  className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-primary/25 transition-colors"
+                  onMouseDown={ev => {
+                    ev.preventDefault();
+                    ev.stopPropagation();
+                    onResizeProductColumn(index, ev);
+                  }}
+                />
+              )}
+            </TableHead>
+          ))}
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {metricColumns.map((colKey, rowIndex) => (
+          <TableRow key={colKey} className={premiumRowClass(isPremium)}>
+            <TableCell
+              draggable
+              className={`${premiumLabelCellClass(isPremium, true)} ${TRANSPOSE_METRIC_CELL} cursor-move select-none hover:text-foreground transition-colors`}
+              style={premiumColStyleForKey('product', 'name', isPremium)}
+              onDragStart={() => { dragMetricRef.current = colKey; }}
+              onDragOver={ev => ev.preventDefault()}
+              onDrop={() => {
+                if (dragMetricRef.current) onMoveMetric(dragMetricRef.current, colKey);
+                dragMetricRef.current = null;
+              }}
+              onDragEnd={() => { dragMetricRef.current = null; }}
+            >
+              <span className="inline-flex items-center gap-1">
+                {collapseEnabled && isCollapseParent?.(colKey) && onCollapseToggle && (
+                  <button
+                    type="button"
+                    className="inline-flex items-center justify-center h-4 w-4 shrink-0 rounded hover:bg-muted/80 text-foreground"
+                    aria-expanded={isGroupExpanded?.(colKey)}
+                    aria-label={isGroupExpanded?.(colKey) ? 'Collapse metric group' : 'Expand metric group'}
+                    onClick={(ev) => {
+                      ev.stopPropagation();
+                      onCollapseToggle(colKey);
+                    }}
+                  >
+                    {isGroupExpanded?.(colKey) ? <Minus className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
+                  </button>
+                )}
+                {productColumnLabel(colKey, isUtilOnly)}
+              </span>
+            </TableCell>
+            {products.map((row: any, index: number) => (
+              <TableCell
+                key={row.id}
+                className={`${premiumNumericCellClass(isPremium, colKey === 'mct' ? 'font-medium' : '')} ${TRANSPOSE_PRODUCT_CELL} ${!isPremium && index > 0 ? TRANSPOSE_PRODUCT_COL_DIVIDER : ''}`}
+                style={premiumColStyleForKey('product', colKey, isPremium)}
+              >
+                {formatProductMetricValue(row, colKey, isUtilOnly, isPremium)}
+              </TableCell>
+            ))}
+          </TableRow>
+        ))}
+        {scenarioRows.map(({ key, label, kind, scenario: sr }, rowIndex) => (
+          <TableRow key={key} className={isPremium ? premiumRowClass(isPremium) : 'bg-muted/30'}>
+            <TableCell
+              className={`${premiumLabelCellClass(isPremium, true)} ${isPremium ? '' : 'font-mono text-xs font-medium text-primary bg-muted/30'} ${TRANSPOSE_METRIC_CELL}`}
+              style={premiumColStyleForKey('product', 'name', isPremium)}
+            >
+              {label}
+            </TableCell>
+            {products.map((row: any, index: number) => {
+              const sp = sr.results.products.find((p: any) => p.id === row.id);
+              const baseMct = isUtilOnly ? 0 : row.mct;
+              if (kind === 'wip') {
+                return (
+                  <TableCell
+                    key={row.id}
+                    className={`${premiumNumericCellClass(isPremium)} ${TRANSPOSE_PRODUCT_CELL} ${!isPremium && index > 0 ? TRANSPOSE_PRODUCT_COL_DIVIDER : ''}`}
+                    style={premiumColStyleForKey('product', 'wip', isPremium)}
+                  >
+                    {sp ? (isPremium ? premiumFmtNum(isUtilOnly ? 0 : sp.wip, 2, true) : fmtFixed(isUtilOnly ? 0 : sp.wip, 3)) : '—'}
+                  </TableCell>
+                );
+              }
+              return (
+                <TableCell
+                  key={row.id}
+                  className={`${premiumNumericCellClass(isPremium)} ${TRANSPOSE_PRODUCT_CELL} ${!isPremium && index > 0 ? TRANSPOSE_PRODUCT_COL_DIVIDER : ''} ${!isPremium && !isUtilOnly && sp && sp.mct < baseMct ? 'text-success' : !isPremium && !isUtilOnly && sp && sp.mct > baseMct ? 'text-destructive' : ''}`}
+                  style={premiumColStyleForKey('product', 'mct', isPremium)}
+                >
+                  {sp ? (isPremium ? premiumFmtNum(isUtilOnly ? 0 : sp.mct, 2, true) : fmtFixed(isUtilOnly ? 0 : sp.mct, 3)) : '—'}
+                </TableCell>
+              );
+            })}
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  );
 }
 
 /* ─── Product Results Table ─── */
@@ -2109,6 +2657,8 @@ function ProductResultsTable({ results, model, displayScenarioResults, isUtilOnl
   displayScenarioResults: { id: string; scenario: any; results: CalcResults }[];
   isUtilOnly?: boolean;
 }) {
+  const isPremium = isPremiumOutputView(model);
+  const collapseEnabled = isPremium && !isUtilOnly;
   const productRows = useMemo(() => {
     return results.products.map((pr: any) => {
       // Keep Product Results Table consistent with DLL-based Production Chart:
@@ -2147,133 +2697,370 @@ function ProductResultsTable({ results, model, displayScenarioResults, isUtilOnl
     });
   }, [results.products]);
   const { sorted, sort, handleSort } = useSortableTable(productRows, 'mct', 'desc');
-  const productCols = useResizableColumns([10, 6, 6, 6, 5, 8, 8, 8, 8, 5, 5, 9, 8, 4, 4], 4);
-  const defaultColumnOrder: ProductTableColKey[] = isUtilOnly
-    ? [...UTIL_ONLY_PRODUCT_COLUMNS]
-    : ['name', 'goodMade', 'goodShipped', 'started', 'scrap', 'scrappedInAssembly', 'usedInAssembly', 'timeWaitingEquipment', 'timeWaitingLabor', 'timeSetup', 'timeRun', 'timeWaitingRestOfLot', 'outOfAreaTime', 'wip', 'mct'];
-  const [columnOrder, setColumnOrder] = useState<ProductTableColKey[]>(defaultColumnOrder);
-  useEffect(() => {
-    setColumnOrder(
-      isUtilOnly
-        ? [...UTIL_ONLY_PRODUCT_COLUMNS]
-        : ['name', 'goodMade', 'goodShipped', 'started', 'scrap', 'scrappedInAssembly', 'usedInAssembly', 'timeWaitingEquipment', 'timeWaitingLabor', 'timeSetup', 'timeRun', 'timeWaitingRestOfLot', 'outOfAreaTime', 'wip', 'mct'],
-    );
-  }, [isUtilOnly, results.calculatedAt]);
+  const minWidthByKey = useMemo<Record<string, number>>(() => {
+    const label = (colKey: ProductTableColKey) => productColumnLabel(colKey, isUtilOnly);
+    const numericMin = 52;
+    const numericMax = 160;
+    const fmt = (v: unknown) => isPremium ? premiumFmtNum(v, 2, true) : fmtFixed(v, 2);
+    return {
+      name: estimateColMinWidthPx(
+        label('name'),
+        productRows.map((r: any) => (isPremium ? formatPremiumDisplayName(r.name) : r.name)),
+        isPremium ? 128 : 96,
+        280,
+      ),
+      goodMade: estimateColMinWidthPx(label('goodMade'), productRows.map((r: any) => fmt(r.goodMade)), numericMin, numericMax),
+      goodShipped: estimateColMinWidthPx(label('goodShipped'), productRows.map((r: any) => fmtFixed(r.goodShipped, 2)), numericMin, numericMax),
+      started: estimateColMinWidthPx(label('started'), productRows.map((r: any) => fmtFixed(r.started, 2)), numericMin, numericMax),
+      scrap: estimateColMinWidthPx(label('scrap'), productRows.map((r: any) => fmtFixed(r.scrap, 2)), numericMin, numericMax),
+      scrappedInAssembly: estimateColMinWidthPx(label('scrappedInAssembly'), productRows.map((r: any) => fmtFixed(r.scrappedInAssembly, 2)), numericMin, numericMax),
+      usedInAssembly: estimateColMinWidthPx(label('usedInAssembly'), productRows.map((r: any) => fmtFixed(r.usedInAssembly, 2)), numericMin, numericMax),
+      timeWaitingEquipment: estimateColMinWidthPx(label('timeWaitingEquipment'), productRows.map((r: any) => fmtFixed(r.timeWaitingEquipment, 2)), numericMin, numericMax),
+      timeWaitingLabor: estimateColMinWidthPx(label('timeWaitingLabor'), productRows.map((r: any) => fmtFixed(r.timeWaitingLabor, 2)), numericMin, numericMax),
+      timeSetup: estimateColMinWidthPx(label('timeSetup'), productRows.map((r: any) => fmtFixed(r.timeSetup, 2)), numericMin, numericMax),
+      timeRun: estimateColMinWidthPx(label('timeRun'), productRows.map((r: any) => fmtFixed(r.timeRun, 2)), numericMin, numericMax),
+      timeWaitingRestOfLot: estimateColMinWidthPx(label('timeWaitingRestOfLot'), productRows.map((r: any) => fmtFixed(r.timeWaitingRestOfLot, 2)), numericMin, numericMax),
+      outOfAreaTime: estimateColMinWidthPx(label('outOfAreaTime'), productRows.map((r: any) => fmtFixed(r.outOfAreaTime, 2)), numericMin, numericMax),
+      wip: estimateColMinWidthPx(label('wip'), productRows.map((r: any) => fmtFixed(r.wip, 3)), numericMin, numericMax),
+      mct: estimateColMinWidthPx(label('mct'), productRows.map((r: any) => fmtFixed(r.mct, 3)), numericMin, numericMax),
+    };
+  }, [productRows, isUtilOnly, isPremium]);
+  const getProductColumnWeightPx = useCallback(
+    (col: string) => minWidthByKey[col] ?? 52,
+    [minWidthByKey],
+  );
+  const legacyProductOrder = useMemo(
+    () => (isUtilOnly ? [...UTIL_ONLY_PRODUCT_COLUMNS] : [...PRODUCT_LEGACY_COLUMN_ORDER]),
+    [isUtilOnly],
+  );
+  const premiumProductOrder = useMemo(
+    () => (isUtilOnly ? [...UTIL_ONLY_PRODUCT_COLUMNS] : [...PRODUCT_PREMIUM_COLUMN_ORDER]),
+    [isUtilOnly],
+  );
+  const productCols = useResizableColumns(
+    collapseEnabled ? [14, 10, 10, 10, 10, 10, 10, 14] : [10, 6, 6, 6, 5, 8, 8, 8, 8, 5, 5, 9, 8, 4, 4],
+    4,
+  );
+  const productCollapseGroups = useMemo(
+    () => (collapseEnabled ? PRODUCT_COLLAPSE_GROUPS : []),
+    [collapseEnabled],
+  );
+  const {
+    visibleColumnOrder,
+    scrollLayoutActive: productScrollExpanded,
+    fillWidthLayout: productFillWidth,
+    toggleGroup,
+    isCollapseParent,
+    isGroupExpanded,
+    moveColumn,
+    resetColumns: resetCollapsibleColumns,
+  } = useCollapsibleTableColumns(
+    legacyProductOrder,
+    premiumProductOrder,
+    productCollapseGroups,
+    { usePremiumOrder: collapseEnabled, collapseEnabled, scrollExpandedParents: ['mct'] },
+    productCols,
+    collapseEnabled ? getProductColumnWeightPx : undefined,
+  );
+  const resetCollapsibleColumnsRef = useRef(resetCollapsibleColumns);
+  resetCollapsibleColumnsRef.current = resetCollapsibleColumns;
+  const [transposed, setTransposed] = useState(false);
+  const [productOrder, setProductOrder] = useState<string[]>([]);
   const dragFromRef = useRef<string | null>(null);
   const hasScenarios = displayScenarioResults.length > 0;
+
+  const syncProductOrderFromSorted = useCallback(() => {
+    setProductOrder(sorted.map((p: any) => p.id));
+  }, [sorted]);
+
+  useEffect(() => {
+    syncProductOrderFromSorted();
+  }, [results.calculatedAt, isUtilOnly, syncProductOrderFromSorted]);
+
+  const orderedProducts = useMemo(() => {
+    const byId = new Map(sorted.map((p: any) => [p.id, p]));
+    const ids = productOrder.length > 0 ? productOrder : sorted.map((p: any) => p.id);
+    return ids.map(id => byId.get(id)).filter(Boolean) as any[];
+  }, [sorted, productOrder]);
+
+  const transposeMetricColumns = useMemo(
+    () => visibleColumnOrder.filter((k): k is Exclude<ProductTableColKey, 'name'> => k !== 'name'),
+    [visibleColumnOrder],
+  );
+
+  const defaultTransposeProductColWidthsPx = useMemo(
+    () => computeTransposeProductColWidthsPx(orderedProducts, transposeMetricColumns, isUtilOnly, displayScenarioResults),
+    [orderedProducts, transposeMetricColumns, isUtilOnly, displayScenarioResults],
+  );
+
+  const defaultTransposeMetricColWidthPx = useMemo(
+    () => computeTransposeMetricColWidthPx(transposeMetricColumns, isUtilOnly, displayScenarioResults),
+    [transposeMetricColumns, isUtilOnly, displayScenarioResults],
+  );
+
+  const defaultTransposeColPercents = useMemo(
+    () => computeTransposeColPercents(defaultTransposeMetricColWidthPx, defaultTransposeProductColWidthsPx),
+    [defaultTransposeMetricColWidthPx, defaultTransposeProductColWidthsPx],
+  );
+
+  const [transposeColPercents, setTransposeColPercents] = useState<number[]>([]);
+
+  useEffect(() => {
+    setTransposeColPercents(defaultTransposeColPercents);
+  }, [defaultTransposeColPercents]);
+
+  const startTransposeProductResize = useCallback((index: number, ev: React.MouseEvent) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    const colIndex = index + 1;
+    if (colIndex < 1 || colIndex >= transposeColPercents.length - 1) return;
+    const containerWidth = productCols.containerRef.current?.getBoundingClientRect().width ?? 0;
+    if (!containerWidth) return;
+
+    const startX = ev.clientX;
+    const startWidths = [...transposeColPercents];
+    const minWidthPercent = 4;
+
+    const onMouseMove = (moveEv: MouseEvent) => {
+      const deltaPercent = ((moveEv.clientX - startX) / containerWidth) * 100;
+      let left = startWidths[colIndex] + deltaPercent;
+      let right = startWidths[colIndex + 1] - deltaPercent;
+
+      if (left < minWidthPercent) {
+        right -= minWidthPercent - left;
+        left = minWidthPercent;
+      }
+      if (right < minWidthPercent) {
+        left -= minWidthPercent - right;
+        right = minWidthPercent;
+      }
+
+      setTransposeColPercents((prev) => prev.map((w, i) => {
+        if (i === colIndex) return left;
+        if (i === colIndex + 1) return right;
+        return w;
+      }));
+    };
+
+    const onMouseUp = () => {
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  }, [transposeColPercents, productCols.containerRef]);
+
+  const moveTransposeColPercents = useCallback((fromIndex: number, toIndex: number) => {
+    const fromCol = fromIndex + 1;
+    const toCol = toIndex + 1;
+    if (fromCol === toCol || fromCol < 1 || toCol < 1 || fromCol >= transposeColPercents.length || toCol >= transposeColPercents.length) return;
+    setTransposeColPercents((prev) => {
+      const next = [...prev];
+      const [moved] = next.splice(fromCol, 1);
+      next.splice(toCol, 0, moved);
+      return next;
+    });
+  }, [transposeColPercents.length]);
+
+  const moveMetricColumn = useCallback((fromKey: string, toKey: string) => {
+    moveColumn(fromKey, toKey, { skipResize: transposed });
+  }, [moveColumn, transposed]);
+
   const moveProductColumn = useCallback((fromKey: string, toKey: string) => {
-    const fromIndex = columnOrder.indexOf(fromKey as any);
-    const toIndex = columnOrder.indexOf(toKey as any);
+    moveMetricColumn(fromKey, toKey);
+  }, [moveMetricColumn]);
+
+  const moveTransposeProduct = useCallback((fromId: string, toId: string) => {
+    const fromIndex = productOrder.indexOf(fromId);
+    const toIndex = productOrder.indexOf(toId);
     if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) return;
-    setColumnOrder(prev => {
+    moveTransposeColPercents(fromIndex, toIndex);
+    setProductOrder(prev => {
       const next = [...prev];
       const [moved] = next.splice(fromIndex, 1);
       next.splice(toIndex, 0, moved);
-      return next as any;
+      return next;
     });
-    productCols.moveColumn(fromIndex, toIndex);
-  }, [columnOrder, productCols]);
+  }, [productOrder, moveTransposeColPercents]);
+
   const resetColumns = useCallback(() => {
-    setColumnOrder(isUtilOnly ? [...UTIL_ONLY_PRODUCT_COLUMNS] : ['name', 'goodMade', 'goodShipped', 'started', 'scrap', 'scrappedInAssembly', 'usedInAssembly', 'timeWaitingEquipment', 'timeWaitingLabor', 'timeSetup', 'timeRun', 'timeWaitingRestOfLot', 'outOfAreaTime', 'wip', 'mct']);
-    productCols.resetWidths();
-  }, [productCols, isUtilOnly]);
-  const minWidthByKey = useMemo<Record<string, number>>(() => ({
-    name: estimateColMinWidthPx('Product', productRows.map((r: any) => r.name), 120, 260),
-    goodMade: estimateColMinWidthPx('Good Made', productRows.map((r: any) => fmtFixed(r.goodMade, 2)), 95, 180),
-    goodShipped: estimateColMinWidthPx('Good Shipped', productRows.map((r: any) => fmtFixed(r.goodShipped, 2)), 100, 180),
-    started: estimateColMinWidthPx('Started', productRows.map((r: any) => fmtFixed(r.started, 2)), 90, 180),
-    scrap: estimateColMinWidthPx('Scrap', productRows.map((r: any) => fmtFixed(r.scrap, 2)), 90, 180),
-    scrappedInAssembly: estimateColMinWidthPx('Scrapped in Assembly', productRows.map((r: any) => fmtFixed(r.scrappedInAssembly, 2)), 105, 200),
-    usedInAssembly: estimateColMinWidthPx('Used in Assembly', productRows.map((r: any) => fmtFixed(r.usedInAssembly, 2)), 100, 190),
-    timeWaitingEquipment: estimateColMinWidthPx('Time Waiting in Equipment', productRows.map((r: any) => fmtFixed(r.timeWaitingEquipment, 2)), 110, 210),
-    timeWaitingLabor: estimateColMinWidthPx('Time Waiting in Labor', productRows.map((r: any) => fmtFixed(r.timeWaitingLabor, 2)), 105, 200),
-    timeSetup: estimateColMinWidthPx('Time Setup', productRows.map((r: any) => fmtFixed(r.timeSetup, 2)), 95, 180),
-    timeRun: estimateColMinWidthPx('Time Run', productRows.map((r: any) => fmtFixed(r.timeRun, 2)), 90, 180),
-    timeWaitingRestOfLot: estimateColMinWidthPx('Time Waiting for Rest of Lot', productRows.map((r: any) => fmtFixed(r.timeWaitingRestOfLot, 2)), 115, 220),
-    outOfAreaTime: estimateColMinWidthPx('Out of Area Time', productRows.map((r: any) => fmtFixed(r.outOfAreaTime, 2)), 105, 220),
-    wip: estimateColMinWidthPx('WIP', productRows.map((r: any) => fmtFixed(r.wip, 3)), 85, 170),
-    mct: estimateColMinWidthPx('MCT', productRows.map((r: any) => fmtFixed(r.mct, 3)), 85, 170),
-  }), [productRows]);
+    resetCollapsibleColumns();
+    syncProductOrderFromSorted();
+    setTransposeColPercents(defaultTransposeColPercents);
+  }, [resetCollapsibleColumns, syncProductOrderFromSorted, defaultTransposeColPercents]);
+
+  useEffect(() => {
+    resetCollapsibleColumnsRef.current();
+  }, [results.calculatedAt, isUtilOnly]);
+
+  const toggleTransposed = useCallback(() => {
+    setTransposed(prev => {
+      if (!prev) syncProductOrderFromSorted();
+      return !prev;
+    });
+  }, [syncProductOrderFromSorted]);
   return (
-    <Card>
-      <CardHeader>
+    <Card className={premiumCardClass(isPremium)}>
+      <CardHeader className="pb-3">
         <div className="flex items-center justify-between gap-2">
-          <CardTitle className="text-base">Product Results Table</CardTitle>
-          <Button variant="outline" size="sm" className="text-xs h-7 gap-1" onClick={resetColumns}>
-            <RotateCcw className="h-3 w-3" />
-            Reset Columns
-          </Button>
+          <div className="min-w-0">
+            <CardTitle className={`${isPremium ? 'font-semibold' : ''}`}>Product Results Table</CardTitle>
+            {collapseEnabled && <PremiumCollapseTableHint parents={['Started', 'MCT']} />}
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <Button
+              variant={transposed ? 'secondary' : 'outline'}
+              size="sm"
+              className="text-xs h-7 gap-1 px-2.5"
+              onClick={toggleTransposed}
+            >
+              <ArrowLeftRight className="h-3 w-3" />
+              {transposed ? 'Normal View' : 'Transpose'}
+            </Button>
+            <Button variant="outline" size="sm" className="text-xs h-7 gap-1 px-2.5" onClick={resetColumns}>
+              <RotateCcw className="h-3 w-3" />
+              Reset Columns
+            </Button>
+          </div>
         </div>
       </CardHeader>
-      <CardContent ref={productCols.containerRef} className="p-0 overflow-x-auto">
-        <Table className="table-auto">
-          <colgroup>
-            {columnOrder.map((colKey, i) => (
-              <col key={colKey} style={{ width: `${productCols.widths[i]}%`, minWidth: `${minWidthByKey[colKey] ?? 95}px` }} />
-            ))}
-          </colgroup>
-          <TableHeader><TableRow>
-            {columnOrder.map((colKey, index) => (
-              <SortHead
-                key={colKey}
-                label={productColumnLabel(colKey, isUtilOnly)}
-                sortKey={colKey}
-                current={sort}
-                onSort={handleSort}
-                align={colKey === 'name' ? 'left' : 'right'}
-                onResizeStart={index < columnOrder.length - 1 ? (ev => productCols.startResize(index, ev)) : undefined}
-                draggable
-                onDragStart={() => { dragFromRef.current = colKey; }}
-                onDragOver={ev => ev.preventDefault()}
-                onDrop={() => {
-                  if (dragFromRef.current) moveProductColumn(dragFromRef.current, colKey);
-                  dragFromRef.current = null;
-                }}
-                onDragEnd={() => { dragFromRef.current = null; }}
-              />
-            ))}
-            {hasScenarios && displayScenarioResults.map(sr => (
-              <React.Fragment key={sr.id}>
-                <TableHead className="font-mono text-xs text-right whitespace-nowrap">{sr.scenario.name} WIP</TableHead>
-                <TableHead className="font-mono text-xs text-right whitespace-nowrap">{sr.scenario.name} MCT</TableHead>
-              </React.Fragment>
-            ))}
-          </TableRow></TableHeader>
-          <TableBody>
-            {sorted.map((row: any) => (
-              <TableRow key={row.id}>
-                {columnOrder.map(colKey => {
-                  if (colKey === 'name') return <TableCell key={colKey} className="px-2 font-mono font-medium text-left whitespace-nowrap">{row.name}</TableCell>;
-                  if (colKey === 'goodMade') return <TableCell key={colKey} className="px-2 font-mono text-right whitespace-nowrap tabular-nums">{fmtFixed(row.goodMade, 2)}</TableCell>;
-                  if (colKey === 'goodShipped') return <TableCell key={colKey} className="px-2 font-mono text-right whitespace-nowrap tabular-nums">{fmtFixed(row.goodShipped, 2)}</TableCell>;
-                  if (colKey === 'started') return <TableCell key={colKey} className="px-2 font-mono text-right whitespace-nowrap tabular-nums">{fmtFixed(row.started, 2)}</TableCell>;
-                  if (colKey === 'scrap') return <TableCell key={colKey} className="px-2 font-mono text-right whitespace-nowrap tabular-nums">{fmtFixed(row.scrap, 2)}</TableCell>;
-                  if (colKey === 'scrappedInAssembly') return <TableCell key={colKey} className="px-2 font-mono text-right whitespace-nowrap tabular-nums">{fmtFixed(row.scrappedInAssembly, 2)}</TableCell>;
-                  if (colKey === 'usedInAssembly') return <TableCell key={colKey} className="px-2 font-mono text-right whitespace-nowrap tabular-nums">{fmtFixed(row.usedInAssembly, 2)}</TableCell>;
-                  if (colKey === 'timeWaitingEquipment') return <TableCell key={colKey} className="px-2 font-mono text-right whitespace-nowrap tabular-nums">{fmtFixed(row.timeWaitingEquipment, 2)}</TableCell>;
-                  if (colKey === 'timeWaitingLabor') return <TableCell key={colKey} className="px-2 font-mono text-right whitespace-nowrap tabular-nums">{fmtFixed(row.timeWaitingLabor, 2)}</TableCell>;
-                  if (colKey === 'timeSetup') return <TableCell key={colKey} className="px-2 font-mono text-right whitespace-nowrap tabular-nums">{fmtFixed(row.timeSetup, 2)}</TableCell>;
-                  if (colKey === 'timeRun') return <TableCell key={colKey} className="px-2 font-mono text-right whitespace-nowrap tabular-nums">{fmtFixed(row.timeRun, 2)}</TableCell>;
-                  if (colKey === 'timeWaitingRestOfLot') return <TableCell key={colKey} className="px-2 font-mono text-right whitespace-nowrap tabular-nums">{fmtFixed(row.timeWaitingRestOfLot, 2)}</TableCell>;
-                  if (colKey === 'outOfAreaTime') return <TableCell key={colKey} className="px-2 font-mono text-right whitespace-nowrap tabular-nums">{fmtFixed(row.outOfAreaTime, 2)}</TableCell>;
-                  if (colKey === 'wip') return <TableCell key={colKey} className="px-2 font-mono text-right whitespace-nowrap tabular-nums">{fmtFixed(isUtilOnly ? 0 : row.wip, 3)}</TableCell>;
-                  return <TableCell key={colKey} className="px-2 font-mono text-right font-medium whitespace-nowrap tabular-nums">{fmtFixed(isUtilOnly ? 0 : row.mct, 3)}</TableCell>;
-                })}
-                {hasScenarios && displayScenarioResults.map(sr => {
-                  const sp = sr.results.products.find((p: any) => p.id === row.id);
-                  return (
-                    <React.Fragment key={sr.id}>
-                      <TableCell className="font-mono text-right text-xs whitespace-nowrap tabular-nums">{sp ? fmtFixed(isUtilOnly ? 0 : sp.wip, 3) : '—'}</TableCell>
-                      <TableCell className={`font-mono text-right text-xs whitespace-nowrap tabular-nums ${!isUtilOnly && sp && sp.mct < row.mct ? 'text-success' : !isUtilOnly && sp && sp.mct > row.mct ? 'text-destructive' : ''}`}>
-                        {sp ? fmtFixed(isUtilOnly ? 0 : sp.mct, 3) : '—'}
+      <CardContent ref={productCols.containerRef} className={`p-0 ${premiumTableWrapperClass(isPremium)}`}>
+        <div className={`${OUTPUT_TABLE_H_SCROLL} ${premiumTableWrapperClass(isPremium)}`}>
+        {transposed ? (
+          <TransposedProductResults
+            products={orderedProducts}
+            columnOrder={visibleColumnOrder}
+            displayScenarioResults={displayScenarioResults}
+            isUtilOnly={isUtilOnly}
+            colPercents={transposeColPercents.length > 0 ? transposeColPercents : defaultTransposeColPercents}
+            onResizeProductColumn={startTransposeProductResize}
+            onMoveMetric={moveMetricColumn}
+            onMoveProduct={moveTransposeProduct}
+            isPremium={isPremium}
+            collapseEnabled={collapseEnabled}
+            isCollapseParent={isCollapseParent}
+            isGroupExpanded={isGroupExpanded}
+            onCollapseToggle={toggleGroup}
+          />
+        ) : (
+          <Table
+            fitContent={(collapseEnabled && productScrollExpanded) || (!collapseEnabled && !isPremium)}
+            outerScrollHost
+            className={`${collapseEnabled ? premiumCollapseTableClass(isPremium, collapseEnabled, productScrollExpanded) : 'table-auto w-max max-w-full'} ${premiumTableWrapperClass(isPremium)}`}
+          >
+            <colgroup>
+              {visibleColumnOrder.map((colKey, i) => (
+                <col
+                  key={colKey}
+                  style={premiumCollapseColStyle(productFillWidth, productCols.widths[i], minWidthByKey[colKey] ?? 52)}
+                />
+              ))}
+            </colgroup>
+            <TableHeader><TableRow className={premiumRowClass(isPremium)}>
+              {visibleColumnOrder.map((colKey, index) => (
+                <SortHead
+                  key={colKey}
+                  label={productColumnLabel(colKey, isUtilOnly)}
+                  sortKey={colKey}
+                  current={sort}
+                  onSort={handleSort}
+                  align={colKey === 'name' ? 'left' : 'right'}
+                  compact={colKey !== 'name' && !isPremium}
+                  stickyHeader={colKey === 'name'}
+                  stickyTopLeft={colKey === 'name'}
+                  isPremium={isPremium}
+                  colIndex={index}
+                  premiumTableKind="product"
+                  columnKey={colKey}
+                  className={`${PRODUCT_TABLE_COLUMN_HEAD} ${colKey !== 'name' && !isPremium ? PRODUCT_TABLE_NUMERIC_HEAD : ''} ${colKey === 'name' && isPremium ? 'min-w-[6.5rem]' : ''}`}
+                  onResizeStart={productFillWidth && index < visibleColumnOrder.length - 1 ? (ev => productCols.startResize(index, ev)) : undefined}
+                  draggable
+                  onDragStart={() => { dragFromRef.current = colKey; }}
+                  onDragOver={ev => ev.preventDefault()}
+                  onDrop={() => {
+                    if (dragFromRef.current) moveProductColumn(dragFromRef.current, colKey);
+                    dragFromRef.current = null;
+                  }}
+                  onDragEnd={() => { dragFromRef.current = null; }}
+                  collapseParent={isCollapseParent(colKey)}
+                  collapseExpanded={isGroupExpanded(colKey)}
+                  onCollapseToggle={() => toggleGroup(colKey)}
+                />
+              ))}
+              {hasScenarios && displayScenarioResults.map((sr, srIndex) => {
+                return (
+                  <React.Fragment key={sr.id}>
+                    <TableHead
+                      className={`${isPremium ? '' : 'font-mono text-xs'} text-right whitespace-nowrap ${PRODUCT_TABLE_COLUMN_HEAD} ${!isPremium ? PRODUCT_TABLE_NUMERIC_HEAD : ''} ${isPremium ? 'sticky top-0 z-20' : PRODUCT_TABLE_STICKY_TOP} ${premiumHeadClass(isPremium, 'right')}`}
+                      style={premiumColStyleForKey('product', 'wip', isPremium)}
+                    >
+                      {sr.scenario.name} WIP
+                    </TableHead>
+                    <TableHead
+                      className={`${isPremium ? '' : 'font-mono text-xs'} text-right whitespace-nowrap ${PRODUCT_TABLE_COLUMN_HEAD} ${!isPremium ? PRODUCT_TABLE_NUMERIC_HEAD : ''} ${isPremium ? 'sticky top-0 z-20' : PRODUCT_TABLE_STICKY_TOP} ${premiumHeadClass(isPremium, 'right')}`}
+                      style={premiumColStyleForKey('product', 'mct', isPremium)}
+                    >
+                      {sr.scenario.name} MCT
+                    </TableHead>
+                  </React.Fragment>
+                );
+              })}
+            </TableRow></TableHeader>
+            <TableBody>
+              {sorted.map((row: any) => (
+                <TableRow key={row.id} className={premiumRowClass(isPremium)}>
+                  {visibleColumnOrder.map((colKey, colIndex) => {
+                    if (colKey === 'name') {
+                      return (
+                        <TableCell
+                          key={colKey}
+                          className={premiumNameCellClass(isPremium, true)}
+                          style={premiumColStyleForKey('product', colKey, isPremium)}
+                        >
+                          <PremiumCellText>{formatPremiumDisplayValue(row.name, isPremium)}</PremiumCellText>
+                        </TableCell>
+                      );
+                    }
+                    return (
+                      <TableCell
+                        key={colKey}
+                        className={`${premiumNumericCellClass(isPremium, colKey === 'mct' ? 'font-medium' : '')} ${!isPremium ? PRODUCT_TABLE_NUMERIC_CELL : ''}`}
+                        style={premiumColStyleForKey('product', colKey, isPremium)}
+                      >
+                        {formatProductMetricValue(row, colKey, isUtilOnly, isPremium)}
                       </TableCell>
-                    </React.Fragment>
-                  );
-                })}
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+                    );
+                  })}
+                  {hasScenarios && displayScenarioResults.map((sr, srIndex) => {
+                    const sp = sr.results.products.find((p: any) => p.id === row.id);
+                    return (
+                      <React.Fragment key={sr.id}>
+                        <TableCell
+                          className={`${premiumNumericCellClass(isPremium)} ${!isPremium ? PRODUCT_TABLE_NUMERIC_CELL : ''}`}
+                          style={premiumColStyleForKey('product', 'wip', isPremium)}
+                        >
+                          {sp ? (isPremium ? premiumFmtNum(isUtilOnly ? 0 : sp.wip, 2, true) : fmtFixed(isUtilOnly ? 0 : sp.wip, 3)) : '—'}
+                        </TableCell>
+                        <TableCell
+                          className={`${premiumNumericCellClass(isPremium)} ${!isPremium ? PRODUCT_TABLE_NUMERIC_CELL : ''} ${!isPremium && !isUtilOnly && sp && sp.mct < row.mct ? 'text-success' : !isPremium && !isUtilOnly && sp && sp.mct > row.mct ? 'text-destructive' : ''}`}
+                          style={premiumColStyleForKey('product', 'mct', isPremium)}
+                        >
+                          {sp ? (isPremium ? premiumFmtNum(isUtilOnly ? 0 : sp.mct, 2, true) : fmtFixed(isUtilOnly ? 0 : sp.mct, 3)) : '—'}
+                        </TableCell>
+                      </React.Fragment>
+                    );
+                  })}
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+        </div>
       </CardContent>
     </Card>
   );
@@ -2281,8 +3068,9 @@ function ProductResultsTable({ results, model, displayScenarioResults, isUtilOnl
 
 /* ─── Product Oper Details (for Products tab sub-tab) ─── */
 function ProductOperDetails({ model, results }: { model: Model; results: CalcResults }) {
-  const [selectedId, setSelectedId] = useState('');
+  const { selectedId, setSelectedId } = useModelScopedSelect(model.id);
   const [showTimeUnits, setShowTimeUnits] = useState(false);
+  const isPremium = isPremiumOutputView(model);
 
   const g = model.general;
   const conv1 = Math.max(g.conv1, 0.001);
@@ -2360,32 +3148,11 @@ function ProductOperDetails({ model, results }: { model: Model; results: CalcRes
 
   const prodOps = useMemo(() => allMetrics.filter((m: any) => m.productId === selectedId), [allMetrics, selectedId]);
   const prodSort = useSortableTable(prodOps, 'opNumber', 'asc');
-  const productOperCols = useResizableColumns([6, 8, 8, 8, 5, 5, 5, 5, 5, 6, 6, 5, 5, 6, 5, 6, 5, 5, 3, 4], 5);
-  const [columnOrder, setColumnOrder] = useState<Array<'opNumber' | 'opName' | 'equipName' | 'laborName' | 'pctAssigned' | 'eqSetupUtil' | 'eqRunUtil' | 'labSetupUtil' | 'labRunUtil' | 'timeWaitingEquipment' | 'timeWaitingLabor' | 'timeInSetup' | 'timeInRun' | 'timeWaitingRestOfLot' | 'visitsPer100' | 'visitsPerGoodPiece' | 'noOfSetups' | 'avgLotSize' | 'wip' | 'mctAtOp'>>(
-    ['opNumber', 'opName', 'equipName', 'laborName', 'pctAssigned', 'eqSetupUtil', 'eqRunUtil', 'labSetupUtil', 'labRunUtil', 'timeWaitingEquipment', 'timeWaitingLabor', 'timeInSetup', 'timeInRun', 'timeWaitingRestOfLot', 'visitsPer100', 'visitsPerGoodPiece', 'noOfSetups', 'avgLotSize', 'wip', 'mctAtOp'],
-  );
-  const dragFromRef = useRef<string | null>(null);
-  const moveColumn = useCallback((fromKey: string, toKey: string) => {
-    const fromIndex = columnOrder.indexOf(fromKey as any);
-    const toIndex = columnOrder.indexOf(toKey as any);
-    if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) return;
-    setColumnOrder(prev => {
-      const next = [...prev];
-      const [moved] = next.splice(fromIndex, 1);
-      next.splice(toIndex, 0, moved);
-      return next as any;
-    });
-    productOperCols.moveColumn(fromIndex, toIndex);
-  }, [columnOrder, productOperCols]);
-  const resetColumns = useCallback(() => {
-    setColumnOrder(['opNumber', 'opName', 'equipName', 'laborName', 'pctAssigned', 'eqSetupUtil', 'eqRunUtil', 'labSetupUtil', 'labRunUtil', 'timeWaitingEquipment', 'timeWaitingLabor', 'timeInSetup', 'timeInRun', 'timeWaitingRestOfLot', 'visitsPer100', 'visitsPerGoodPiece', 'noOfSetups', 'avgLotSize', 'wip', 'mctAtOp']);
-    productOperCols.resetWidths();
-  }, [productOperCols]);
   const minWidthByKey = useMemo<Record<string, number>>(() => ({
     opNumber: estimateColMinWidthPx('OP No', prodOps.map((m: any) => fmtFixed(m.opNumber, 2))),
-    opName: estimateColMinWidthPx('Operation', prodOps.map((m: any) => m.opName)),
-    equipName: estimateColMinWidthPx('Equipment', prodOps.map((m: any) => m.equipName)),
-    laborName: estimateColMinWidthPx('Labor', prodOps.map((m: any) => m.laborName)),
+    opName: estimateColMinWidthPx('Operation', prodOps.map((m: any) => formatPremiumDisplayValue(m.opName, isPremium)), 116, 320),
+    equipName: estimateColMinWidthPx('Equipment', prodOps.map((m: any) => formatPremiumDisplayValue(m.equipName, isPremium)), 116, 320),
+    laborName: estimateColMinWidthPx('Labor', prodOps.map((m: any) => formatPremiumDisplayValue(m.laborName, isPremium)), 116, 300),
     pctAssigned: estimateColMinWidthPx('% Assign', prodOps.map((m: any) => fmtFixed(m.pctAssigned, 2))),
     eqSetupUtil: estimateColMinWidthPx(`Eq Setup${unitSuffix}`, prodOps.map((m: any) => fmtVal(m.eqSetupUtil))),
     eqRunUtil: estimateColMinWidthPx(`Eq Run${unitSuffix}`, prodOps.map((m: any) => fmtVal(m.eqRunUtil))),
@@ -2402,27 +3169,54 @@ function ProductOperDetails({ model, results }: { model: Model; results: CalcRes
     avgLotSize: estimateColMinWidthPx('Avg lot size', prodOps.map((m: any) => fmtFixed(m.avgLotSize, 2))),
     wip: estimateColMinWidthPx('WIP', prodOps.map((m: any) => fmtFixed(m.wip, 2))),
     mctAtOp: estimateColMinWidthPx('MCT at Op', prodOps.map((m: any) => fmtFixed(m.mctAtOp, 2))),
-  }), [prodOps, unitSuffix, fmtVal]);
+  }), [prodOps, unitSuffix, fmtVal, isPremium]);
+  const getOperColumnWeightPx = useCallback(
+    (col: string) => minWidthByKey[col] ?? 96,
+    [minWidthByKey],
+  );
+  const productOperCols = useResizableColumns(
+    isPremium ? [5, 9, 9, 9, 5, 5, 5, 5, 6, 6, 5, 5, 4, 5, 3] : [6, 8, 8, 8, 5, 5, 5, 5, 5, 6, 6, 5, 5, 6, 5, 6, 5, 5, 3, 4],
+    5,
+  );
+  const {
+    visibleColumnOrder,
+    scrollLayoutActive: productOperScrollLayout,
+    toggleGroup,
+    isCollapseParent,
+    isGroupExpanded,
+    moveColumn,
+    resetColumns,
+  } = useCollapsibleTableColumns(
+    PRODUCT_OPER_LEGACY_COLUMN_ORDER,
+    PRODUCT_OPER_PREMIUM_COLUMN_ORDER,
+    [OPER_MCT_GROUP],
+    { usePremiumOrder: isPremium, collapseEnabled: isPremium, alwaysScrollLayout: true },
+    productOperCols,
+    isPremium ? getOperColumnWeightPx : undefined,
+  );
+  const dragFromRef = useRef<string | null>(null);
 
   const prod = model.products.find((p: any) => p.id === selectedId);
 
+  const fmt = (v: unknown, digits: number) => isPremium ? premiumFmtNum(v, digits, true) : fmtFixed(v, digits);
   return (
-    <Card>
-      <CardHeader>
+    <Card className={premiumCardClass(isPremium)}>
+      <CardHeader className="space-y-3">
         <div className="flex items-center justify-between gap-2">
-          <CardTitle className="text-base">Oper Details — By Product</CardTitle>
-          <Button variant="outline" size="sm" className="text-xs h-7 gap-1" onClick={resetColumns}>
+          <div className="min-w-0">
+            <CardTitle className={`${isPremium ? 'font-semibold' : ''}`}>Oper Details — By Product</CardTitle>
+            {isPremium && <PremiumCollapseTableHint parents={['MCT at Op']} />}
+          </div>
+          <Button variant="outline" size="sm" className="text-xs h-7 gap-1 shrink-0" onClick={resetColumns}>
             <RotateCcw className="h-3 w-3" />
             Reset Columns
           </Button>
         </div>
-      </CardHeader>
-      <CardContent ref={productOperCols.containerRef}>
-        <div className="flex items-center gap-3 mb-4">
-          <Select value={selectedId || undefined} onValueChange={setSelectedId}>
+        <div className="flex items-center gap-3">
+          <Select value={validSelectValue(selectedId, operDetailsSelectOptions(model.products))} onValueChange={setSelectedId}>
             <SelectTrigger className="w-56 h-8 text-xs"><SelectValue placeholder="Select product…" /></SelectTrigger>
-            <SelectContent>
-              {model.products.map((p: any) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+            <SelectContent position="item-aligned" className={OPER_DETAILS_SELECT_CONTENT}>
+              {operDetailsSelectOptions(model.products).map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
             </SelectContent>
           </Select>
           <Button variant={showTimeUnits ? 'secondary' : 'outline'} size="sm" className="text-xs gap-1 h-7" onClick={() => setShowTimeUnits(!showTimeUnits)}>
@@ -2430,26 +3224,38 @@ function ProductOperDetails({ model, results }: { model: Model; results: CalcRes
             {showTimeUnits ? `Time (${g.ops_time_unit})` : '% Time'}
           </Button>
         </div>
+      </CardHeader>
+      <CardContent ref={productOperCols.containerRef} className={premiumTableWrapperClass(isPremium)}>
         {!prod ? (
           <p className="text-sm text-muted-foreground text-center py-8">Select a product to view operation details.</p>
         ) : (
-          <div className="overflow-x-auto">
-            <Table className="table-auto">
+          <div className={`${OUTPUT_TABLE_H_SCROLL} ${premiumTableWrapperClass(isPremium)}`}>
+            <Table
+              fitContent={isPremium}
+              outerScrollHost={isPremium}
+              className={`${premiumCollapseTableClass(isPremium, isPremium, productOperScrollLayout)} ${premiumTableWrapperClass(isPremium)}`}
+            >
               <colgroup>
-                {columnOrder.map((colKey, i) => (
-                  <col key={colKey} style={{ width: `${productOperCols.widths[i]}%`, minWidth: `${minWidthByKey[colKey] ?? 90}px` }} />
+                {visibleColumnOrder.map((colKey, i) => (
+                  <col key={colKey} style={premiumCollapseColStyle(false, undefined, minWidthByKey[colKey] ?? 96)} />
                 ))}
               </colgroup>
-              <TableHeader><TableRow>
-                {columnOrder.map((colKey, index) => (
+              <TableHeader><TableRow className={premiumRowClass(isPremium)}>
+                {visibleColumnOrder.map((colKey, index) => (
                   <SortHead
                     key={colKey}
                     label={colKey === 'opNumber' ? 'OP No' : colKey === 'opName' ? 'Operation' : colKey === 'equipName' ? 'Equipment' : colKey === 'laborName' ? 'Labor' : colKey === 'pctAssigned' ? '% Assign' : colKey === 'eqSetupUtil' ? `Eq Setup${unitSuffix}` : colKey === 'eqRunUtil' ? `Eq Run${unitSuffix}` : colKey === 'labSetupUtil' ? `Lab Setup${unitSuffix}` : colKey === 'labRunUtil' ? `Lab Run${unitSuffix}` : colKey === 'timeWaitingEquipment' ? 'Time Waiting for Equip' : colKey === 'timeWaitingLabor' ? 'Time Waiting for Labor' : colKey === 'timeInSetup' ? 'Time in Setup' : colKey === 'timeInRun' ? 'Time in Run' : colKey === 'timeWaitingRestOfLot' ? 'Time Waiting for Rest of Lot' : colKey === 'visitsPer100' ? 'Visits per 100' : colKey === 'visitsPerGoodPiece' ? 'Visits for 1 Good Piece' : colKey === 'noOfSetups' ? 'No. of Setups' : colKey === 'avgLotSize' ? 'Avg Lot Size' : colKey === 'wip' ? 'WIP' : 'MCT at Op'}
                     sortKey={colKey}
                     current={prodSort.sort}
                     onSort={prodSort.handleSort}
-                    align={colKey === 'opName' || colKey === 'equipName' || colKey === 'laborName' ? 'left' : 'right'}
-                    onResizeStart={index < columnOrder.length - 1 ? (ev => productOperCols.startResize(index, ev)) : undefined}
+                    align={OPER_DETAILS_LABEL_COLS.has(colKey) ? 'left' : 'right'}
+                    stickyHeader={isPremium && isOperDetailsStickyCol('productOper', colKey)}
+                    stickyTopLeft={isPremium && isOperDetailsStickyCol('productOper', colKey)}
+                    isPremium={isPremium}
+                    colIndex={index}
+                    premiumTableKind="productOper"
+                    columnKey={colKey}
+                    onResizeStart={undefined}
                     draggable
                     onDragStart={() => { dragFromRef.current = colKey; }}
                     onDragOver={ev => ev.preventDefault()}
@@ -2458,33 +3264,44 @@ function ProductOperDetails({ model, results }: { model: Model; results: CalcRes
                       dragFromRef.current = null;
                     }}
                     onDragEnd={() => { dragFromRef.current = null; }}
+                    collapseParent={isCollapseParent(colKey)}
+                    collapseExpanded={isGroupExpanded(colKey)}
+                    onCollapseToggle={() => toggleGroup(colKey)}
                   />
                 ))}
               </TableRow></TableHeader>
               <TableBody>
                 {prodSort.sorted.map((m: any) => (
-                  <TableRow key={m.opId}>
-                    {columnOrder.map(colKey => {
-                      if (colKey === 'opNumber') return <TableCell key={colKey} className="font-mono text-xs text-right whitespace-nowrap tabular-nums">{fmtFixed(m.opNumber, 2)}</TableCell>;
-                      if (colKey === 'opName') return <TableCell key={colKey} className="font-mono text-xs font-medium text-left whitespace-nowrap">{m.opName}</TableCell>;
-                      if (colKey === 'equipName') return <TableCell key={colKey} className="font-mono text-xs text-left whitespace-nowrap">{m.equipName}</TableCell>;
-                      if (colKey === 'laborName') return <TableCell key={colKey} className="font-mono text-xs text-left whitespace-nowrap">{m.laborName}</TableCell>;
-                      if (colKey === 'pctAssigned') return <TableCell key={colKey} className="font-mono text-xs text-right whitespace-nowrap tabular-nums">{fmtFixed(m.pctAssigned, 2)}</TableCell>;
-                      if (colKey === 'eqSetupUtil') return <TableCell key={colKey} className="font-mono text-xs text-right whitespace-nowrap tabular-nums">{fmtVal(m.eqSetupUtil)}</TableCell>;
-                      if (colKey === 'eqRunUtil') return <TableCell key={colKey} className="font-mono text-xs text-right whitespace-nowrap tabular-nums">{fmtVal(m.eqRunUtil)}</TableCell>;
-                      if (colKey === 'labSetupUtil') return <TableCell key={colKey} className="font-mono text-xs text-right whitespace-nowrap tabular-nums">{fmtVal(m.labSetupUtil)}</TableCell>;
-                      if (colKey === 'labRunUtil') return <TableCell key={colKey} className="font-mono text-xs text-right whitespace-nowrap tabular-nums">{fmtVal(m.labRunUtil)}</TableCell>;
-                      if (colKey === 'timeWaitingEquipment') return <TableCell key={colKey} className="font-mono text-xs text-right whitespace-nowrap tabular-nums">{fmtFixed(m.timeWaitingEquipment, 2)}</TableCell>;
-                      if (colKey === 'timeWaitingLabor') return <TableCell key={colKey} className="font-mono text-xs text-right whitespace-nowrap tabular-nums">{fmtFixed(m.timeWaitingLabor, 2)}</TableCell>;
-                      if (colKey === 'timeInSetup') return <TableCell key={colKey} className="font-mono text-xs text-right whitespace-nowrap tabular-nums">{fmtFixed(m.timeInSetup, 2)}</TableCell>;
-                      if (colKey === 'timeInRun') return <TableCell key={colKey} className="font-mono text-xs text-right whitespace-nowrap tabular-nums">{fmtFixed(m.timeInRun, 2)}</TableCell>;
-                      if (colKey === 'timeWaitingRestOfLot') return <TableCell key={colKey} className="font-mono text-xs text-right whitespace-nowrap tabular-nums">{fmtFixed(m.timeWaitingRestOfLot, 2)}</TableCell>;
-                      if (colKey === 'visitsPer100') return <TableCell key={colKey} className="font-mono text-xs text-right whitespace-nowrap tabular-nums">{fmtFixed(m.visitsPer100, 2)}</TableCell>;
-                      if (colKey === 'visitsPerGoodPiece') return <TableCell key={colKey} className="font-mono text-xs text-right whitespace-nowrap tabular-nums">{fmtFixed(m.visitsPerGoodPiece, 2)}</TableCell>;
-                      if (colKey === 'noOfSetups') return <TableCell key={colKey} className="font-mono text-xs text-right whitespace-nowrap tabular-nums">{fmtFixed(m.noOfSetups, 2)}</TableCell>;
-                      if (colKey === 'avgLotSize') return <TableCell key={colKey} className="font-mono text-xs text-right whitespace-nowrap tabular-nums">{fmtFixed(m.avgLotSize, 2)}</TableCell>;
-                      if (colKey === 'wip') return <TableCell key={colKey} className="font-mono text-xs text-right whitespace-nowrap tabular-nums">{fmtFixed(m.wip, 2)}</TableCell>;
-                      return <TableCell key={colKey} className="font-mono text-xs text-right whitespace-nowrap tabular-nums">{fmtFixed(m.mctAtOp, 2)}</TableCell>;
+                  <TableRow key={m.opId} className={premiumRowClass(isPremium)}>
+                    {visibleColumnOrder.map((colKey, colIndex) => {
+                      const isLabel = OPER_DETAILS_LABEL_COLS.has(colKey);
+                      const cellClass = operDetailsCellClass(isPremium, isLabel, colKey, 'productOper');
+                      const rawValue =
+                        colKey === 'opNumber' ? fmt(m.opNumber, 2) :
+                        colKey === 'opName' ? formatPremiumDisplayValue(m.opName, isPremium) :
+                        colKey === 'equipName' ? formatPremiumDisplayValue(m.equipName, isPremium) :
+                        colKey === 'laborName' ? formatPremiumDisplayValue(m.laborName, isPremium) :
+                        colKey === 'pctAssigned' ? fmt(m.pctAssigned, 2) :
+                        colKey === 'eqSetupUtil' ? fmtVal(m.eqSetupUtil) :
+                        colKey === 'eqRunUtil' ? fmtVal(m.eqRunUtil) :
+                        colKey === 'labSetupUtil' ? fmtVal(m.labSetupUtil) :
+                        colKey === 'labRunUtil' ? fmtVal(m.labRunUtil) :
+                        colKey === 'timeWaitingEquipment' ? fmt(m.timeWaitingEquipment, 2) :
+                        colKey === 'timeWaitingLabor' ? fmt(m.timeWaitingLabor, 2) :
+                        colKey === 'timeInSetup' ? fmt(m.timeInSetup, 2) :
+                        colKey === 'timeInRun' ? fmt(m.timeInRun, 2) :
+                        colKey === 'timeWaitingRestOfLot' ? fmt(m.timeWaitingRestOfLot, 2) :
+                        colKey === 'visitsPer100' ? fmt(m.visitsPer100, 2) :
+                        colKey === 'visitsPerGoodPiece' ? fmt(m.visitsPerGoodPiece, 2) :
+                        colKey === 'noOfSetups' ? fmt(m.noOfSetups, 2) :
+                        colKey === 'avgLotSize' ? fmt(m.avgLotSize, 2) :
+                        colKey === 'wip' ? fmt(m.wip, 2) :
+                        fmt(m.mctAtOp, 2);
+                      return (
+                        <TableCell key={colKey} className={cellClass} style={premiumColStyleForKey('productOper', colKey, isPremium)}>
+                          {isLabel ? <PremiumCellText>{rawValue}</PremiumCellText> : rawValue}
+                        </TableCell>
+                      );
                     })}
                   </TableRow>
                 ))}
@@ -2526,9 +3343,13 @@ function NormalSummary({ results, model, scenarioResults, isUtilOnly = false }: 
   scenarioResults: { id: string; scenario: any; results: CalcResults }[];
   isUtilOnly?: boolean;
 }) {
+  const isPremium = isPremiumOutputView(model);
   const hasScenarios = scenarioResults.length > 0;
-  const showWip = (wip: number) => fmtFixed(isUtilOnly ? 0 : wip, 2);
-  const showMct = (mct: number) => fmtFixed(isUtilOnly ? 0 : mct, 2);
+  const fmt = (v: unknown, digits: number) => isPremium ? premiumFmtNum(v, digits, true) : fmtFixed(v, digits);
+  const showWip = (wip: number) => fmt(isUtilOnly ? 0 : wip, 2);
+  const showMct = (mct: number) => fmt(isUtilOnly ? 0 : mct, 2);
+  const baseCols = ['Product', PRODUCT_METRIC_LABELS.goodMade, PRODUCT_METRIC_LABELS.goodShipped, PRODUCT_METRIC_LABELS.started, 'Scrap', 'WIP', `MCT (${model.general.mct_time_unit})`];
+  const summaryColKeys = ['name', 'goodMade', 'goodShipped', 'started', 'scrap', 'wip', 'mct'] as const;
 
   // Group products by dept_code for subtotals
   const groups = useMemo(() => {
@@ -2544,23 +3365,25 @@ function NormalSummary({ results, model, scenarioResults, isUtilOnly = false }: 
   const hasGroups = [...groups.keys()].some(k => k !== '');
 
   const renderProductRow = (row: ProductResult) => (
-    <TableRow key={row.id}>
-      <TableCell className="font-mono font-medium">{row.name}</TableCell>
-      <TableCell className="font-mono text-right">{fmtFixed(row.goodMade, 2)}</TableCell>
-      <TableCell className="font-mono text-right">{fmtFixed(row.goodShipped, 2)}</TableCell>
-      <TableCell className="font-mono text-right">{fmtFixed(row.started, 2)}</TableCell>
-      <TableCell className="font-mono text-right">{fmtFixed(row.scrap, 2)}</TableCell>
-      <TableCell className="font-mono text-right">{showWip(row.wip)}</TableCell>
-      <TableCell className="font-mono text-right font-medium">{showMct(row.mct)}</TableCell>
-      {hasScenarios && scenarioResults.map(sr => {
+    <TableRow key={row.id} className={premiumRowClass(isPremium)}>
+      <TableCell className={premiumNameCellClass(isPremium, true)} style={premiumColStyleForKey('product', 'name', isPremium)}>
+        <PremiumCellText>{formatPremiumDisplayValue(row.name, isPremium)}</PremiumCellText>
+      </TableCell>
+      <TableCell className={premiumNumericCellClass(isPremium)} style={premiumColStyleForKey('product', 'goodMade', isPremium)}>{fmt(row.goodMade, 2)}</TableCell>
+      <TableCell className={premiumNumericCellClass(isPremium)} style={premiumColStyleForKey('product', 'goodShipped', isPremium)}>{fmt(row.goodShipped, 2)}</TableCell>
+      <TableCell className={premiumNumericCellClass(isPremium)} style={premiumColStyleForKey('product', 'started', isPremium)}>{fmt(row.started, 2)}</TableCell>
+      <TableCell className={premiumNumericCellClass(isPremium)} style={premiumColStyleForKey('product', 'scrap', isPremium)}>{fmt(row.scrap, 2)}</TableCell>
+      <TableCell className={premiumNumericCellClass(isPremium)} style={premiumColStyleForKey('product', 'wip', isPremium)}>{showWip(row.wip)}</TableCell>
+      <TableCell className={premiumNumericCellClass(isPremium, 'font-medium')} style={premiumColStyleForKey('product', 'mct', isPremium)}>{showMct(row.mct)}</TableCell>
+      {hasScenarios && scenarioResults.map((sr, srIndex) => {
         const sp = sr.results.products.find(p => p.id === row.id);
         const baseMct = isUtilOnly ? 0 : row.mct;
         return (
           <React.Fragment key={sr.id}>
-            <TableCell className="font-mono text-right text-xs">{sp ? showWip(sp.wip) : '—'}</TableCell>
-            <TableCell className={`font-mono text-right text-xs ${!isUtilOnly && sp && sp.mct < baseMct ? 'text-success' : !isUtilOnly && sp && sp.mct > baseMct ? 'text-destructive' : ''}`}>
+            <TableCell className={premiumNumericCellClass(isPremium)} style={premiumColStyleForKey('product', 'wip', isPremium)}>{sp ? showWip(sp.wip) : '—'}</TableCell>
+            <TableCell className={`${premiumNumericCellClass(isPremium)} ${!isPremium && !isUtilOnly && sp && sp.mct < baseMct ? 'text-success' : !isPremium && !isUtilOnly && sp && sp.mct > baseMct ? 'text-destructive' : ''}`} style={premiumColStyleForKey('product', 'mct', isPremium)}>
               {sp ? showMct(sp.mct) : '—'}
-              {!isUtilOnly && sp && sp.mct !== baseMct && <span className="ml-1 text-[10px]">({(sp.mct - baseMct) > 0 ? '+' : ''}{fmtFixed(sp.mct - baseMct, 2)})</span>}
+              {!isPremium && !isUtilOnly && sp && sp.mct !== baseMct && <span className="ml-1 text-meta">({(sp.mct - baseMct) > 0 ? '+' : ''}{fmtFixed(sp.mct - baseMct, 2)})</span>}
             </TableCell>
           </React.Fragment>
         );
@@ -2569,57 +3392,61 @@ function NormalSummary({ results, model, scenarioResults, isUtilOnly = false }: 
   );
 
   const renderSubtotal = (label: string, products: ProductResult[]) => (
-    <TableRow key={`sub-${label}`} className="bg-[#EAEFEF] font-medium">
-      <TableCell className="font-mono text-xs">{label} subtotal</TableCell>
-      <TableCell className="font-mono text-right text-xs">{fmtFixed(products.reduce((s, r) => s + r.goodMade, 0), 2)}</TableCell>
-      <TableCell className="font-mono text-right text-xs">{fmtFixed(products.reduce((s, r) => s + r.goodShipped, 0), 2)}</TableCell>
-      <TableCell className="font-mono text-right text-xs">{fmtFixed(products.reduce((s, r) => s + r.started, 0), 2)}</TableCell>
-      <TableCell className="font-mono text-right text-xs">{fmtFixed(products.reduce((s, r) => s + r.scrap, 0), 2)}</TableCell>
-      <TableCell className="font-mono text-right text-xs">{isUtilOnly ? '0.00' : fmtFixed(products.reduce((s, r) => s + r.wip, 0), 2)}</TableCell>
-      <TableCell className="font-mono text-right text-xs">{isUtilOnly ? '0.00' : `${fmtFixed(Math.min(...products.map(p => p.mct)), 2)}–${fmtFixed(Math.max(...products.map(p => p.mct)), 2)}`}</TableCell>
-      {hasScenarios && scenarioResults.map(sr => <React.Fragment key={sr.id}><TableCell /><TableCell /></React.Fragment>)}
+    <TableRow key={`sub-${label}`} className={isPremium ? premiumRowClass(isPremium) : 'bg-[#EAEFEF] font-medium'}>
+      <TableCell className={premiumLabelCellClass(isPremium)} style={premiumColStyleForKey('product', 'name', isPremium)}>{label} subtotal</TableCell>
+      <TableCell className={premiumNumericCellClass(isPremium)} style={premiumColStyleForKey('product', 'goodMade', isPremium)}>{fmt(products.reduce((s, r) => s + r.goodMade, 0), 2)}</TableCell>
+      <TableCell className={premiumNumericCellClass(isPremium)} style={premiumColStyleForKey('product', 'goodShipped', isPremium)}>{fmt(products.reduce((s, r) => s + r.goodShipped, 0), 2)}</TableCell>
+      <TableCell className={premiumNumericCellClass(isPremium)} style={premiumColStyleForKey('product', 'started', isPremium)}>{fmt(products.reduce((s, r) => s + r.started, 0), 2)}</TableCell>
+      <TableCell className={premiumNumericCellClass(isPremium)} style={premiumColStyleForKey('product', 'scrap', isPremium)}>{fmt(products.reduce((s, r) => s + r.scrap, 0), 2)}</TableCell>
+      <TableCell className={premiumNumericCellClass(isPremium)} style={premiumColStyleForKey('product', 'wip', isPremium)}>{isUtilOnly ? fmt(0, 2) : fmt(products.reduce((s, r) => s + r.wip, 0), 2)}</TableCell>
+      <TableCell className={premiumNumericCellClass(isPremium)} style={premiumColStyleForKey('product', 'mct', isPremium)}>{isUtilOnly ? fmt(0, 2) : `${fmt(Math.min(...products.map(p => p.mct)), 2)}–${fmt(Math.max(...products.map(p => p.mct)), 2)}`}</TableCell>
+      {hasScenarios && scenarioResults.map((sr, srIndex) => <React.Fragment key={sr.id}><TableCell style={premiumColStyleForKey('product', 'wip', isPremium)} /><TableCell style={premiumColStyleForKey('product', 'mct', isPremium)} /></React.Fragment>)}
     </TableRow>
   );
 
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead className="font-mono text-xs">Product</TableHead>
-          <TableHead className="font-mono text-xs text-right">Good Made</TableHead>
-          <TableHead className="font-mono text-xs text-right">Good Shipped</TableHead>
-          <TableHead className="font-mono text-xs text-right">Started</TableHead>
-          <TableHead className="font-mono text-xs text-right">Scrap</TableHead>
-          <TableHead className="font-mono text-xs text-right">WIP</TableHead>
-          <TableHead className="font-mono text-xs text-right">MCT ({model.general.mct_time_unit})</TableHead>
-          {hasScenarios && scenarioResults.map(sr => (
-            <React.Fragment key={sr.id}>
-              <TableHead className="font-mono text-xs text-right text-primary">WIP {sr.scenario.name}</TableHead>
-              <TableHead className="font-mono text-xs text-right text-primary">MCT {sr.scenario.name}</TableHead>
-            </React.Fragment>
-          ))}
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {hasGroups ? (
-          [...groups.entries()].map(([group, products]) => (
-            <React.Fragment key={`grp-${group}`}>{products.map(renderProductRow)}{group && renderSubtotal(group, products)}</React.Fragment>
-          ))
-        ) : (
-          results.products.map(renderProductRow)
-        )}
-        <TableRow className="border-t-2 font-medium">
-          <TableCell className="font-mono">TOTAL</TableCell>
-          <TableCell className="font-mono text-right">{fmtFixed(results.products.reduce((s, r) => s + r.goodMade, 0), 2)}</TableCell>
-          <TableCell className="font-mono text-right">{fmtFixed(results.products.reduce((s, r) => s + r.goodShipped, 0), 2)}</TableCell>
-          <TableCell className="font-mono text-right">{fmtFixed(results.products.reduce((s, r) => s + r.started, 0), 2)}</TableCell>
-          <TableCell className="font-mono text-right">{fmtFixed(results.products.reduce((s, r) => s + r.scrap, 0), 2)}</TableCell>
-          <TableCell className="font-mono text-right">{isUtilOnly ? '0.00' : fmtFixed(results.products.reduce((s, r) => s + r.wip, 0), 2)}</TableCell>
-          <TableCell className="font-mono text-right">{isUtilOnly ? '0.00' : '—'}</TableCell>
-          {hasScenarios && scenarioResults.map(sr => <React.Fragment key={sr.id}><TableCell /><TableCell /></React.Fragment>)}
-        </TableRow>
-      </TableBody>
-    </Table>
+    <div className={`${OUTPUT_TABLE_H_SCROLL} ${premiumTableWrapperClass(isPremium)}`}>
+      <Table className={premiumTableWrapperClass(isPremium)}>
+        <TableHeader>
+          <TableRow className={premiumRowClass(isPremium)}>
+            {baseCols.map((label, index) => (
+              <TableHead
+                key={label}
+                className={`${isPremium ? '' : 'font-mono text-xs'} ${index === 0 ? 'text-left' : 'text-right'} ${premiumHeadClass(isPremium, index === 0 ? 'left' : 'right')}`}
+                style={premiumColStyleForKey('product', summaryColKeys[index], isPremium)}
+              >
+                {label}
+              </TableHead>
+            ))}
+            {hasScenarios && scenarioResults.map((sr, srIndex) => (
+              <React.Fragment key={sr.id}>
+                <TableHead className={`${isPremium ? '' : 'font-mono text-xs text-primary'} text-right ${premiumHeadClass(isPremium, 'right')}`} style={premiumColStyleForKey('product', 'wip', isPremium)}>WIP {sr.scenario.name}</TableHead>
+                <TableHead className={`${isPremium ? '' : 'font-mono text-xs text-primary'} text-right ${premiumHeadClass(isPremium, 'right')}`} style={premiumColStyleForKey('product', 'mct', isPremium)}>MCT {sr.scenario.name}</TableHead>
+              </React.Fragment>
+            ))}
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {hasGroups ? (
+            [...groups.entries()].map(([group, products]) => (
+              <React.Fragment key={`grp-${group}`}>{products.map(renderProductRow)}{group && renderSubtotal(group, products)}</React.Fragment>
+            ))
+          ) : (
+            results.products.map(renderProductRow)
+          )}
+          <TableRow className={isPremium ? `${premiumRowClass(isPremium)} font-medium` : 'border-t-2 font-medium'}>
+            <TableCell className={premiumLabelCellClass(isPremium)} style={premiumColStyleForKey('product', 'name', isPremium)}>TOTAL</TableCell>
+            <TableCell className={premiumNumericCellClass(isPremium)} style={premiumColStyleForKey('product', 'goodMade', isPremium)}>{fmt(results.products.reduce((s, r) => s + r.goodMade, 0), 2)}</TableCell>
+            <TableCell className={premiumNumericCellClass(isPremium)} style={premiumColStyleForKey('product', 'goodShipped', isPremium)}>{fmt(results.products.reduce((s, r) => s + r.goodShipped, 0), 2)}</TableCell>
+            <TableCell className={premiumNumericCellClass(isPremium)} style={premiumColStyleForKey('product', 'started', isPremium)}>{fmt(results.products.reduce((s, r) => s + r.started, 0), 2)}</TableCell>
+            <TableCell className={premiumNumericCellClass(isPremium)} style={premiumColStyleForKey('product', 'scrap', isPremium)}>{fmt(results.products.reduce((s, r) => s + r.scrap, 0), 2)}</TableCell>
+            <TableCell className={premiumNumericCellClass(isPremium)} style={premiumColStyleForKey('product', 'wip', isPremium)}>{isUtilOnly ? fmt(0, 2) : fmt(results.products.reduce((s, r) => s + r.wip, 0), 2)}</TableCell>
+            <TableCell className={premiumNumericCellClass(isPremium)} style={premiumColStyleForKey('product', 'mct', isPremium)}>{isUtilOnly ? fmt(0, 2) : '—'}</TableCell>
+            {hasScenarios && scenarioResults.map((sr, srIndex) => <React.Fragment key={sr.id}><TableCell style={premiumColStyleForKey('product', 'wip', isPremium)} /><TableCell style={premiumColStyleForKey('product', 'mct', isPremium)} /></React.Fragment>)}
+          </TableRow>
+        </TableBody>
+      </Table>
+    </div>
   );
 }
 
@@ -2631,8 +3458,8 @@ function TransposedSummary({ results, model, scenarioResults, isUtilOnly = false
   const fields = [
     { key: 'demand', label: 'Demand', fmt: (v: number) => fmtFixed(v, 2) },
     { key: 'lotSize', label: 'Lot Size', fmt: (v: number) => fmtFixed(v, 2) },
-    { key: 'goodMade', label: 'Good Made', fmt: (v: number) => fmtFixed(v, 2) },
-    { key: 'started', label: 'Started', fmt: (v: number) => fmtFixed(v, 2) },
+    { key: 'goodMade', label: PRODUCT_METRIC_LABELS.goodMade, fmt: (v: number) => fmtFixed(v, 2) },
+    { key: 'started', label: PRODUCT_METRIC_LABELS.started, fmt: (v: number) => fmtFixed(v, 2) },
     { key: 'scrap', label: 'Scrap', fmt: (v: number) => fmtFixed(v, 2) },
     { key: 'wip', label: 'WIP', fmt: (v: number) => fmtFixed(isUtilOnly ? 0 : v, 2) },
     { key: 'mct', label: `MCT (${model.general.mct_time_unit})`, fmt: (v: number) => fmtFixed(isUtilOnly ? 0 : v, 2) },
@@ -2697,7 +3524,7 @@ function EquipmentWIPChart({ results, model, isMultiScenario, chartScenarios }: 
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">Equipment WIP</CardTitle>
+        <CardTitle>Equipment WIP</CardTitle>
         <CardDescription>Work-in-progress at each equipment group</CardDescription>
       </CardHeader>
       <CardContent className="relative">
@@ -2761,7 +3588,7 @@ function LaborWaitChart({ results, model }: { results: CalcResults; model: Model
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">Equipment Wait Chart</CardTitle>
+        <CardTitle>Equipment Wait Chart</CardTitle>
         <CardDescription>High 'Waiting' bars indicate a labor shortage — machines are idle waiting for operators.</CardDescription>
       </CardHeader>
       <CardContent className="relative">
@@ -2810,6 +3637,7 @@ function OperDetailsTab({ model, results }: { model: Model; results: CalcResults
   const [subTab, setSubTab] = useState<'equipment' | 'labor' | 'product'>('equipment');
   const [selectedId, setSelectedId] = useState('');
   const [showTimeUnits, setShowTimeUnits] = useState(false);
+  const isPremium = isPremiumOutputView(model);
 
   const g = model.general;
   const conv1 = Math.max(g.conv1, 0.001);
@@ -3084,7 +3912,7 @@ function OperDetailsTab({ model, results }: { model: Model; results: CalcResults
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">Oper Details</CardTitle>
+        <CardTitle>Oper Details</CardTitle>
         <CardDescription>Per-operation breakdown by resource or product</CardDescription>
       </CardHeader>
       <CardContent>
@@ -3135,8 +3963,9 @@ function useRunDescriptionLabel(): string {
 
 /* ─── Equipment Oper Details (for Equipment tab sub-tab) ─── */
 function EquipOperDetails({ model, results }: { model: Model; results: CalcResults }) {
-  const [selectedId, setSelectedId] = useState('');
+  const { selectedId, setSelectedId } = useModelScopedSelect(model.id);
   const [showTimeUnits, setShowTimeUnits] = useState(false);
+  const isPremium = isPremiumOutputView(model);
   const runDescription = useRunDescriptionLabel();
 
   const g = model.general;
@@ -3233,31 +4062,10 @@ function EquipOperDetails({ model, results }: { model: Model; results: CalcResul
 
   const eqOps = useMemo(() => allMetrics.filter((m: any) => m.equipId === selectedId), [allMetrics, selectedId]);
   const eqSort = useSortableTable(eqOps, 'opNumber', 'asc');
-  const equipOperCols = useResizableColumns([8, 8, 8, 4, 5, 5, 5, 5, 5, 6, 6, 5, 5, 6, 6, 4, 5, 3, 4, 5], 5);
-  const [columnOrder, setColumnOrder] = useState<Array<'productName' | 'opName' | 'laborName' | 'opNumber' | 'pctAssigned' | 'eqSetupUtil' | 'eqRunUtil' | 'labSetupUtil' | 'labRunUtil' | 'timeWaitingEquipment' | 'timeWaitingLabor' | 'timeInSetup' | 'timeInRun' | 'timeWaitingRestOfLot' | 'visitsPerGoodPiece' | 'noOfSetups' | 'avgLotSize' | 'wip' | 'mctAtOp' | 'visits'>>(
-    ['productName', 'opName', 'laborName', 'opNumber', 'pctAssigned', 'eqSetupUtil', 'eqRunUtil', 'labSetupUtil', 'labRunUtil', 'timeWaitingEquipment', 'timeWaitingLabor', 'timeInSetup', 'timeInRun', 'timeWaitingRestOfLot', 'visitsPerGoodPiece', 'noOfSetups', 'avgLotSize', 'wip', 'mctAtOp', 'visits'],
-  );
-  const dragFromRef = useRef<string | null>(null);
-  const moveColumn = useCallback((fromKey: string, toKey: string) => {
-    const fromIndex = columnOrder.indexOf(fromKey as any);
-    const toIndex = columnOrder.indexOf(toKey as any);
-    if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) return;
-    setColumnOrder(prev => {
-      const next = [...prev];
-      const [moved] = next.splice(fromIndex, 1);
-      next.splice(toIndex, 0, moved);
-      return next as any;
-    });
-    equipOperCols.moveColumn(fromIndex, toIndex);
-  }, [columnOrder, equipOperCols]);
-  const resetColumns = useCallback(() => {
-    setColumnOrder(['productName', 'opName', 'laborName', 'opNumber', 'pctAssigned', 'eqSetupUtil', 'eqRunUtil', 'labSetupUtil', 'labRunUtil', 'timeWaitingEquipment', 'timeWaitingLabor', 'timeInSetup', 'timeInRun', 'timeWaitingRestOfLot', 'visitsPerGoodPiece', 'noOfSetups', 'avgLotSize', 'wip', 'mctAtOp', 'visits']);
-    equipOperCols.resetWidths();
-  }, [equipOperCols]);
   const minWidthByKey = useMemo<Record<string, number>>(() => ({
-    productName: estimateColMinWidthPx('Product', eqOps.map((m: any) => m.productName)),
-    opName: estimateColMinWidthPx('Operation', eqOps.map((m: any) => m.opName)),
-    laborName: estimateColMinWidthPx('Labor Name', eqOps.map((m: any) => m.laborName)),
+    productName: estimateColMinWidthPx('Product', eqOps.map((m: any) => formatPremiumDisplayValue(m.productName, isPremium)), 128, 320),
+    opName: estimateColMinWidthPx('Operation', eqOps.map((m: any) => formatPremiumDisplayValue(m.opName, isPremium)), 116, 320),
+    laborName: estimateColMinWidthPx('Labor Name', eqOps.map((m: any) => formatPremiumDisplayValue(m.laborName, isPremium)), 116, 300),
     opNumber: estimateColMinWidthPx('Op #', eqOps.map((m: any) => fmtFixed(m.opNumber, 2))),
     pctAssigned: estimateColMinWidthPx('% Assign', eqOps.map((m: any) => fmtFixed(m.pctAssigned, 2))),
     eqSetupUtil: estimateColMinWidthPx(`Eq Setup${unitSuffix}`, eqOps.map((m: any) => fmtVal(m.eqSetupUtil))),
@@ -3275,27 +4083,54 @@ function EquipOperDetails({ model, results }: { model: Model; results: CalcResul
     wip: estimateColMinWidthPx('WIP', eqOps.map((m: any) => fmtFixed(m.wip, 2))),
     mctAtOp: estimateColMinWidthPx('MCT at Op', eqOps.map((m: any) => fmtFixed(m.mctAtOp, 2))),
     visits: estimateColMinWidthPx('Visits/100', eqOps.map((m: any) => fmtFixed(m.visits, 2))),
-  }), [eqOps, unitSuffix, fmtVal]);
+  }), [eqOps, unitSuffix, fmtVal, isPremium]);
+  const getOperColumnWeightPx = useCallback(
+    (col: string) => minWidthByKey[col] ?? 96,
+    [minWidthByKey],
+  );
+  const equipOperCols = useResizableColumns(
+    isPremium ? [10, 9, 9, 4, 5, 5, 5, 5, 6, 5, 5, 4, 5, 3, 4] : [8, 8, 8, 4, 5, 5, 5, 5, 5, 6, 6, 5, 5, 6, 6, 4, 5, 3, 4, 5],
+    5,
+  );
+  const {
+    visibleColumnOrder,
+    scrollLayoutActive: equipOperScrollLayout,
+    toggleGroup,
+    isCollapseParent,
+    isGroupExpanded,
+    moveColumn,
+    resetColumns,
+  } = useCollapsibleTableColumns(
+    EQUIP_OPER_LEGACY_COLUMN_ORDER,
+    EQUIP_OPER_PREMIUM_COLUMN_ORDER,
+    [OPER_MCT_GROUP],
+    { usePremiumOrder: isPremium, collapseEnabled: isPremium, alwaysScrollLayout: true },
+    equipOperCols,
+    isPremium ? getOperColumnWeightPx : undefined,
+  );
+  const dragFromRef = useRef<string | null>(null);
 
   const eq = model.equipment.find(e => e.id === selectedId);
 
+  const fmt = (v: unknown, digits: number) => isPremium ? premiumFmtNum(v, digits, true) : fmtFixed(v, digits);
   return (
-    <Card>
-      <CardHeader>
+    <Card className={premiumCardClass(isPremium)}>
+      <CardHeader className="space-y-3">
         <div className="flex items-center justify-between gap-2">
-          <CardTitle className="text-base">Oper Details — By Equipment</CardTitle>
-          <Button variant="outline" size="sm" className="text-xs h-7 gap-1" onClick={resetColumns}>
+          <div className="min-w-0">
+            <CardTitle className={`${isPremium ? 'font-semibold' : ''}`}>Oper Details — By Equipment</CardTitle>
+            {isPremium && <PremiumCollapseTableHint parents={['MCT at Op']} />}
+          </div>
+          <Button variant="outline" size="sm" className="text-xs h-7 gap-1 shrink-0" onClick={resetColumns}>
             <RotateCcw className="h-3 w-3" />
             Reset Columns
           </Button>
         </div>
-      </CardHeader>
-      <CardContent ref={equipOperCols.containerRef}>
-        <div className="flex items-center gap-3 mb-4">
-          <Select value={selectedId || undefined} onValueChange={setSelectedId}>
+        <div className="flex items-center gap-3">
+          <Select value={validSelectValue(selectedId, operDetailsSelectOptions(model.equipment))} onValueChange={setSelectedId}>
             <SelectTrigger className="w-56 h-8 text-xs"><SelectValue placeholder="Select equipment group…" /></SelectTrigger>
-            <SelectContent>
-              {model.equipment.map(eq => <SelectItem key={eq.id} value={eq.id}>{eq.name}</SelectItem>)}
+            <SelectContent position="item-aligned" className={OPER_DETAILS_SELECT_CONTENT}>
+              {operDetailsSelectOptions(model.equipment).map((eq) => <SelectItem key={eq.id} value={eq.id}>{eq.name}</SelectItem>)}
             </SelectContent>
           </Select>
           <Button variant={showTimeUnits ? 'secondary' : 'outline'} size="sm" className="text-xs gap-1 h-7" onClick={() => setShowTimeUnits(!showTimeUnits)}>
@@ -3303,27 +4138,39 @@ function EquipOperDetails({ model, results }: { model: Model; results: CalcResul
             {showTimeUnits ? `Time (${g.ops_time_unit})` : '% Time'}
           </Button>
         </div>
+      </CardHeader>
+      <CardContent ref={equipOperCols.containerRef} className={premiumTableWrapperClass(isPremium)}>
         {!eq ? (
           <p className="text-sm text-muted-foreground text-center py-8">Select an equipment group to view operation details.</p>
         ) : (
           <>
-          <div className="overflow-x-auto">
-            <Table className="table-auto">
+          <div className={`${OUTPUT_TABLE_H_SCROLL} ${premiumTableWrapperClass(isPremium)}`}>
+            <Table
+              fitContent={isPremium}
+              outerScrollHost={isPremium}
+              className={`${premiumCollapseTableClass(isPremium, isPremium, equipOperScrollLayout)} ${premiumTableWrapperClass(isPremium)}`}
+            >
               <colgroup>
-                {columnOrder.map((colKey, i) => (
-                  <col key={colKey} style={{ width: `${equipOperCols.widths[i]}%`, minWidth: `${minWidthByKey[colKey] ?? 90}px` }} />
+                {visibleColumnOrder.map((colKey, i) => (
+                  <col key={colKey} style={premiumCollapseColStyle(false, undefined, minWidthByKey[colKey] ?? 96)} />
                 ))}
               </colgroup>
-              <TableHeader><TableRow>
-                {columnOrder.map((colKey, index) => (
+              <TableHeader><TableRow className={premiumRowClass(isPremium)}>
+                {visibleColumnOrder.map((colKey, index) => (
                   <SortHead
                     key={colKey}
                     label={colKey === 'productName' ? 'Product' : colKey === 'opName' ? 'Operation' : colKey === 'laborName' ? 'Labor Name' : colKey === 'opNumber' ? 'Op #' : colKey === 'pctAssigned' ? '% Assign' : colKey === 'eqSetupUtil' ? `Eq Setup${unitSuffix}` : colKey === 'eqRunUtil' ? `Eq Run${unitSuffix}` : colKey === 'labSetupUtil' ? `Lab Setup${unitSuffix}` : colKey === 'labRunUtil' ? `Lab Run${unitSuffix}` : colKey === 'timeWaitingEquipment' ? 'Time Waiting for Equip' : colKey === 'timeWaitingLabor' ? 'Time Waiting for Labor' : colKey === 'timeInSetup' ? 'Time in Setup' : colKey === 'timeInRun' ? 'Time in Run' : colKey === 'timeWaitingRestOfLot' ? 'Time Waiting for Rest of Lot' : colKey === 'visitsPerGoodPiece' ? 'Visits for 1 Good Piece' : colKey === 'noOfSetups' ? 'No. of Setups' : colKey === 'avgLotSize' ? 'Avg Lot Size' : colKey === 'wip' ? 'WIP' : colKey === 'mctAtOp' ? 'MCT at Op' : 'Visits/100'}
                     sortKey={colKey}
                     current={eqSort.sort}
                     onSort={eqSort.handleSort}
-                    align={colKey === 'productName' || colKey === 'opName' || colKey === 'laborName' ? 'left' : 'right'}
-                    onResizeStart={index < columnOrder.length - 1 ? (ev => equipOperCols.startResize(index, ev)) : undefined}
+                    align={OPER_DETAILS_LABEL_COLS.has(colKey) ? 'left' : 'right'}
+                    stickyHeader={isPremium && isOperDetailsStickyCol('equipOper', colKey)}
+                    stickyTopLeft={isPremium && isOperDetailsStickyCol('equipOper', colKey)}
+                    isPremium={isPremium}
+                    colIndex={index}
+                    premiumTableKind="equipOper"
+                    columnKey={colKey}
+                    onResizeStart={undefined}
                     draggable
                     onDragStart={() => { dragFromRef.current = colKey; }}
                     onDragOver={ev => ev.preventDefault()}
@@ -3332,33 +4179,44 @@ function EquipOperDetails({ model, results }: { model: Model; results: CalcResul
                       dragFromRef.current = null;
                     }}
                     onDragEnd={() => { dragFromRef.current = null; }}
+                    collapseParent={isCollapseParent(colKey)}
+                    collapseExpanded={isGroupExpanded(colKey)}
+                    onCollapseToggle={() => toggleGroup(colKey)}
                   />
                 ))}
               </TableRow></TableHeader>
               <TableBody>
                 {eqSort.sorted.map((m: any) => (
-                  <TableRow key={m.opId}>
-                    {columnOrder.map(colKey => {
-                      if (colKey === 'productName') return <TableCell key={colKey} className="font-mono text-xs text-left whitespace-nowrap">{m.productName}</TableCell>;
-                      if (colKey === 'opName') return <TableCell key={colKey} className="font-mono text-xs font-medium text-left whitespace-nowrap">{m.opName}</TableCell>;
-                      if (colKey === 'laborName') return <TableCell key={colKey} className="font-mono text-xs text-left whitespace-nowrap">{m.laborName}</TableCell>;
-                      if (colKey === 'opNumber') return <TableCell key={colKey} className="font-mono text-xs text-right whitespace-nowrap tabular-nums">{fmtFixed(m.opNumber, 2)}</TableCell>;
-                      if (colKey === 'pctAssigned') return <TableCell key={colKey} className="font-mono text-xs text-right whitespace-nowrap tabular-nums">{fmtFixed(m.pctAssigned, 2)}</TableCell>;
-                      if (colKey === 'eqSetupUtil') return <TableCell key={colKey} className="font-mono text-xs text-right whitespace-nowrap tabular-nums">{fmtVal(m.eqSetupUtil)}</TableCell>;
-                      if (colKey === 'eqRunUtil') return <TableCell key={colKey} className="font-mono text-xs text-right whitespace-nowrap tabular-nums">{fmtVal(m.eqRunUtil)}</TableCell>;
-                      if (colKey === 'labSetupUtil') return <TableCell key={colKey} className="font-mono text-xs text-right whitespace-nowrap tabular-nums">{fmtVal(m.labSetupUtil)}</TableCell>;
-                      if (colKey === 'labRunUtil') return <TableCell key={colKey} className="font-mono text-xs text-right whitespace-nowrap tabular-nums">{fmtVal(m.labRunUtil)}</TableCell>;
-                      if (colKey === 'timeWaitingEquipment') return <TableCell key={colKey} className="font-mono text-xs text-right whitespace-nowrap tabular-nums">{fmtFixed(m.timeWaitingEquipment, 2)}</TableCell>;
-                      if (colKey === 'timeWaitingLabor') return <TableCell key={colKey} className="font-mono text-xs text-right whitespace-nowrap tabular-nums">{fmtFixed(m.timeWaitingLabor, 2)}</TableCell>;
-                      if (colKey === 'timeInSetup') return <TableCell key={colKey} className="font-mono text-xs text-right whitespace-nowrap tabular-nums">{fmtFixed(m.timeInSetup, 2)}</TableCell>;
-                      if (colKey === 'timeInRun') return <TableCell key={colKey} className="font-mono text-xs text-right whitespace-nowrap tabular-nums">{fmtFixed(m.timeInRun, 2)}</TableCell>;
-                      if (colKey === 'timeWaitingRestOfLot') return <TableCell key={colKey} className="font-mono text-xs text-right whitespace-nowrap tabular-nums">{fmtFixed(m.timeWaitingRestOfLot, 2)}</TableCell>;
-                      if (colKey === 'visitsPerGoodPiece') return <TableCell key={colKey} className="font-mono text-xs text-right whitespace-nowrap tabular-nums">{fmtFixed(m.visitsPerGoodPiece, 2)}</TableCell>;
-                      if (colKey === 'noOfSetups') return <TableCell key={colKey} className="font-mono text-xs text-right whitespace-nowrap tabular-nums">{fmtFixed(m.noOfSetups, 2)}</TableCell>;
-                      if (colKey === 'avgLotSize') return <TableCell key={colKey} className="font-mono text-xs text-right whitespace-nowrap tabular-nums">{fmtFixed(m.avgLotSize, 2)}</TableCell>;
-                      if (colKey === 'wip') return <TableCell key={colKey} className="font-mono text-xs text-right whitespace-nowrap tabular-nums">{fmtFixed(m.wip, 2)}</TableCell>;
-                      if (colKey === 'mctAtOp') return <TableCell key={colKey} className="font-mono text-xs text-right whitespace-nowrap tabular-nums">{fmtFixed(m.mctAtOp, 2)}</TableCell>;
-                      return <TableCell key={colKey} className="font-mono text-xs text-right whitespace-nowrap tabular-nums">{fmtFixed(m.visits, 2)}</TableCell>;
+                  <TableRow key={m.opId} className={premiumRowClass(isPremium)}>
+                    {visibleColumnOrder.map((colKey, colIndex) => {
+                      const isLabel = OPER_DETAILS_LABEL_COLS.has(colKey);
+                      const cellClass = operDetailsCellClass(isPremium, isLabel, colKey, 'equipOper');
+                      const rawValue =
+                        colKey === 'productName' ? formatPremiumDisplayValue(m.productName, isPremium) :
+                        colKey === 'opName' ? formatPremiumDisplayValue(m.opName, isPremium) :
+                        colKey === 'laborName' ? formatPremiumDisplayValue(m.laborName, isPremium) :
+                        colKey === 'opNumber' ? fmt(m.opNumber, 2) :
+                        colKey === 'pctAssigned' ? fmt(m.pctAssigned, 2) :
+                        colKey === 'eqSetupUtil' ? fmtVal(m.eqSetupUtil) :
+                        colKey === 'eqRunUtil' ? fmtVal(m.eqRunUtil) :
+                        colKey === 'labSetupUtil' ? fmtVal(m.labSetupUtil) :
+                        colKey === 'labRunUtil' ? fmtVal(m.labRunUtil) :
+                        colKey === 'timeWaitingEquipment' ? fmt(m.timeWaitingEquipment, 2) :
+                        colKey === 'timeWaitingLabor' ? fmt(m.timeWaitingLabor, 2) :
+                        colKey === 'timeInSetup' ? fmt(m.timeInSetup, 2) :
+                        colKey === 'timeInRun' ? fmt(m.timeInRun, 2) :
+                        colKey === 'timeWaitingRestOfLot' ? fmt(m.timeWaitingRestOfLot, 2) :
+                        colKey === 'visitsPerGoodPiece' ? fmt(m.visitsPerGoodPiece, 2) :
+                        colKey === 'noOfSetups' ? fmt(m.noOfSetups, 2) :
+                        colKey === 'avgLotSize' ? fmt(m.avgLotSize, 2) :
+                        colKey === 'wip' ? fmt(m.wip, 2) :
+                        colKey === 'mctAtOp' ? fmt(m.mctAtOp, 2) :
+                        fmt(m.visits, 2);
+                      return (
+                        <TableCell key={colKey} className={cellClass} style={premiumColStyleForKey('equipOper', colKey, isPremium)}>
+                          {isLabel ? <PremiumCellText>{rawValue}</PremiumCellText> : rawValue}
+                        </TableCell>
+                      );
                     })}
                   </TableRow>
                 ))}
@@ -3381,8 +4239,9 @@ function EquipOperDetails({ model, results }: { model: Model; results: CalcResul
 
 /* ─── Labor Oper Details (for Labor tab sub-tab) ─── */
 function LaborOperDetails({ model, results }: { model: Model; results: CalcResults }) {
-  const [selectedId, setSelectedId] = useState('');
+  const { selectedId, setSelectedId } = useModelScopedSelect(model.id);
   const [showTimeUnits, setShowTimeUnits] = useState(false);
+  const isPremium = isPremiumOutputView(model);
   const runDescription = useRunDescriptionLabel();
 
   const g = model.general;
@@ -3469,31 +4328,10 @@ function LaborOperDetails({ model, results }: { model: Model; results: CalcResul
 
   const labOps = useMemo(() => allMetrics.filter((m: any) => m.laborId === selectedId), [allMetrics, selectedId]);
   const labSort = useSortableTable(labOps, 'opNumber', 'asc');
-  const laborOperCols = useResizableColumns([8, 8, 8, 4, 5, 5, 5, 5, 6, 6, 5, 5, 6, 6, 5, 4, 5, 2, 5, 5], 5);
-  const [columnOrder, setColumnOrder] = useState<Array<'productName' | 'opName' | 'equipName' | 'opNumber' | 'pctAssigned' | 'eqSetupUtil' | 'eqRunUtil' | 'labSetupUtil' | 'labRunUtil' | 'timeWaitingEquipment' | 'timeWaitingLabor' | 'timeInSetup' | 'timeInRun' | 'timeWaitingRestOfLot' | 'visitsPerGoodPiece' | 'visits' | 'noOfSetups' | 'avgLotSize' | 'wip' | 'mctAtOp'>>(
-    ['productName', 'opName', 'equipName', 'opNumber', 'pctAssigned', 'eqSetupUtil', 'eqRunUtil', 'labSetupUtil', 'labRunUtil', 'timeWaitingEquipment', 'timeWaitingLabor', 'timeInSetup', 'timeInRun', 'timeWaitingRestOfLot', 'visitsPerGoodPiece', 'visits', 'noOfSetups', 'avgLotSize', 'wip', 'mctAtOp'],
-  );
-  const dragFromRef = useRef<string | null>(null);
-  const moveColumn = useCallback((fromKey: string, toKey: string) => {
-    const fromIndex = columnOrder.indexOf(fromKey as any);
-    const toIndex = columnOrder.indexOf(toKey as any);
-    if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) return;
-    setColumnOrder(prev => {
-      const next = [...prev];
-      const [moved] = next.splice(fromIndex, 1);
-      next.splice(toIndex, 0, moved);
-      return next as any;
-    });
-    laborOperCols.moveColumn(fromIndex, toIndex);
-  }, [columnOrder, laborOperCols]);
-  const resetColumns = useCallback(() => {
-    setColumnOrder(['productName', 'opName', 'equipName', 'opNumber', 'pctAssigned', 'eqSetupUtil', 'eqRunUtil', 'labSetupUtil', 'labRunUtil', 'timeWaitingEquipment', 'timeWaitingLabor', 'timeInSetup', 'timeInRun', 'timeWaitingRestOfLot', 'visitsPerGoodPiece', 'visits', 'noOfSetups', 'avgLotSize', 'wip', 'mctAtOp']);
-    laborOperCols.resetWidths();
-  }, [laborOperCols]);
   const minWidthByKey = useMemo<Record<string, number>>(() => ({
-    productName: estimateColMinWidthPx('Product', labOps.map((m: any) => m.productName)),
-    opName: estimateColMinWidthPx('Operation', labOps.map((m: any) => m.opName)),
-    equipName: estimateColMinWidthPx('Equipment', labOps.map((m: any) => m.equipName)),
+    productName: estimateColMinWidthPx('Product', labOps.map((m: any) => formatPremiumDisplayValue(m.productName, isPremium)), 128, 320),
+    opName: estimateColMinWidthPx('Operation', labOps.map((m: any) => formatPremiumDisplayValue(m.opName, isPremium)), 116, 320),
+    equipName: estimateColMinWidthPx('Equipment', labOps.map((m: any) => formatPremiumDisplayValue(m.equipName, isPremium)), 116, 320),
     opNumber: estimateColMinWidthPx('Op #', labOps.map((m: any) => fmtFixed(m.opNumber, 2))),
     pctAssigned: estimateColMinWidthPx('% Assign', labOps.map((m: any) => fmtFixed(m.pctAssigned, 2))),
     eqSetupUtil: estimateColMinWidthPx(`Eq Setup${unitSuffix}`, labOps.map((m: any) => fmtVal(m.eqSetupUtil))),
@@ -3511,27 +4349,54 @@ function LaborOperDetails({ model, results }: { model: Model; results: CalcResul
     avgLotSize: estimateColMinWidthPx('Avg lot size', labOps.map((m: any) => fmtFixed(m.avgLotSize, 2))),
     wip: estimateColMinWidthPx('WIP', labOps.map((m: any) => fmtFixed(m.wip, 2))),
     mctAtOp: estimateColMinWidthPx('MCT at Op', labOps.map((m: any) => fmtFixed(m.mctAtOp, 2))),
-  }), [labOps, unitSuffix, fmtVal]);
+  }), [labOps, unitSuffix, fmtVal, isPremium]);
+  const getOperColumnWeightPx = useCallback(
+    (col: string) => minWidthByKey[col] ?? 96,
+    [minWidthByKey],
+  );
+  const laborOperCols = useResizableColumns(
+    isPremium ? [10, 9, 9, 4, 5, 5, 5, 5, 6, 5, 5, 4, 5, 2, 5] : [8, 8, 8, 4, 5, 5, 5, 5, 6, 6, 5, 5, 6, 6, 5, 4, 5, 2, 5, 5],
+    5,
+  );
+  const {
+    visibleColumnOrder,
+    scrollLayoutActive: laborOperScrollLayout,
+    toggleGroup,
+    isCollapseParent,
+    isGroupExpanded,
+    moveColumn,
+    resetColumns,
+  } = useCollapsibleTableColumns(
+    LABOR_OPER_LEGACY_COLUMN_ORDER,
+    LABOR_OPER_PREMIUM_COLUMN_ORDER,
+    [OPER_MCT_GROUP],
+    { usePremiumOrder: isPremium, collapseEnabled: isPremium, alwaysScrollLayout: true },
+    laborOperCols,
+    isPremium ? getOperColumnWeightPx : undefined,
+  );
+  const dragFromRef = useRef<string | null>(null);
 
   const lab = model.labor.find(l => l.id === selectedId);
 
+  const fmt = (v: unknown, digits: number) => isPremium ? premiumFmtNum(v, digits, true) : fmtFixed(v, digits);
   return (
-    <Card>
-      <CardHeader>
+    <Card className={premiumCardClass(isPremium)}>
+      <CardHeader className="space-y-3">
         <div className="flex items-center justify-between gap-2">
-          <CardTitle className="text-base">Oper Details — By Labor</CardTitle>
-          <Button variant="outline" size="sm" className="text-xs h-7 gap-1" onClick={resetColumns}>
+          <div className="min-w-0">
+            <CardTitle className={`${isPremium ? 'font-semibold' : ''}`}>Oper Details — By Labor</CardTitle>
+            {isPremium && <PremiumCollapseTableHint parents={['MCT at Op']} />}
+          </div>
+          <Button variant="outline" size="sm" className="text-xs h-7 gap-1 shrink-0" onClick={resetColumns}>
             <RotateCcw className="h-3 w-3" />
             Reset Columns
           </Button>
         </div>
-      </CardHeader>
-      <CardContent ref={laborOperCols.containerRef}>
-        <div className="flex items-center gap-3 mb-4">
-          <Select value={selectedId || undefined} onValueChange={setSelectedId}>
+        <div className="flex items-center gap-3">
+          <Select value={validSelectValue(selectedId, operDetailsSelectOptions(model.labor))} onValueChange={setSelectedId}>
             <SelectTrigger className="w-56 h-8 text-xs"><SelectValue placeholder="Select labor group…" /></SelectTrigger>
-            <SelectContent>
-              {model.labor.map(l => <SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>)}
+            <SelectContent position="item-aligned" className={OPER_DETAILS_SELECT_CONTENT}>
+              {operDetailsSelectOptions(model.labor).map((l) => <SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>)}
             </SelectContent>
           </Select>
           <Button variant={showTimeUnits ? 'secondary' : 'outline'} size="sm" className="text-xs gap-1 h-7" onClick={() => setShowTimeUnits(!showTimeUnits)}>
@@ -3539,27 +4404,39 @@ function LaborOperDetails({ model, results }: { model: Model; results: CalcResul
             {showTimeUnits ? `Time (${g.ops_time_unit})` : '% Time'}
           </Button>
         </div>
+      </CardHeader>
+      <CardContent ref={laborOperCols.containerRef} className={premiumTableWrapperClass(isPremium)}>
         {!lab ? (
           <p className="text-sm text-muted-foreground text-center py-8">Select a labor group to view operation details.</p>
         ) : (
           <>
-          <div className="overflow-x-auto">
-            <Table className="table-auto">
+          <div className={`${OUTPUT_TABLE_H_SCROLL} ${premiumTableWrapperClass(isPremium)}`}>
+            <Table
+              fitContent={isPremium}
+              outerScrollHost={isPremium}
+              className={`${premiumCollapseTableClass(isPremium, isPremium, laborOperScrollLayout)} ${premiumTableWrapperClass(isPremium)}`}
+            >
               <colgroup>
-                {columnOrder.map((colKey, i) => (
-                  <col key={colKey} style={{ width: `${laborOperCols.widths[i]}%`, minWidth: `${minWidthByKey[colKey] ?? 90}px` }} />
+                {visibleColumnOrder.map((colKey, i) => (
+                  <col key={colKey} style={premiumCollapseColStyle(false, undefined, minWidthByKey[colKey] ?? 96)} />
                 ))}
               </colgroup>
-              <TableHeader><TableRow>
-                {columnOrder.map((colKey, index) => (
+              <TableHeader><TableRow className={premiumRowClass(isPremium)}>
+                {visibleColumnOrder.map((colKey, index) => (
                   <SortHead
                     key={colKey}
                     label={colKey === 'productName' ? 'Product' : colKey === 'opName' ? 'Operation' : colKey === 'equipName' ? 'Equipment' : colKey === 'opNumber' ? 'Op #' : colKey === 'pctAssigned' ? '% Assign' : colKey === 'eqSetupUtil' ? `Eq Setup${unitSuffix}` : colKey === 'eqRunUtil' ? `Eq Run${unitSuffix}` : colKey === 'labSetupUtil' ? `Lab Setup${unitSuffix}` : colKey === 'labRunUtil' ? `Lab Run${unitSuffix}` : colKey === 'timeWaitingEquipment' ? 'Time Waiting for Equip' : colKey === 'timeWaitingLabor' ? 'Time Waiting for Labor' : colKey === 'timeInSetup' ? 'Time in Setup' : colKey === 'timeInRun' ? 'Time in Run' : colKey === 'timeWaitingRestOfLot' ? 'Time Waiting for Rest of Lot' : colKey === 'visitsPerGoodPiece' ? 'Visits for 1 Good Piece' : colKey === 'visits' ? 'Visits/100 Made' : colKey === 'noOfSetups' ? 'No. of Setups' : colKey === 'avgLotSize' ? 'Avg Lot Size' : colKey === 'wip' ? 'WIP' : 'MCT at Op'}
                     sortKey={colKey}
                     current={labSort.sort}
                     onSort={labSort.handleSort}
-                    align={colKey === 'productName' || colKey === 'opName' || colKey === 'equipName' ? 'left' : 'right'}
-                    onResizeStart={index < columnOrder.length - 1 ? (ev => laborOperCols.startResize(index, ev)) : undefined}
+                    align={OPER_DETAILS_LABEL_COLS.has(colKey) ? 'left' : 'right'}
+                    stickyHeader={isPremium && isOperDetailsStickyCol('laborOper', colKey)}
+                    stickyTopLeft={isPremium && isOperDetailsStickyCol('laborOper', colKey)}
+                    isPremium={isPremium}
+                    colIndex={index}
+                    premiumTableKind="laborOper"
+                    columnKey={colKey}
+                    onResizeStart={undefined}
                     draggable
                     onDragStart={() => { dragFromRef.current = colKey; }}
                     onDragOver={ev => ev.preventDefault()}
@@ -3568,33 +4445,44 @@ function LaborOperDetails({ model, results }: { model: Model; results: CalcResul
                       dragFromRef.current = null;
                     }}
                     onDragEnd={() => { dragFromRef.current = null; }}
+                    collapseParent={isCollapseParent(colKey)}
+                    collapseExpanded={isGroupExpanded(colKey)}
+                    onCollapseToggle={() => toggleGroup(colKey)}
                   />
                 ))}
               </TableRow></TableHeader>
               <TableBody>
                 {labSort.sorted.map((m: any) => (
-                  <TableRow key={m.opId}>
-                    {columnOrder.map(colKey => {
-                      if (colKey === 'productName') return <TableCell key={colKey} className="font-mono text-xs text-left whitespace-nowrap">{m.productName}</TableCell>;
-                      if (colKey === 'opName') return <TableCell key={colKey} className="font-mono text-xs font-medium text-left whitespace-nowrap">{m.opName}</TableCell>;
-                      if (colKey === 'equipName') return <TableCell key={colKey} className="font-mono text-xs text-left whitespace-nowrap">{m.equipName}</TableCell>;
-                      if (colKey === 'opNumber') return <TableCell key={colKey} className="font-mono text-xs text-right whitespace-nowrap tabular-nums">{fmtFixed(m.opNumber, 2)}</TableCell>;
-                      if (colKey === 'pctAssigned') return <TableCell key={colKey} className="font-mono text-xs text-right whitespace-nowrap tabular-nums">{fmtFixed(m.pctAssigned, 2)}</TableCell>;
-                      if (colKey === 'eqSetupUtil') return <TableCell key={colKey} className="font-mono text-xs text-right whitespace-nowrap tabular-nums">{fmtVal(m.eqSetupUtil)}</TableCell>;
-                      if (colKey === 'eqRunUtil') return <TableCell key={colKey} className="font-mono text-xs text-right whitespace-nowrap tabular-nums">{fmtVal(m.eqRunUtil)}</TableCell>;
-                      if (colKey === 'labSetupUtil') return <TableCell key={colKey} className="font-mono text-xs text-right whitespace-nowrap tabular-nums">{fmtVal(m.labSetupUtil)}</TableCell>;
-                      if (colKey === 'labRunUtil') return <TableCell key={colKey} className="font-mono text-xs text-right whitespace-nowrap tabular-nums">{fmtVal(m.labRunUtil)}</TableCell>;
-                      if (colKey === 'timeWaitingEquipment') return <TableCell key={colKey} className="font-mono text-xs text-right whitespace-nowrap tabular-nums">{fmtFixed(m.timeWaitingEquipment, 2)}</TableCell>;
-                      if (colKey === 'timeWaitingLabor') return <TableCell key={colKey} className="font-mono text-xs text-right whitespace-nowrap tabular-nums">{fmtFixed(m.timeWaitingLabor, 2)}</TableCell>;
-                      if (colKey === 'timeInSetup') return <TableCell key={colKey} className="font-mono text-xs text-right whitespace-nowrap tabular-nums">{fmtFixed(m.timeInSetup, 2)}</TableCell>;
-                      if (colKey === 'timeInRun') return <TableCell key={colKey} className="font-mono text-xs text-right whitespace-nowrap tabular-nums">{fmtFixed(m.timeInRun, 2)}</TableCell>;
-                      if (colKey === 'timeWaitingRestOfLot') return <TableCell key={colKey} className="font-mono text-xs text-right whitespace-nowrap tabular-nums">{fmtFixed(m.timeWaitingRestOfLot, 2)}</TableCell>;
-                      if (colKey === 'visitsPerGoodPiece') return <TableCell key={colKey} className="font-mono text-xs text-right whitespace-nowrap tabular-nums">{fmtFixed(m.visitsPerGoodPiece, 2)}</TableCell>;
-                      if (colKey === 'visits') return <TableCell key={colKey} className="font-mono text-xs text-right whitespace-nowrap tabular-nums">{fmtFixed(m.visits, 2)}</TableCell>;
-                      if (colKey === 'noOfSetups') return <TableCell key={colKey} className="font-mono text-xs text-right whitespace-nowrap tabular-nums">{fmtFixed(m.noOfSetups, 2)}</TableCell>;
-                      if (colKey === 'avgLotSize') return <TableCell key={colKey} className="font-mono text-xs text-right whitespace-nowrap tabular-nums">{fmtFixed(m.avgLotSize, 2)}</TableCell>;
-                      if (colKey === 'wip') return <TableCell key={colKey} className="font-mono text-xs text-right whitespace-nowrap tabular-nums">{fmtFixed(m.wip, 2)}</TableCell>;
-                      return <TableCell key={colKey} className="font-mono text-xs text-right whitespace-nowrap tabular-nums">{fmtFixed(m.mctAtOp, 2)}</TableCell>;
+                  <TableRow key={m.opId} className={premiumRowClass(isPremium)}>
+                    {visibleColumnOrder.map((colKey, colIndex) => {
+                      const isLabel = OPER_DETAILS_LABEL_COLS.has(colKey);
+                      const cellClass = operDetailsCellClass(isPremium, isLabel, colKey, 'laborOper');
+                      const rawValue =
+                        colKey === 'productName' ? formatPremiumDisplayValue(m.productName, isPremium) :
+                        colKey === 'opName' ? formatPremiumDisplayValue(m.opName, isPremium) :
+                        colKey === 'equipName' ? formatPremiumDisplayValue(m.equipName, isPremium) :
+                        colKey === 'opNumber' ? fmt(m.opNumber, 2) :
+                        colKey === 'pctAssigned' ? fmt(m.pctAssigned, 2) :
+                        colKey === 'eqSetupUtil' ? fmtVal(m.eqSetupUtil) :
+                        colKey === 'eqRunUtil' ? fmtVal(m.eqRunUtil) :
+                        colKey === 'labSetupUtil' ? fmtVal(m.labSetupUtil) :
+                        colKey === 'labRunUtil' ? fmtVal(m.labRunUtil) :
+                        colKey === 'timeWaitingEquipment' ? fmt(m.timeWaitingEquipment, 2) :
+                        colKey === 'timeWaitingLabor' ? fmt(m.timeWaitingLabor, 2) :
+                        colKey === 'timeInSetup' ? fmt(m.timeInSetup, 2) :
+                        colKey === 'timeInRun' ? fmt(m.timeInRun, 2) :
+                        colKey === 'timeWaitingRestOfLot' ? fmt(m.timeWaitingRestOfLot, 2) :
+                        colKey === 'visitsPerGoodPiece' ? fmt(m.visitsPerGoodPiece, 2) :
+                        colKey === 'visits' ? fmt(m.visits, 2) :
+                        colKey === 'noOfSetups' ? fmt(m.noOfSetups, 2) :
+                        colKey === 'avgLotSize' ? fmt(m.avgLotSize, 2) :
+                        colKey === 'wip' ? fmt(m.wip, 2) :
+                        fmt(m.mctAtOp, 2);
+                      return (
+                        <TableCell key={colKey} className={cellClass} style={premiumColStyleForKey('laborOper', colKey, isPremium)}>
+                          {isLabel ? <PremiumCellText>{rawValue}</PremiumCellText> : rawValue}
+                        </TableCell>
+                      );
                     })}
                   </TableRow>
                 ))}
@@ -3617,6 +4505,7 @@ function LaborOperDetails({ model, results }: { model: Model; results: CalcResul
 
 
 function EquipmentResultsTable({ equipment, utilLimit, model }: { equipment: EquipmentResult[]; utilLimit: number; model: Model }) {
+  const isPremium = isPremiumOutputView(model);
   const equipmentRows = useMemo(() => equipment.map(eq => {
     const anyEq = eq as any;
     const piecesInProcess = asNum(anyEq.wip_process ?? anyEq.wipProcess ?? 0);
@@ -3634,55 +4523,93 @@ function EquipmentResultsTable({ equipment, utilLimit, model }: { equipment: Equ
     return { ...eq, piecesInProcess, piecesWaiting, wip, laborName };
   }), [equipment, model]);
   const { sorted, sort, handleSort } = useSortableTable(equipmentRows, 'totalUtil', 'desc');
-  const equipmentCols = useResizableColumns([12, 6, 7, 7, 7, 8, 7, 7, 9, 9, 8, 13], 8);
-  const [columnOrder, setColumnOrder] = useState<Array<'name' | 'count' | 'setupUtil' | 'runUtil' | 'repairUtil' | 'waitLaborUtil' | 'totalUtil' | 'idle' | 'piecesInProcess' | 'piecesWaiting' | 'wip' | 'laborName'>>(
-    ['name', 'count', 'setupUtil', 'runUtil', 'repairUtil', 'waitLaborUtil', 'totalUtil', 'idle', 'piecesInProcess', 'piecesWaiting', 'wip', 'laborName'],
+  const fmtCell = (v: unknown, digits: number) => isPremium ? premiumFmtNum(v, digits, true) : fmtFixed(v, digits);
+  const equipmentMinWidthByKey = useMemo(() => {
+    const displayNames = equipmentRows.map((eq) => formatPremiumDisplayValue(eq.name, isPremium));
+    const laborNames = equipmentRows.map((eq) => formatPremiumDisplayValue((eq as any).laborName, isPremium));
+    const numericMin = 72;
+    return {
+      name: estimateColMinWidthPx('Equipment', displayNames, isPremium ? 152 : 120, 380),
+      count: estimateColMinWidthPx('Count', equipmentRows.map((eq) => fmtCell(eq.count, 2)), numericMin, 96),
+      setupUtil: estimateColMinWidthPx('Setup %', equipmentRows.map((eq) => fmtCell(eq.setupUtil, 2)), numericMin, 96),
+      runUtil: estimateColMinWidthPx('Run %', equipmentRows.map((eq) => fmtCell(eq.runUtil, 2)), numericMin, 96),
+      repairUtil: estimateColMinWidthPx('Repair %', equipmentRows.map((eq) => fmtCell(eq.repairUtil, 2)), numericMin, 96),
+      waitLaborUtil: estimateColMinWidthPx('Wait Labor %', equipmentRows.map((eq) => fmtCell(eq.waitLaborUtil, 2)), numericMin, 110),
+      totalUtil: estimateColMinWidthPx('Total %', equipmentRows.map((eq) => fmtCell(eq.totalUtil, 2)), numericMin, 96),
+      idle: estimateColMinWidthPx('Idle %', equipmentRows.map((eq) => fmtCell(eq.idle, 2)), numericMin, 96),
+      piecesInProcess: estimateColMinWidthPx('Pieces in Process', equipmentRows.map((eq) => fmtCell((eq as any).piecesInProcess, 2)), 120, 170),
+      piecesWaiting: estimateColMinWidthPx('Pieces Waiting', equipmentRows.map((eq) => fmtCell((eq as any).piecesWaiting, 2)), 120, 170),
+      wip: estimateColMinWidthPx('WIP', equipmentRows.map((eq) => fmtCell((eq as any).wip, 2)), numericMin, 96),
+      laborName: estimateColMinWidthPx('Labor', laborNames, isPremium ? 108 : 100, 300),
+    };
+  }, [equipmentRows, isPremium]);
+  const getEquipmentColumnWeightPx = useCallback(
+    (col: string) => equipmentMinWidthByKey[col as keyof typeof equipmentMinWidthByKey] ?? 90,
+    [equipmentMinWidthByKey],
+  );
+  const equipmentCols = useResizableColumns(
+    isPremium ? [22, 6, 6, 6, 6, 7, 6, 6, 8, 12] : [12, 6, 7, 7, 7, 8, 7, 7, 9, 9, 8, 13],
+    8,
+  );
+  const {
+    visibleColumnOrder,
+    scrollLayoutActive: equipmentScrollExpanded,
+    fillWidthLayout: equipmentFillWidth,
+    toggleGroup,
+    isCollapseParent,
+    isGroupExpanded,
+    moveColumn: moveEquipmentColumn,
+    resetColumns,
+  } = useCollapsibleTableColumns(
+    EQUIPMENT_LEGACY_COLUMN_ORDER,
+    EQUIPMENT_PREMIUM_COLUMN_ORDER,
+    [EQUIPMENT_WIP_GROUP],
+    { usePremiumOrder: isPremium, collapseEnabled: isPremium },
+    equipmentCols,
+    isPremium ? getEquipmentColumnWeightPx : undefined,
   );
   const dragFromRef = useRef<string | null>(null);
-  const moveEquipmentColumn = useCallback((fromKey: string, toKey: string) => {
-    const fromIndex = columnOrder.indexOf(fromKey as any);
-    const toIndex = columnOrder.indexOf(toKey as any);
-    if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) return;
-    setColumnOrder(prev => {
-      const next = [...prev];
-      const [moved] = next.splice(fromIndex, 1);
-      next.splice(toIndex, 0, moved);
-      return next as any;
-    });
-    equipmentCols.moveColumn(fromIndex, toIndex);
-  }, [columnOrder, equipmentCols]);
-  const resetColumns = useCallback(() => {
-    setColumnOrder(['name', 'count', 'setupUtil', 'runUtil', 'repairUtil', 'waitLaborUtil', 'totalUtil', 'idle', 'piecesInProcess', 'piecesWaiting', 'wip', 'laborName']);
-    equipmentCols.resetWidths();
-  }, [equipmentCols]);
+  const fmt = fmtCell;
   return (
-    <Card>
+    <Card className={premiumCardClass(isPremium)}>
       <CardHeader>
         <div className="flex items-center justify-between gap-2">
-          <CardTitle className="text-base">Equipment Results Table</CardTitle>
-          <Button variant="outline" size="sm" className="text-xs h-7 gap-1" onClick={resetColumns}>
+          <div className="min-w-0">
+            <CardTitle className={`${isPremium ? 'font-semibold' : ''}`}>Equipment Results Table</CardTitle>
+            {isPremium && <PremiumCollapseTableHint parents={['WIP']} />}
+          </div>
+          <Button variant="outline" size="sm" className="text-xs h-7 gap-1 shrink-0" onClick={resetColumns}>
             <RotateCcw className="h-3 w-3" />
             Reset Columns
           </Button>
         </div>
       </CardHeader>
-      <CardContent ref={equipmentCols.containerRef} className="p-0 overflow-x-auto">
-        <Table className="table-auto">
+      <CardContent ref={equipmentCols.containerRef} className={`p-0 ${OUTPUT_TABLE_H_SCROLL} ${premiumTableWrapperClass(isPremium)}`}>
+        <Table
+          fitContent={isPremium && equipmentScrollExpanded}
+          className={`${premiumCollapseTableClass(isPremium, isPremium, equipmentScrollExpanded)} ${premiumTableWrapperClass(isPremium)}`}
+        >
           <colgroup>
-            {columnOrder.map((colKey, i) => (
-                  <col key={colKey} style={{ width: `${equipmentCols.widths[i]}%`, minWidth: colKey === 'name' || colKey === 'laborName' ? '130px' : colKey === 'piecesInProcess' || colKey === 'piecesWaiting' ? '145px' : '90px' }} />
+            {visibleColumnOrder.map((colKey, i) => (
+                  <col key={colKey} style={premiumCollapseColStyle(isPremium ? equipmentFillWidth : false, equipmentCols.widths[i], getEquipmentColumnWeightPx(colKey))} />
             ))}
           </colgroup>
-          <TableHeader><TableRow>
-            {columnOrder.map((colKey, index) => (
+          <TableHeader><TableRow className={premiumRowClass(isPremium)}>
+            {visibleColumnOrder.map((colKey, index) => (
               <SortHead
                 key={colKey}
-                label={colKey === 'name' ? 'Equipment' : colKey === 'count' ? 'Count' : colKey === 'setupUtil' ? 'Setup %' : colKey === 'runUtil' ? 'Run %' : colKey === 'repairUtil' ? 'Repair %' : colKey === 'waitLaborUtil' ? 'Wait Labor %' : colKey === 'totalUtil' ? 'Total %' : colKey === 'idle' ? 'Idle %' : colKey === 'piecesInProcess' ? 'Pieces in Process' : colKey === 'piecesWaiting' ? 'Pieces Waiting' : colKey === 'wip' ? 'WIP' : 'Labor Name'}
+                label={colKey === 'name' ? 'Equipment' : colKey === 'count' ? 'Count' : colKey === 'setupUtil' ? 'Setup %' : colKey === 'runUtil' ? 'Run %' : colKey === 'repairUtil' ? 'Repair %' : colKey === 'waitLaborUtil' ? 'Wait Labor %' : colKey === 'totalUtil' ? 'Total %' : colKey === 'idle' ? 'Idle %' : colKey === 'piecesInProcess' ? 'Pieces in Process' : colKey === 'piecesWaiting' ? 'Pieces Waiting' : colKey === 'wip' ? 'WIP' : 'Labor'}
                 sortKey={colKey}
                 current={sort}
                 onSort={handleSort}
                 align={colKey === 'name' || colKey === 'laborName' ? 'left' : 'right'}
-                onResizeStart={index < columnOrder.length - 1 ? (ev => equipmentCols.startResize(index, ev)) : undefined}
+                stickyHeader={colKey === 'name'}
+                stickyTopLeft={colKey === 'name'}
+                isPremium={isPremium}
+                colIndex={index}
+                premiumTableKind="equipment"
+                columnKey={colKey}
+                onResizeStart={isPremium && equipmentFillWidth && index < visibleColumnOrder.length - 1 ? (ev => equipmentCols.startResize(index, ev)) : undefined}
                 draggable
                 onDragStart={() => { dragFromRef.current = colKey; }}
                 onDragOver={ev => ev.preventDefault()}
@@ -3691,25 +4618,38 @@ function EquipmentResultsTable({ equipment, utilLimit, model }: { equipment: Equ
                   dragFromRef.current = null;
                 }}
                 onDragEnd={() => { dragFromRef.current = null; }}
+                collapseParent={isCollapseParent(colKey)}
+                collapseExpanded={isGroupExpanded(colKey)}
+                onCollapseToggle={() => toggleGroup(colKey)}
               />
             ))}
           </TableRow></TableHeader>
           <TableBody>
             {sorted.map(eq => (
-              <TableRow key={eq.id}>
-                {columnOrder.map(colKey => {
-                  if (colKey === 'name') return <TableCell key={colKey} className="font-mono font-medium text-left whitespace-nowrap">{eq.name}</TableCell>;
-                  if (colKey === 'count') return <TableCell key={colKey} className="font-mono text-right whitespace-nowrap tabular-nums">{fmtFixed(eq.count, 1)}</TableCell>;
-                  if (colKey === 'setupUtil') return <TableCell key={colKey} className="font-mono text-right whitespace-nowrap tabular-nums">{fmtFixed(eq.setupUtil, 1)}</TableCell>;
-                  if (colKey === 'runUtil') return <TableCell key={colKey} className="font-mono text-right whitespace-nowrap tabular-nums">{fmtFixed(eq.runUtil, 1)}</TableCell>;
-                  if (colKey === 'repairUtil') return <TableCell key={colKey} className="font-mono text-right whitespace-nowrap tabular-nums">{fmtFixed(eq.repairUtil, 1)}</TableCell>;
-                  if (colKey === 'waitLaborUtil') return <TableCell key={colKey} className="font-mono text-right whitespace-nowrap tabular-nums">{fmtFixed(eq.waitLaborUtil, 1)}</TableCell>;
-                  if (colKey === 'totalUtil') return <TableCell key={colKey} className={`font-mono text-right font-medium whitespace-nowrap tabular-nums ${eq.totalUtil > utilLimit ? 'text-destructive' : ''}`}>{fmtFixed(eq.totalUtil, 1)}</TableCell>;
-                  if (colKey === 'idle') return <TableCell key={colKey} className="font-mono text-right text-muted-foreground whitespace-nowrap tabular-nums">{fmtFixed(eq.idle, 1)}</TableCell>;
-                  if (colKey === 'piecesInProcess') return <TableCell key={colKey} className="font-mono text-right whitespace-nowrap tabular-nums">{fmtFixed((eq as any).piecesInProcess, 2)}</TableCell>;
-                  if (colKey === 'piecesWaiting') return <TableCell key={colKey} className="font-mono text-right whitespace-nowrap tabular-nums">{fmtFixed((eq as any).piecesWaiting, 2)}</TableCell>;
-                  if (colKey === 'wip') return <TableCell key={colKey} className="font-mono text-right whitespace-nowrap tabular-nums">{fmtFixed((eq as any).wip, 2)}</TableCell>;
-                  return <TableCell key={colKey} className="font-mono text-xs text-muted-foreground text-left whitespace-nowrap">{(eq as any).laborName}</TableCell>;
+              <TableRow key={eq.id} className={premiumRowClass(isPremium)}>
+                {visibleColumnOrder.map((colKey, colIndex) => {
+                  if (colKey === 'name') {
+                    return (
+                      <TableCell key={colKey} className={premiumNameCellClass(isPremium, true)} style={premiumColStyleForKey('equipment', colKey, isPremium)}>
+                        <PremiumCellText>{formatPremiumDisplayValue(eq.name, isPremium)}</PremiumCellText>
+                      </TableCell>
+                    );
+                  }
+                  if (colKey === 'count') return <TableCell key={colKey} className={premiumNumericCellClass(isPremium)} style={premiumColStyleForKey('equipment', colKey, isPremium)}>{fmt(eq.count, 2)}</TableCell>;
+                  if (colKey === 'setupUtil') return <TableCell key={colKey} className={premiumNumericCellClass(isPremium)} style={premiumColStyleForKey('equipment', colKey, isPremium)}>{fmt(eq.setupUtil, 2)}</TableCell>;
+                  if (colKey === 'runUtil') return <TableCell key={colKey} className={premiumNumericCellClass(isPremium)} style={premiumColStyleForKey('equipment', colKey, isPremium)}>{fmt(eq.runUtil, 2)}</TableCell>;
+                  if (colKey === 'repairUtil') return <TableCell key={colKey} className={premiumNumericCellClass(isPremium)} style={premiumColStyleForKey('equipment', colKey, isPremium)}>{fmt(eq.repairUtil, 2)}</TableCell>;
+                  if (colKey === 'waitLaborUtil') return <TableCell key={colKey} className={premiumNumericCellClass(isPremium)} style={premiumColStyleForKey('equipment', colKey, isPremium)}>{fmt(eq.waitLaborUtil, 2)}</TableCell>;
+                  if (colKey === 'totalUtil') return <TableCell key={colKey} className={`${premiumNumericCellClass(isPremium, 'font-medium')} ${!isPremium && eq.totalUtil > utilLimit ? 'text-destructive' : ''}`} style={premiumColStyleForKey('equipment', colKey, isPremium)}>{fmt(eq.totalUtil, 2)}</TableCell>;
+                  if (colKey === 'idle') return <TableCell key={colKey} className={`${premiumNumericCellClass(isPremium)} ${!isPremium ? 'text-muted-foreground' : ''}`} style={premiumColStyleForKey('equipment', colKey, isPremium)}>{fmt(eq.idle, 2)}</TableCell>;
+                  if (colKey === 'piecesInProcess') return <TableCell key={colKey} className={premiumNumericCellClass(isPremium)} style={premiumColStyleForKey('equipment', colKey, isPremium)}>{fmt((eq as any).piecesInProcess, 2)}</TableCell>;
+                  if (colKey === 'piecesWaiting') return <TableCell key={colKey} className={premiumNumericCellClass(isPremium)} style={premiumColStyleForKey('equipment', colKey, isPremium)}>{fmt((eq as any).piecesWaiting, 2)}</TableCell>;
+                  if (colKey === 'wip') return <TableCell key={colKey} className={premiumNumericCellClass(isPremium)} style={premiumColStyleForKey('equipment', colKey, isPremium)}>{fmt((eq as any).wip, 2)}</TableCell>;
+                  return (
+                    <TableCell key={colKey} className={premiumSecondaryNameCellClass(isPremium)} style={premiumColStyleForKey('equipment', colKey, isPremium)}>
+                      <PremiumCellText>{formatPremiumDisplayValue((eq as any).laborName, isPremium)}</PremiumCellText>
+                    </TableCell>
+                  );
                 })}
               </TableRow>
             ))}
@@ -3721,14 +4661,15 @@ function EquipmentResultsTable({ equipment, utilLimit, model }: { equipment: Equ
 }
 
 /* ─── Labor Results Table (sortable) ─── */
-function LaborResultsTable({ labor, utilLimit }: { labor: LaborResult[]; utilLimit: number }) {
+function LaborResultsTable({ labor, utilLimit, model }: { labor: LaborResult[]; utilLimit: number; model: Model }) {
+  const isPremium = isPremiumOutputView(model);
   const laborRows = useMemo(() => labor.map(l => ({
     ...l,
     equipTended: asNum((l as any).machinesTended),
     avgEquipWaiting: asNum((l as any).machinesWaiting),
   })), [labor]);
   const { sorted, sort, handleSort } = useSortableTable(laborRows, 'totalUtil', 'desc');
-  const laborCols = useResizableColumns([18, 11, 11, 11, 12, 12, 9, 8, 8], 8);
+  const laborCols = useResizableColumns(isPremium ? [22, 10, 10, 10, 11, 11, 9, 8, 9] : [18, 11, 11, 11, 12, 12, 9, 8, 8], 8);
   const [columnOrder, setColumnOrder] = useState<Array<'name' | 'count' | 'setupUtil' | 'runUtil' | 'equipTended' | 'avgEquipWaiting' | 'unavailPct' | 'totalUtil' | 'idle'>>(
     ['name', 'count', 'setupUtil', 'runUtil', 'equipTended', 'avgEquipWaiting', 'unavailPct', 'totalUtil', 'idle'],
   );
@@ -3749,25 +4690,26 @@ function LaborResultsTable({ labor, utilLimit }: { labor: LaborResult[]; utilLim
     setColumnOrder(['name', 'count', 'setupUtil', 'runUtil', 'equipTended', 'avgEquipWaiting', 'unavailPct', 'totalUtil', 'idle']);
     laborCols.resetWidths();
   }, [laborCols]);
+  const fmt = (v: unknown, digits: number) => isPremium ? premiumFmtNum(v, digits, true) : fmtFixed(v, digits);
   return (
-    <Card>
+    <Card className={premiumCardClass(isPremium)}>
       <CardHeader>
         <div className="flex items-center justify-between gap-2">
-          <CardTitle className="text-base">Labor Results Table</CardTitle>
+          <CardTitle className={`${isPremium ? "font-semibold" : ''}`}>Labor Results Table</CardTitle>
           <Button variant="outline" size="sm" className="text-xs h-7 gap-1" onClick={resetColumns}>
             <RotateCcw className="h-3 w-3" />
             Reset Columns
           </Button>
         </div>
       </CardHeader>
-      <CardContent ref={laborCols.containerRef} className="p-0 overflow-x-auto">
-        <Table className="table-fixed">
+      <CardContent ref={laborCols.containerRef} className={`p-0 ${OUTPUT_TABLE_H_SCROLL} ${premiumTableWrapperClass(isPremium)}`}>
+        <Table className={`table-fixed ${premiumTableWrapperClass(isPremium)}`}>
           <colgroup>
             {laborCols.widths.map((w, i) => (
               <col key={i} style={{ width: `${w}%` }} />
             ))}
           </colgroup>
-          <TableHeader><TableRow>
+          <TableHeader><TableRow className={premiumRowClass(isPremium)}>
             {columnOrder.map((colKey, index) => (
               <SortHead
                 key={colKey}
@@ -3776,6 +4718,12 @@ function LaborResultsTable({ labor, utilLimit }: { labor: LaborResult[]; utilLim
                 current={sort}
                 onSort={handleSort}
                 align={colKey === 'name' ? 'left' : 'right'}
+                stickyHeader={colKey === 'name'}
+                stickyTopLeft={colKey === 'name'}
+                isPremium={isPremium}
+                colIndex={index}
+                premiumTableKind="labor"
+                columnKey={colKey}
                 onResizeStart={index < columnOrder.length - 1 ? (ev => laborCols.startResize(index, ev)) : undefined}
                 draggable
                 onDragStart={() => { dragFromRef.current = colKey; }}
@@ -3790,17 +4738,23 @@ function LaborResultsTable({ labor, utilLimit }: { labor: LaborResult[]; utilLim
           </TableRow></TableHeader>
           <TableBody>
             {sorted.map(l => (
-              <TableRow key={l.id}>
-                {columnOrder.map(colKey => {
-                  if (colKey === 'name') return <TableCell key={colKey} className="font-mono font-medium text-left whitespace-nowrap">{l.name}</TableCell>;
-                  if (colKey === 'count') return <TableCell key={colKey} className="font-mono text-right whitespace-nowrap tabular-nums">{fmtFixed(l.count, 1)}</TableCell>;
-                  if (colKey === 'setupUtil') return <TableCell key={colKey} className="font-mono text-right whitespace-nowrap tabular-nums">{fmtFixed(l.setupUtil, 1)}</TableCell>;
-                  if (colKey === 'runUtil') return <TableCell key={colKey} className="font-mono text-right whitespace-nowrap tabular-nums">{fmtFixed(l.runUtil, 1)}</TableCell>;
-                  if (colKey === 'equipTended') return <TableCell key={colKey} className="font-mono text-right whitespace-nowrap tabular-nums">{fmtFixed((l as any).equipTended, 2)}</TableCell>;
-                  if (colKey === 'avgEquipWaiting') return <TableCell key={colKey} className="font-mono text-right whitespace-nowrap tabular-nums">{fmtFixed((l as any).avgEquipWaiting, 2)}</TableCell>;
-                  if (colKey === 'unavailPct') return <TableCell key={colKey} className="font-mono text-right whitespace-nowrap tabular-nums">{fmtFixed(l.unavailPct, 1)}</TableCell>;
-                  if (colKey === 'totalUtil') return <TableCell key={colKey} className={`font-mono text-right font-medium whitespace-nowrap tabular-nums ${l.totalUtil > utilLimit ? 'text-destructive' : ''}`}>{fmtFixed(l.totalUtil, 1)}</TableCell>;
-                  return <TableCell key={colKey} className="font-mono text-right text-muted-foreground whitespace-nowrap tabular-nums">{fmtFixed(l.idle, 1)}</TableCell>;
+              <TableRow key={l.id} className={premiumRowClass(isPremium)}>
+                {columnOrder.map((colKey, colIndex) => {
+                  if (colKey === 'name') {
+                    return (
+                      <TableCell key={colKey} className={premiumNameCellClass(isPremium, true)} style={premiumColStyleForKey('labor', colKey, isPremium)}>
+                        <PremiumCellText>{formatPremiumDisplayValue(l.name, isPremium)}</PremiumCellText>
+                      </TableCell>
+                    );
+                  }
+                  if (colKey === 'count') return <TableCell key={colKey} className={premiumNumericCellClass(isPremium)} style={premiumColStyleForKey('labor', colKey, isPremium)}>{fmt(l.count, 2)}</TableCell>;
+                  if (colKey === 'setupUtil') return <TableCell key={colKey} className={premiumNumericCellClass(isPremium)} style={premiumColStyleForKey('labor', colKey, isPremium)}>{fmt(l.setupUtil, 2)}</TableCell>;
+                  if (colKey === 'runUtil') return <TableCell key={colKey} className={premiumNumericCellClass(isPremium)} style={premiumColStyleForKey('labor', colKey, isPremium)}>{fmt(l.runUtil, 2)}</TableCell>;
+                  if (colKey === 'equipTended') return <TableCell key={colKey} className={premiumNumericCellClass(isPremium)} style={premiumColStyleForKey('labor', colKey, isPremium)}>{fmt((l as any).equipTended, 2)}</TableCell>;
+                  if (colKey === 'avgEquipWaiting') return <TableCell key={colKey} className={premiumNumericCellClass(isPremium)} style={premiumColStyleForKey('labor', colKey, isPremium)}>{fmt((l as any).avgEquipWaiting, 2)}</TableCell>;
+                  if (colKey === 'unavailPct') return <TableCell key={colKey} className={premiumNumericCellClass(isPremium)} style={premiumColStyleForKey('labor', colKey, isPremium)}>{fmt(l.unavailPct, 2)}</TableCell>;
+                  if (colKey === 'totalUtil') return <TableCell key={colKey} className={`${premiumNumericCellClass(isPremium, 'font-medium')} ${!isPremium && l.totalUtil > utilLimit ? 'text-destructive' : ''}`} style={premiumColStyleForKey('labor', colKey, isPremium)}>{fmt(l.totalUtil, 2)}</TableCell>;
+                  return <TableCell key={colKey} className={`${premiumNumericCellClass(isPremium)} ${!isPremium ? 'text-muted-foreground' : ''}`} style={premiumColStyleForKey('labor', colKey, isPremium)}>{fmt(l.idle, 2)}</TableCell>;
                 })}
               </TableRow>
             ))}
@@ -3819,23 +4773,33 @@ const prodChartColors = {
   scrapInProduction: 'hsl(0, 72%, 51%)',
 };
 
+const PRODUCTION_TABLE_COLUMNS = [
+  { key: 'name', label: 'Product', align: 'left' as const },
+  { key: 'shipped', label: 'Delivered', align: 'right' as const },
+  { key: 'usedInAssembly', label: 'Used in Assy', align: 'right' as const },
+  { key: 'scrappedInAssembly', label: 'Scrapped in Assy', align: 'right' as const },
+  { key: 'scrapInProduction', label: 'Scrap', align: 'right' as const },
+];
+
 function ProductionChart({ results, model, isMultiScenario, chartScenarios }: {
   results: CalcResults; model: any; isMultiScenario: boolean; chartScenarios: ScenarioEntry[];
 }) {
   const [showTable, setShowTable] = useState(false);
+  const isPremium = isPremiumOutputView(model);
   const data = useMemo(() => buildProductionData(results, model), [results, model]);
-  const { sorted, sort, handleSort } = useSortableTable(data, 'total', 'desc');
+  const { sorted, sort, handleSort } = useSortableTable(data, 'shipped', 'desc');
+  const fmt = (v: number) => isPremium ? premiumFmtNum(v, 0, true) : v.toLocaleString();
 
   if (data.length === 0) return (
-    <Card><CardContent className="py-12 text-center"><BarChart3 className="h-8 w-8 mx-auto text-muted-foreground/40 mb-2" /><p className="text-sm text-muted-foreground">Run the model to see production breakdown.</p></CardContent></Card>
+    <Card className={premiumCardClass(isPremium)}><CardContent className="py-12 text-center"><BarChart3 className="h-8 w-8 mx-auto text-muted-foreground/40 mb-2" /><p className="text-sm text-muted-foreground">Run the model to see production breakdown.</p></CardContent></Card>
   );
 
   return (
-    <Card>
-      <CardHeader>
+    <Card className={premiumCardClass(isPremium)}>
+      <CardHeader className={showTable ? 'pb-3' : undefined}>
         <div className="flex items-center justify-between">
           <div>
-            <CardTitle className="text-base">Production Chart</CardTitle>
+            <CardTitle className={isPremium ? 'font-semibold' : undefined}>Production Chart</CardTitle>
             <CardDescription>Breakdown of production by disposition</CardDescription>
           </div>
           <Button variant="outline" size="sm" className="text-xs gap-1" onClick={() => setShowTable(!showTable)}>
@@ -3843,40 +4807,84 @@ function ProductionChart({ results, model, isMultiScenario, chartScenarios }: {
           </Button>
         </div>
       </CardHeader>
-      <CardContent className="relative">
-        <ChartScenarioLabel />
+      <CardContent className={showTable ? `p-0 ${premiumTableWrapperClass(isPremium)}` : 'relative'}>
+        {!showTable && <ChartScenarioLabel />}
         {showTable ? (
-          <Table>
-            <TableHeader><TableRow>
-              <SortHead label="Product" sortKey="name" current={sort} onSort={handleSort} align="left" />
-              <SortHead label="Shipped" sortKey="shipped" current={sort} onSort={handleSort} />
-              <SortHead label="Used in Assy" sortKey="usedInAssembly" current={sort} onSort={handleSort} />
-              <SortHead label="Scrapped in Assy" sortKey="scrappedInAssembly" current={sort} onSort={handleSort} />
-              <SortHead label="Scrap" sortKey="scrapInProduction" current={sort} onSort={handleSort} />
-              <SortHead label="Total" sortKey="total" current={sort} onSort={handleSort} />
-            </TableRow></TableHeader>
-            <TableBody>
-              {sorted.map(d => (
-                <TableRow key={d.name}>
-                  <TableCell className="font-mono font-medium">{d.name}</TableCell>
-                  <TableCell className="font-mono text-right">{d.shipped.toLocaleString()}</TableCell>
-                  <TableCell className="font-mono text-right">{d.usedInAssembly.toLocaleString()}</TableCell>
-                  <TableCell className="font-mono text-right">{d.scrappedInAssembly.toLocaleString()}</TableCell>
-                  <TableCell className="font-mono text-right">{d.scrapInProduction.toLocaleString()}</TableCell>
-                  <TableCell className="font-mono text-right font-medium">{d.total.toLocaleString()}</TableCell>
+          <div className={`${isPremium ? outputTableFixedClass() : ''} ${premiumTableWrapperClass(isPremium)}`}>
+            <Table outerScrollHost className={`w-full table-fixed ${premiumTableWrapperClass(isPremium)}`}>
+              <colgroup>
+                <col style={{ width: '28%' }} />
+                <col style={{ width: '18%' }} />
+                <col style={{ width: '18%' }} />
+                <col style={{ width: '18%' }} />
+                <col style={{ width: '18%' }} />
+              </colgroup>
+              <TableHeader>
+                <TableRow className={premiumRowClass(isPremium)}>
+                  {PRODUCTION_TABLE_COLUMNS.map((col, index) => (
+                    <SortHead
+                      key={col.key}
+                      label={col.label}
+                      sortKey={col.key}
+                      current={sort}
+                      onSort={handleSort}
+                      align={col.align}
+                      stickyHeader={isPremium && col.key === 'name'}
+                      stickyTopLeft={isPremium && col.key === 'name'}
+                      isPremium={isPremium}
+                      colIndex={index}
+                      premiumTableKind="productionChart"
+                      columnKey={col.key}
+                    />
+                  ))}
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {sorted.map(d => (
+                  <TableRow key={d.name} className={premiumRowClass(isPremium)}>
+                    {PRODUCTION_TABLE_COLUMNS.map(col => {
+                      if (col.key === 'name') {
+                        return (
+                          <TableCell
+                            key={col.key}
+                            className={isPremium ? premiumNameCellClass(isPremium, true) : 'font-mono font-medium'}
+                            style={premiumColStyleForKey('productionChart', col.key, isPremium)}
+                          >
+                            {isPremium ? (
+                              <span className={premiumCellTextWrapClass}>{formatPremiumDisplayValue(d.name, isPremium)}</span>
+                            ) : d.name}
+                          </TableCell>
+                        );
+                      }
+                      const value = d[col.key as keyof typeof d] as number;
+                      return (
+                        <TableCell
+                          key={col.key}
+                          className={isPremium ? premiumNumericCellClass(isPremium) : 'font-mono text-right'}
+                          style={premiumColStyleForKey('productionChart', col.key, isPremium)}
+                        >
+                          {fmt(value)}
+                        </TableCell>
+                      );
+                    })}
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
         ) : (
           <ResponsiveContainer width="100%" height={300}>
             <BarChart data={data} margin={{ top: 10, right: 20, bottom: 5, left: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
               <XAxis dataKey="name" tick={axisStyle} stroke="hsl(var(--muted-foreground))" />
               <YAxis tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" label={{ value: 'Units', angle: -90, position: 'insideLeft', style: { fontSize: 11 } }} />
-              <Tooltip contentStyle={tooltipStyle} />
+              <Tooltip
+                cursor={{ fill: 'rgba(148, 163, 184, 0.14)', radius: 4 }}
+                wrapperStyle={{ outline: 'none', background: 'transparent', border: 'none', boxShadow: 'none', zIndex: 50 }}
+                content={<ProductionCompactTooltip />}
+              />
               <Legend wrapperStyle={{ fontSize: 11 }} />
-              <Bar dataKey="shipped" stackId="a" fill={prodChartColors.shipped} name="Shipped Production" />
+              <Bar dataKey="shipped" stackId="a" fill={prodChartColors.shipped} name="Delivered" />
               <Bar dataKey="usedInAssembly" stackId="a" fill={prodChartColors.usedInAssembly} name="Used in Assembly" />
               <Bar dataKey="scrappedInAssembly" stackId="a" fill={prodChartColors.scrappedInAssembly} name="Scrapped in Assembly" />
               <Bar dataKey="scrapInProduction" stackId="a" fill={prodChartColors.scrapInProduction} name="Scrap in Production" radius={[2, 2, 0, 0]} />

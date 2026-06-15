@@ -432,11 +432,12 @@ function OperationsRoutingContent() {
   ];
 
   // Calculate total columns for inline editor colSpan
-  const baseColCount = 10; // lock/# + op# + name + equip + %assign + 4 times + routing
+  const baseColCount = 9; // lock/# + op# + name + equip + 4 times + routing (%assign hidden)
   const operParamColCount = SHOW_PARAM_VARIABLE_FIELDS_IN_UI ? 4 : 0;
   const advancedTimeColCount = 8;
   const advancedColCount = showAdvancedTimes ? advancedTimeColCount + operParamColCount : 0;
-  const formulaColCount = showFormulaBuilder && !showAdvancedTimes ? 1 : (showFormulaBuilder && showAdvancedTimes ? 1 : 0);
+  // const formulaColCount = showFormulaBuilder && !showAdvancedTimes ? 1 : (showFormulaBuilder && showAdvancedTimes ? 1 : 0);
+  const formulaColCount = 0; // ƒ column hidden on operations & routing page
   const deleteColCount = 1;
   const totalCols = baseColCount + advancedColCount + formulaColCount + deleteColCount;
 
@@ -667,7 +668,7 @@ function OperationsRoutingContent() {
                     <TableHead className="font-mono text-xs w-16">Op #</TableHead>
                     <TableHead className="font-mono text-xs">Op Name</TableHead>
                     <TableHead className="font-mono text-xs">Equipment</TableHead>
-                    <TableHead className="font-mono text-xs w-20">% Assign</TableHead>
+                    {/* <TableHead className="font-mono text-xs w-20">% Assign</TableHead> */}
                     <TableHead className="font-mono text-xs">
                       E.Setup/Lot
                       {viewActualTimes && <span className="text-[9px] text-muted-foreground ml-0.5">(actual)</span>}
@@ -703,7 +704,7 @@ function OperationsRoutingContent() {
                       </>
                     )}
                     <TableHead className="font-mono text-xs">Routing</TableHead>
-                    {showFormulaBuilder && <TableHead className="font-mono text-xs w-10">ƒ</TableHead>}
+                    {/* {showFormulaBuilder && <TableHead className="font-mono text-xs w-10">ƒ</TableHead>} */}
                     <TableHead className="w-10"></TableHead>
                   </TableRow>
                 </TableHeader>
@@ -758,7 +759,7 @@ function OperationsRoutingContent() {
                               </Select>
                             )}
                           </TableCell>
-                          {/* % Assign */}
+                          {/* % Assign — hidden on operations & routing page
                           <TableCell>
                             {isDock ? (
                               <span className="font-mono text-xs text-muted-foreground">—</span>
@@ -766,6 +767,7 @@ function OperationsRoutingContent() {
                               <NonNegativeNumericInput value={op.pct_assigned} onChange={(v) => handleOpFieldChange(op, 'pct_assigned', v)} />
                             )}
                           </TableCell>
+                          */}
 
                           {/* Main time fields */}
                           {isDock ? (
@@ -890,7 +892,7 @@ function OperationsRoutingContent() {
                             })()}
                           </TableCell>
 
-                          {/* Formula Builder trigger */}
+                          {/* Formula Builder trigger — ƒ column hidden on operations & routing page
                           {showFormulaBuilder && (
                             <TableCell>
                               {!isDock && (
@@ -912,6 +914,7 @@ function OperationsRoutingContent() {
                               )}
                             </TableCell>
                           )}
+                          */}
 
                           {/* Delete */}
                           <TableCell>

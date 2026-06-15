@@ -99,13 +99,11 @@ export function PremiumEquipmentUtilChart({
   model,
   insightsOpen,
   onInsightsOpenChange,
-  showInsightsIcon,
 }: {
   results: CalcResults;
   model: Model;
   insightsOpen: boolean;
   onInsightsOpenChange: (open: boolean) => void;
-  showInsightsIcon: boolean;
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const chartRef = useRef<HTMLDivElement>(null);
@@ -190,12 +188,6 @@ export function PremiumEquipmentUtilChart({
 
   return (
     <div className="space-y-4">
-      <EquipmentUtilInsightsDialog
-        open={insightsOpen}
-        onOpenChange={onInsightsOpenChange}
-        equipment={equipment}
-        overallUtil={overallUtil}
-      />
       <Card
         ref={chartRef}
         className={`${premiumCardClass(true)} transition-all duration-300 ${selectedId ? 'ring-1 ring-slate-200' : ''}`}
@@ -211,18 +203,23 @@ export function PremiumEquipmentUtilChart({
               </CardDescription>
             </div>
             <div className="flex items-center gap-1 shrink-0">
-              {showInsightsIcon && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  className="h-8 w-8 border-violet-200 text-violet-700 bg-violet-50 hover:bg-violet-100"
-                  onClick={() => onInsightsOpenChange(true)}
-                  aria-label="View key insights"
-                >
-                  <Sparkles className="h-4 w-4" />
-                </Button>
-              )}
+              <EquipmentUtilInsightsDialog
+                open={insightsOpen}
+                onOpenChange={onInsightsOpenChange}
+                equipment={equipment}
+                overallUtil={overallUtil}
+                trigger={
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    className="h-8 w-8 border-violet-200 text-violet-700 bg-violet-50 hover:bg-violet-100 data-[state=open]:bg-violet-100"
+                    aria-label="View key insights"
+                  >
+                    <Sparkles className="h-4 w-4" />
+                  </Button>
+                }
+              />
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>

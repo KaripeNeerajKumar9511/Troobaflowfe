@@ -53,6 +53,8 @@ import { PageEditLockedShell } from '@/components/PageEditLockedShell';
 import { usePageEditLeaveGuard } from '@/hooks/usePageEditLeaveGuard';
 import { PageSavingOverlay } from '@/components/PageEditLeaveGuard';
 import { pageEditCell } from '@/lib/pageEditCell';
+import { DoubleClickEditableName } from '@/components/DoubleClickEditableName';
+import { HoverValueTooltip } from '@/components/HoverValueTooltip';
 
 import { InlineRoutingEditor } from '@/components/InlineRoutingEditor';
 import { RoutingFlowGraph, type RoutingFlowGraphHandle } from '@/components/RoutingFlowGraph';
@@ -85,6 +87,7 @@ export default function OperationsRouting() {
   const [showRoutingGraph, setShowRoutingGraph] = useState(false);
   const [graphHasMoved, setGraphHasMoved] = useState(false);
   const [showAutoRouting, setShowAutoRouting] = useState(false);
+  const [editingOpNameId, setEditingOpNameId] = useState<string | null>(null);
   const { pendingDeleteId, requestDelete, cancelDelete, confirmDelete } = useDeleteConfirmation();
 
   const newOpNameRef = useRef<HTMLInputElement>(null);
@@ -148,6 +151,7 @@ export default function OperationsRouting() {
     onDiscard: () => {
       if (editBaseline && effectiveProductId) applyProductDraft(editBaseline, effectiveProductId);
       else if (model && effectiveProductId) applyProductDraft(model, effectiveProductId);
+      setEditingOpNameId(null);
     },
     onSave: async () => {
       if (!model || !effectiveProductId) {
@@ -176,6 +180,7 @@ export default function OperationsRouting() {
           mergeProductDraftIntoModel(model, effectiveProductId, opsNorm, routing),
           effectiveProductId,
         );
+        setEditingOpNameId(null);
       } finally {
         setSyncing(false);
       }
@@ -398,6 +403,10 @@ export default function OperationsRouting() {
       toast.error(`"${newName}" is a reserved system operation`);
       return;
     }
+    if (productOps.some((o) => o.op_name.toUpperCase() === newName)) {
+      toast.error('An operation with this name already exists in this product');
+      return;
+    }
     const hasDock = productOps.some(o => o.op_name === 'DOCK');
     let nextOps = [...draftOps];
     if (!hasDock) {
@@ -501,6 +510,7 @@ export default function OperationsRouting() {
   };
 
   const handleResort = () => {
+    if (!pageEdit.canEditFields) return;
     const nonDock = productOps.filter(o => o.op_name !== 'DOCK');
     const idToNum = new Map(nonDock.map((op, i) => [op.id, (i + 1) * 10]));
     setDraftOps((prev) => prev.map((o) => {
@@ -511,6 +521,7 @@ export default function OperationsRouting() {
   };
 
   const handleDeleteOperation = (opId: string) => {
+    if (!pageEdit.canEditFields) return;
     const op = productOps.find(o => o.id === opId);
     if (!op || op.op_name === 'DOCK') return;
 
@@ -528,6 +539,49 @@ export default function OperationsRouting() {
       ));
     }
   };
+
+  const tryCommitOpName = (opId: string, raw: string): boolean => {
+    if (!pageEdit.canEditFields) return false;
+    const next = raw.trim().toUpperCase();
+    if (!next) return false;
+    const op = draftOps.find((o) => o.id === opId);
+    if (!op || op.op_name === 'DOCK') return false;
+    if (op.op_name === next) return true;
+    if (SYSTEM_OPS.includes(next)) {
+      toast.error(`"${next}" is a reserved system operation`);
+      return false;
+    }
+    const siblings = draftOps.filter((o) => o.product_id === op.product_id);
+    if (siblings.some((o) => o.id !== opId && o.op_name.toUpperCase() === next)) {
+      toast.error('Another operation in this product already uses this name');
+      return false;
+    }
+    const oldName = op.op_name;
+    setDraftOps((prev) => {
+      const updated = normalizeProductOperations(
+        prev.map((o) => (o.id === opId ? { ...o, op_name: next } : o)),
+      );
+      draftOpsRef.current = updated;
+      return updated;
+    });
+    setDraftRouting((prev) => {
+      const updated = prev.map((r) => {
+        if (r.product_id !== op.product_id) return r;
+        return {
+          ...r,
+          from_op_name: r.from_op_name === oldName ? next : r.from_op_name,
+          to_op_name: r.to_op_name === oldName ? next : r.to_op_name,
+        };
+      });
+      draftRoutingRef.current = updated;
+      return updated;
+    });
+    if (expandedRoutingOp === oldName) setExpandedRoutingOp(next);
+    return true;
+  };
+
+  const equipmentGroupLabel = (equipId: string) =>
+    equipId ? (model?.equipment.find((e) => e.id === equipId)?.name ?? 'None') : 'None';
 
   const handleOpFieldChange = (op: Operation, field: string, value: number | string | boolean) => {
     if (!pageEdit.canEditFields) return;
@@ -626,11 +680,12 @@ export default function OperationsRouting() {
   ];
 
   // Calculate total columns for inline editor colSpan
-  const baseColCount = 10; // lock/# + op# + name + equip + %assign + 4 times + routing
+  const baseColCount = 9; // lock/# + op# + name + equip + 4 times + routing (%assign hidden)
   const operParamColCount = SHOW_PARAM_VARIABLE_FIELDS_IN_UI ? 4 : 0;
   const advancedTimeColCount = 8;
   const advancedColCount = showAdvancedTimes ? advancedTimeColCount + operParamColCount : 0;
-  const formulaColCount = showFormulaBuilder && showAdvancedTimes ? 1 : 0;
+  // const formulaColCount = showFormulaBuilder && showAdvancedTimes ? 1 : 0;
+  const formulaColCount = 0; // ƒ column hidden on operations & routing page
   const deleteColCount = 1;
   const totalCols = baseColCount + advancedColCount + formulaColCount + deleteColCount;
 
@@ -849,6 +904,7 @@ export default function OperationsRouting() {
               <div className="flex gap-2">
                 <Button variant="ghost" size="sm" onClick={() => setShowClearRoutingConfirm(false)}>Cancel</Button>
                 <Button variant="destructive" size="sm" onClick={async () => {
+                  if (!pageEdit.canEditFields) return;
                   setShowClearRoutingConfirm(false);
                   try {
                     const res = await apiFetch(
@@ -958,11 +1014,11 @@ export default function OperationsRouting() {
                     <Button variant="outline" size="sm" className="gap-1 text-xs" onClick={() => setShowAdvancedTimes(!showAdvancedTimes)}>
                       {showAdvancedTimes ? 'Hide Advanced' : 'Show Advanced'}
                     </Button>
-                    <Button variant="outline" size="sm" className="gap-1 text-xs" onClick={handleResort} disabled={productOps.length <= 1}>
+                    <Button variant="outline" size="sm" className="gap-1 text-xs" onClick={handleResort} disabled={productOps.length <= 1 || !pageEdit.canEditFields}>
                       <SortAsc className="h-3.5 w-3.5" /> Re-sort
                     </Button>
                     {hasUserOps && (
-                      <Button variant="outline" size="sm" className="gap-1 text-xs text-red-600 border-red-200 hover:bg-red-50" onClick={() => setShowClearRoutingConfirm(true)}>
+                      <Button variant="outline" size="sm" className="gap-1 text-xs text-red-600 border-red-200 hover:bg-red-50" disabled={!pageEdit.canEditFields} onClick={() => { if (!pageEdit.canEditFields) return; setShowClearRoutingConfirm(true); }}>
                         <Trash2 className="h-3.5 w-3.5" /> Reset Product
                       </Button>
                     )}
@@ -990,7 +1046,7 @@ export default function OperationsRouting() {
                     <TableHead className="font-mono text-xs w-16">Op #</TableHead>
                     <TableHead className="font-mono text-xs">Op Name</TableHead>
                     <TableHead className="font-mono text-xs">Equipment</TableHead>
-                    <TableHead className="font-mono text-xs w-20">% Assign</TableHead>
+                    {/* <TableHead className="font-mono text-xs w-20">% Assign</TableHead> */}
                     <TableHead className="font-mono text-xs">E.Setup/Lot</TableHead>
                     <TableHead className="font-mono text-xs">E.Run/Pc</TableHead>
                     <TableHead className="font-mono text-xs">L.Setup/Lot</TableHead>
@@ -1014,7 +1070,7 @@ export default function OperationsRouting() {
                       </>
                     )}
                     <TableHead className="font-mono text-xs">Routing</TableHead>
-                    {showFormulaBuilder && showAdvancedTimes && <TableHead className="font-mono text-xs w-10">ƒ</TableHead>}
+                    {/* {showFormulaBuilder && showAdvancedTimes && <TableHead className="font-mono text-xs w-10">ƒ</TableHead>} */}
                     <TableHead className="w-10"></TableHead>
                   </TableRow>
                 </TableHeader>
@@ -1064,35 +1120,52 @@ export default function OperationsRouting() {
                           </TableCell>
                           {/* Op Name */}
                           <TableCell className={`font-mono font-medium ${isDock ? 'text-muted-foreground' : ''}`}>
-                            {op.op_name}
+                            {isDock ? (
+                              op.op_name
+                            ) : (
+                              collabWrap(
+                                op,
+                                'op_name',
+                                <DoubleClickEditableName
+                                  value={op.op_name}
+                                  isEditing={editingOpNameId === op.id}
+                                  readOnly={!pageEdit.canEditFields}
+                                  onRequestEdit={() => setEditingOpNameId(op.id)}
+                                  onCommit={(t) => tryCommitOpName(op.id, t)}
+                                  onCancelEdit={() => setEditingOpNameId(null)}
+                                />,
+                              )
+                            )}
                           </TableCell>
                           {/* Equipment */}
                           <TableCell>
                             {isDock ? (
                               <span className="font-mono text-xs text-muted-foreground">—</span>
                             ) : (
-                              collabWrap(
-                                op,
-                                'equip_id',
-                                <Select
-                                  value={op.equip_id || 'none'}
-                                  onValueChange={(v) => {
-                                    const next = v === 'none' ? '' : v;
-                                    handleOpFieldChange(op, 'equip_id', next);
-                                  }}
-                                >
-                                  <SelectTrigger className="h-8 w-32 font-mono text-xs"><SelectValue /></SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="none">None</SelectItem>
-                                    {model.equipment.map((eq) => (
-                                      <SelectItem key={eq.id} value={eq.id}>{eq.name}</SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>,
-                              )
+                              <HoverValueTooltip label={equipmentGroupLabel(op.equip_id)}>
+                                {collabWrap(
+                                  op,
+                                  'equip_id',
+                                  <Select
+                                    value={op.equip_id || 'none'}
+                                    onValueChange={(v) => {
+                                      const next = v === 'none' ? '' : v;
+                                      handleOpFieldChange(op, 'equip_id', next);
+                                    }}
+                                  >
+                                    <SelectTrigger className="h-8 w-32 font-mono text-xs"><SelectValue /></SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="none">None</SelectItem>
+                                      {model.equipment.map((eq) => (
+                                        <SelectItem key={eq.id} value={eq.id}>{eq.name}</SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>,
+                                )}
+                              </HoverValueTooltip>
                             )}
                           </TableCell>
-                          {/* % Assign */}
+                          {/* % Assign — hidden on operations & routing page
                           <TableCell>
                             {isDock ? (
                               <span className="font-mono text-xs text-muted-foreground">—</span>
@@ -1107,6 +1180,7 @@ export default function OperationsRouting() {
                               )
                             )}
                           </TableCell>
+                          */}
 
                           {/* Main time fields */}
                           {isDock ? (
@@ -1263,7 +1337,7 @@ export default function OperationsRouting() {
                             })()}
                           </TableCell>
 
-                          {/* Formula Builder trigger */}
+                          {/* Formula Builder trigger — ƒ column hidden on operations & routing page
                           {showFormulaBuilder && showAdvancedTimes && (
                             <TableCell>
                               {!isDock && (
@@ -1285,11 +1359,22 @@ export default function OperationsRouting() {
                               )}
                             </TableCell>
                           )}
+                          */}
 
                           {/* Delete */}
                           <TableCell>
                             {!isDock && (
-                              <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => requestDelete(op.id)}>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 text-destructive"
+                                disabled={!pageEdit.canEditFields}
+                                onClick={() => {
+                                  if (!pageEdit.canEditFields) return;
+                                  setEditingOpNameId((cur) => (cur === op.id ? null : cur));
+                                  requestDelete(op.id);
+                                }}
+                              >
                                 <Trash2 className="h-3.5 w-3.5" />
                               </Button>
                             )}
@@ -1310,6 +1395,7 @@ export default function OperationsRouting() {
                             wrapRouteCell={collabRouteWrap}
                             colSpan={totalCols}
                             hideDelete={false}
+                            canEdit={pageEdit.canEditFields}
                           />
                         )}
                       </>

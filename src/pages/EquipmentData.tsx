@@ -16,7 +16,7 @@ import { toast } from 'sonner';
 import { DoubleClickEditableName } from '@/components/DoubleClickEditableName';
 import { DeptCodeSelect } from '@/components/DeptCodeSelect';
 import { EquipmentCountInput } from '@/components/EquipmentCountInput';
-import { applyEquipmentEquipTypeChange } from '@/lib/equipmentEquipType';
+import { applyEquipmentEquipTypeChange, displayEquipmentTypeLabel } from '@/lib/equipmentEquipType';
 import {
   canEditPureLaborField,
   PURE_LABOR_TYPE_TOOLTIP,
@@ -25,6 +25,7 @@ import { PureLaborNaField } from '@/components/PureLaborNaField';
 import { Switch } from '@/components/ui/switch';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { NonNegativeNumericInput } from '@/components/NonNegativeNumericInput';
+import { SignedNumericInput } from '@/components/SignedNumericInput';
 import { useCollabCell } from '@/hooks/useCollabCell';
 import { useModelRefreshSync } from '@/hooks/useModelRefreshSync';
 import { useOrgCollab } from '@/contexts/OrgCollabContext';
@@ -37,6 +38,7 @@ import { PageEditLeaveGuard } from '@/components/PageEditLeaveGuard';
 import { equipmentDraftDirty } from '@/lib/draftDirty';
 import { persistEquipmentDraft } from '@/lib/pageEditPersist';
 import { pageEditCell } from '@/lib/pageEditCell';
+import { HoverValueTooltip } from '@/components/HoverValueTooltip';
 
 const FIELD_LABELS: Record<string, string> = {
   name: 'Name', count: 'Count', equip_type: 'Type', mttf: 'MTTF', mttr: 'MTTR',
@@ -175,6 +177,9 @@ export default function EquipmentData() {
     setDraftEquipment((prev) => prev.filter((e) => e.id !== id));
   };
 
+  const laborGroupLabel = (laborGroupId: string) =>
+    laborGroupId ? (model?.labor.find((l) => l.id === laborGroupId)?.name ?? 'None') : 'None';
+
   if (!model) return (
     <div className="p-6 space-y-4">
       <div className="h-7 w-48 bg-muted animate-pulse rounded" />
@@ -301,16 +306,18 @@ export default function EquipmentData() {
                       ))}
                     </TableCell>
                     <TableCell>
-                      {collabCell(eq.id, 'equip_type', (
-                        <Select value={eq.equip_type} onValueChange={(v) => handleCellChange(eq.id, 'equip_type', v)}>
-                          <SelectTrigger className="h-8 w-24"><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="standard">Standard</SelectItem>
-                            <SelectItem value="delay">Delay</SelectItem>
-                            <SelectItem value="pure_labor">Pure Labor</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      ))}
+                      <HoverValueTooltip label={displayEquipmentTypeLabel(eq.equip_type)}>
+                        {collabCell(eq.id, 'equip_type', (
+                          <Select value={eq.equip_type} onValueChange={(v) => handleCellChange(eq.id, 'equip_type', v)}>
+                            <SelectTrigger className="h-8 w-24"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="standard">Standard</SelectItem>
+                              <SelectItem value="delay">Delay</SelectItem>
+                              <SelectItem value="pure_labor">Pure Labor</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        ))}
+                      </HoverValueTooltip>
                     </TableCell>
                     <TableCell>
                       {isPure ? (
@@ -331,19 +338,21 @@ export default function EquipmentData() {
                     </TableCell>
                     <TableCell>
                       {isPure ? <PureLaborNaField className="w-20" /> : (
-                      collabCell(eq.id, 'overtime_pct', <NonNegativeNumericInput className="h-8 w-20 font-mono" value={eq.overtime_pct} onChange={(v) => handleCellChange(eq.id, 'overtime_pct', v)} />)
+                      collabCell(eq.id, 'overtime_pct', <SignedNumericInput className="h-8 w-20 font-mono" value={eq.overtime_pct} onChange={(v) => handleCellChange(eq.id, 'overtime_pct', v)} />)
                       )}
                     </TableCell>
                     <TableCell>
-                      {collabCell(eq.id, 'labor_group_id', (
-                        <Select value={eq.labor_group_id || 'none'} onValueChange={(v) => handleCellChange(eq.id, 'labor_group_id', v === 'none' ? '' : v)}>
-                          <SelectTrigger className="h-8 w-28"><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="none">None</SelectItem>
-                            {model.labor.map((l) => <SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>)}
-                          </SelectContent>
-                        </Select>
-                      ))}
+                      <HoverValueTooltip label={laborGroupLabel(eq.labor_group_id)}>
+                        {collabCell(eq.id, 'labor_group_id', (
+                          <Select value={eq.labor_group_id || 'none'} onValueChange={(v) => handleCellChange(eq.id, 'labor_group_id', v === 'none' ? '' : v)}>
+                            <SelectTrigger className="h-8 w-28"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">None</SelectItem>
+                              {model.labor.map((l) => <SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        ))}
+                      </HoverValueTooltip>
                     </TableCell>
                     <TableCell>
                       {isPure ? <PureLaborNaField className="min-w-[8rem]" /> : (
@@ -381,7 +390,7 @@ export default function EquipmentData() {
                       </>}
                     </>}
                     <TableCell>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => { setEditingNameId((cur) => (cur === eq.id ? null : cur)); requestDelete(eq.id); }}><Trash2 className="h-4 w-4" /></Button>
+                      <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" disabled={!pageEdit.canEditFields} onClick={() => { if (!pageEdit.canEditFields) return; setEditingNameId((cur) => (cur === eq.id ? null : cur)); requestDelete(eq.id); }}><Trash2 className="h-4 w-4" /></Button>
                     </TableCell>
                     </>)}
                   </TableRow>
@@ -429,7 +438,7 @@ export default function EquipmentData() {
                     )}
                   </div>
                   <div><Label className="text-xs">MTTR ({opsTimeUnit})</Label>{isPureForm ? <PureLaborNaField className="h-8" /> : collabCell(eq.id, 'mttr', <NonNegativeNumericInput value={eq.mttr} onChange={(v) => handleCellChange(eq.id, 'mttr', v)} />)}</div>
-                  <div><Label className="text-xs">Overtime %</Label>{isPureForm ? <PureLaborNaField className="h-8" /> : collabCell(eq.id, 'overtime_pct', <NonNegativeNumericInput value={eq.overtime_pct} onChange={(v) => handleCellChange(eq.id, 'overtime_pct', v)} />)}</div>
+                  <div><Label className="text-xs">Overtime %</Label>{isPureForm ? <PureLaborNaField className="h-8" /> : collabCell(eq.id, 'overtime_pct', <SignedNumericInput value={eq.overtime_pct} onChange={(v) => handleCellChange(eq.id, 'overtime_pct', v)} />)}</div>
                 </div>
                 <div>
                     <Label className="text-xs">Labor Group</Label>

@@ -1,6 +1,19 @@
 import type { EquipmentGroup } from '@/stores/modelStore';
 import { PURE_LABOR_MTTF, PURE_LABOR_MTTR } from '@/lib/pureLabor';
 
+export function displayEquipmentTypeLabel(type: EquipmentGroup['equip_type']): string {
+  switch (type) {
+    case 'standard':
+      return 'Standard';
+    case 'delay':
+      return 'Delay';
+    case 'pure_labor':
+      return 'Pure Labor';
+    default:
+      return type;
+  }
+}
+
 type StashedFields = Pick<
   EquipmentGroup,
   | 'count'

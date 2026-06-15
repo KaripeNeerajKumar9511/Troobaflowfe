@@ -71,6 +71,8 @@ interface InlineRoutingEditorProps {
   onDeleteRoute: (routeId: string) => void;
   colSpan: number;
   hideDelete?: boolean; // true for DOCK routes — no individual delete allowed
+  /** When false, route delete/add controls are disabled (view-only). */
+  canEdit?: boolean;
   /** Org-wide cell lock + live sync for route fields */
   wrapRouteCell?: (
     routeId: string,
@@ -89,6 +91,7 @@ export function InlineRoutingEditor({
   onDeleteRoute,
   colSpan,
   hideDelete = false,
+  canEdit = true,
   wrapRouteCell,
 }: InlineRoutingEditorProps) {
   const wrap = (
@@ -113,7 +116,8 @@ export function InlineRoutingEditor({
 
   const total = routes.reduce((s, r) => s + r.pct_routed, 0);
   const totalOk = Math.abs(total - 100) < 0.01;
-  const addDisabled = total >= 100;
+  const addDisabled = total >= 100 || !canEdit;
+  const showRouteDelete = canEdit && !hideDelete;
 
   // Build destination options: user ops (excluding self and DOCK) + STOCK/SCRAP
   const destOptions = allOpNames.filter(n => n !== opName && n !== 'DOCK');
@@ -190,7 +194,7 @@ export function InlineRoutingEditor({
                   />,
                   () => routes.find((x) => x.id === r.id)?.pct_routed,
                 )}
-                {!hideDelete && (
+                {!showRouteDelete ? null : (
                 <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive shrink-0" onClick={() => {
                   setConfirmingDeleteId(r.id);
                 }}>

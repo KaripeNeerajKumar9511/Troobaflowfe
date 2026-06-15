@@ -953,11 +953,8 @@ export default function RunResults() {
   const [activeTab, setActiveTab] = useState('summary');
   const [equipSubTab, setEquipSubTab] = useState('util-chart');
   const [equipInsightsOpen, setEquipInsightsOpen] = useState(false);
-  const [equipInsightsIconVisible, setEquipInsightsIconVisible] = useState(false);
   const [laborInsightsOpen, setLaborInsightsOpen] = useState(false);
-  const [laborInsightsIconVisible, setLaborInsightsIconVisible] = useState(false);
   const [productMctInsightsOpen, setProductMctInsightsOpen] = useState(false);
-  const [productMctInsightsIconVisible, setProductMctInsightsIconVisible] = useState(false);
   const [laborSubTab, setLaborSubTab] = useState('util-chart');
   const [productsSubTab, setProductsSubTab] = useState('mct-chart');
   const [ibomSubTab, setIbomSubTab] = useState('tree-chart');
@@ -1035,7 +1032,6 @@ export default function RunResults() {
       return;
     }
     setEquipInsightsOpen(true);
-    setEquipInsightsIconVisible(false);
   }, [isPremiumEquipUtilView, model?.id, results]);
 
   useEffect(() => {
@@ -1044,7 +1040,6 @@ export default function RunResults() {
       return;
     }
     setLaborInsightsOpen(true);
-    setLaborInsightsIconVisible(false);
   }, [isPremiumLaborUtilView, model?.id, results]);
 
   useEffect(() => {
@@ -1053,28 +1048,18 @@ export default function RunResults() {
       return;
     }
     setProductMctInsightsOpen(true);
-    setProductMctInsightsIconVisible(false);
   }, [isPremiumProductMctView, model?.id, results]);
 
   const handleEquipInsightsOpenChange = useCallback((open: boolean) => {
     setEquipInsightsOpen(open);
-    if (!open) {
-      setEquipInsightsIconVisible(true);
-    }
   }, []);
 
   const handleLaborInsightsOpenChange = useCallback((open: boolean) => {
     setLaborInsightsOpen(open);
-    if (!open) {
-      setLaborInsightsIconVisible(true);
-    }
   }, []);
 
   const handleProductMctInsightsOpenChange = useCallback((open: boolean) => {
     setProductMctInsightsOpen(open);
-    if (!open) {
-      setProductMctInsightsIconVisible(true);
-    }
   }, []);
 
   // Auto-navigate to Summary on Full Calculate completion; toast on background recalc
@@ -1487,7 +1472,6 @@ export default function RunResults() {
                   model={model}
                   insightsOpen={equipInsightsOpen}
                   onInsightsOpenChange={handleEquipInsightsOpenChange}
-                  showInsightsIcon={equipInsightsIconVisible}
                 />
               )}
 
@@ -1590,7 +1574,6 @@ export default function RunResults() {
                   model={model}
                   insightsOpen={laborInsightsOpen}
                   onInsightsOpenChange={handleLaborInsightsOpenChange}
-                  showInsightsIcon={laborInsightsIconVisible}
                 />
               )}
 
@@ -1697,7 +1680,6 @@ export default function RunResults() {
                       model={model}
                       insightsOpen={productMctInsightsOpen}
                       onInsightsOpenChange={handleProductMctInsightsOpenChange}
-                      showInsightsIcon={productMctInsightsIconVisible}
                     />
                   ) : (
                   <Card>
